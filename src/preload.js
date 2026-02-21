@@ -23,4 +23,14 @@ window.cyberclaw = {
   agents: {
     discover: () => ipcRenderer.invoke('openclaw:discover'),
   },
+  wizard: {
+    check: (what) => ipcRenderer.invoke('wizard:check', what),
+    install: (pkg) => ipcRenderer.invoke('wizard:install', pkg),
+    run: (cmd) => ipcRenderer.invoke('wizard:run', cmd),
+    saveApiKey: (key) => ipcRenderer.invoke('wizard:save-apikey', key),
+    createAgent: (opts) => ipcRenderer.invoke('wizard:create-agent', opts),
+    configureChannel: (opts) => ipcRenderer.invoke('wizard:configure-channel', opts),
+    startGateway: () => ipcRenderer.invoke('wizard:start-gateway'),
+    launch: () => ipcRenderer.invoke('wizard:launch'),
+  },
 };
