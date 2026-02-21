@@ -226,7 +226,8 @@
 
 /* === FOCUSED COMPANION INFO === */
 #focused-agent-strip {
-  display: flex; align-items: stretch; gap: 12px;
+  display: none; /* Removed — right panel shows focused companion now */
+  align-items: stretch; gap: 12px;
   padding: 8px 14px;
   background: linear-gradient(180deg, rgba(0,0,0,0.5), rgba(10,10,20,0.8));
   border-top: 1px solid var(--border-dark);

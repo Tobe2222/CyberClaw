@@ -214,8 +214,9 @@ function updateCarousel() {
     else el.classList.add('far-side');
   });
 
-  // Update focused agent strip (below carousel)
+  // Update focused agent strip + right panel
   updateFocused(agentOrder[focusIndex]);
+  updateInspect(agentOrder[focusIndex]);
   updateChatTarget();
 }
 
@@ -274,14 +275,13 @@ function updateFocused(agentId) {
 }
 
 // ---------------------------------------------------------------------------
-// Inspect panel (always shows party leader)
+// Inspect panel (shows focused/selected companion)
 // ---------------------------------------------------------------------------
 function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  // Always shows party leader
-  document.getElementById('right-header-text').textContent = 'PARTY LEADER';
+  document.getElementById('right-header-text').textContent = agent.name?.toUpperCase() || 'COMPANION';
 
   // Portrait
   const img = document.getElementById('inspect-avatar-img');
@@ -702,9 +702,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setEl('stat-gateway', ':' + sysInfo.gatewayPort);
   } catch {}
 
-  // Right panel always shows the party leader
-  const leaderId = agentOrder.find(id => agents[id].isMain) || agentOrder[0];
-  if (leaderId) updateInspect(leaderId);
+  // Right panel shows focused companion
+  if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]);
 
   initMainTerminal();
 
@@ -774,8 +773,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     updateSystemInfo();
-    const leaderId = agentOrder.find(id => agents[id].isMain) || agentOrder[0];
-    if (leaderId) updateInspect(leaderId);
+    if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]);
     updateRateLimit();
   }, 30000);
 
