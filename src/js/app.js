@@ -442,13 +442,13 @@ window.toggleTerminal = function() {
 
 function termTheme() {
   return {
-    background: '#05050a', foreground: '#e0e0e0', cursor: '#00ffcc', cursorAccent: '#05050a',
-    selectionBackground: '#a855f740',
-    black: '#1a1a2e', red: '#ef4444', green: '#4ade80', yellow: '#fbbf24',
-    blue: '#3b82f6', magenta: '#a855f7', cyan: '#00ffcc', white: '#e0e0e0',
-    brightBlack: '#555', brightRed: '#f87171', brightGreen: '#86efac',
-    brightYellow: '#fde68a', brightBlue: '#93c5fd', brightMagenta: '#c084fc',
-    brightCyan: '#5eead4', brightWhite: '#ffffff',
+    background: '#050507', foreground: '#e8e8ec', cursor: '#ff6b35', cursorAccent: '#050507',
+    selectionBackground: '#ff6b3540',
+    black: '#1a1a28', red: '#ff3366', green: '#4ade80', yellow: '#f7931e',
+    blue: '#00d4ff', magenta: '#ff6b35', cyan: '#00d4ff', white: '#e8e8ec',
+    brightBlack: '#555566', brightRed: '#ff6688', brightGreen: '#86efac',
+    brightYellow: '#ffb347', brightBlue: '#66e0ff', brightMagenta: '#ff9966',
+    brightCyan: '#66e0ff', brightWhite: '#ffffff',
   };
 }
 
@@ -460,6 +460,9 @@ function initMainTerminal() {
   mainTerminal.loadAddon(new WebLinksAddon());
   mainTerminal.open(c);
   mainFit.fit();
+  // Re-fit after layout settles
+  setTimeout(() => mainFit.fit(), 200);
+  setTimeout(() => mainFit.fit(), 1000);
   mainTerminal.onData(data => cyberclaw.terminal.write(data));
   cyberclaw.terminal.onData(data => mainTerminal.write(data));
   cyberclaw.terminal.onExit(code => mainTerminal.write(`\r\n\x1b[33m[Exit ${code}]\x1b[0m\r\n`));
