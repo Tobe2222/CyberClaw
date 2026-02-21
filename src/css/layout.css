@@ -59,7 +59,17 @@
 .sys-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(0,255,204,0.05); }
 
 /* ---- CENTER ---- */
-#panel-center { display: flex; flex-direction: column; background: var(--bg-darkest); overflow: hidden; }
+#panel-center { display: flex; flex-direction: column; background: var(--bg-darkest); overflow: hidden; position: relative; }
+
+#cyberhive-logo-link {
+  display: block; text-align: center; padding: 8px 0 2px;
+  flex-shrink: 0; z-index: 10;
+}
+#cyberhive-logo {
+  height: 32px; opacity: 0.6; transition: opacity 0.2s;
+  filter: drop-shadow(0 0 6px rgba(251,191,36,0.15));
+}
+#cyberhive-logo:hover { opacity: 1; }
 
 /* === ARENA === */
 #party-arena {

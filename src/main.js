@@ -447,6 +447,12 @@ ipcMain.on('window:maximize', () => {
   mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize();
 });
 ipcMain.on('window:close', () => mainWindow?.close());
+ipcMain.on('window:open-external', (event, url) => {
+  const { shell } = require('electron');
+  if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Wizard IPC handlers
