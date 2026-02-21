@@ -573,57 +573,92 @@ function findNpm() {
   return null;
 }
 
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const http = require('http');
+
+    function doGet(u, redirects) {
+      if (redirects > 5) return reject(new Error('Too many redirects'));
+      const mod = u.startsWith('https') ? https : http;
+      mod.get(u, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          return doGet(response.headers.location, redirects + 1);
+        }
+        if (response.statusCode !== 200) {
+          return reject(new Error(`HTTP ${response.statusCode}`));
+        }
+        const file = fs.createWriteStream(destPath);
+        response.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+        file.on('error', reject);
+      }).on('error', reject);
+    }
+
+    doGet(url, 0);
+  });
+}
+
 async function installNode() {
   const platform = os.platform();
   const arch = os.arch();
 
   if (platform === 'win32') {
-    // Download Node.js MSI and run silent install
     const nodeVersion = 'v22.12.0';
     const msiName = arch === 'x64' ? `node-${nodeVersion}-x64.msi` : `node-${nodeVersion}-x86.msi`;
     const url = `https://nodejs.org/dist/${nodeVersion}/${msiName}`;
     const tmpPath = path.join(os.tmpdir(), msiName);
 
+    let output = '';
     try {
       // Download
-      const https = require('https');
-      await new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(tmpPath);
-        https.get(url, (response) => {
-          // Handle redirects
-          if (response.statusCode === 302 || response.statusCode === 301) {
-            https.get(response.headers.location, (res) => {
-              res.pipe(file);
-              file.on('finish', () => { file.close(); resolve(); });
-            }).on('error', reject);
-          } else {
-            response.pipe(file);
-            file.on('finish', () => { file.close(); resolve(); });
-          }
-        }).on('error', reject);
-      });
+      output += `Downloading ${url}...\n`;
+      await downloadFile(url, tmpPath);
 
-      // Run MSI installer silently
-      const result = await execPromise(`msiexec /i "${tmpPath}" /qn /norestart`);
+      const fileSize = fs.statSync(tmpPath).size;
+      output += `Downloaded ${(fileSize / 1024 / 1024).toFixed(1)} MB\n`;
+
+      if (fileSize < 1000000) {
+        return { ok: false, error: 'Download too small — may have failed', output };
+      }
+
+      // Run MSI installer — try silent first, then with basic UI
+      output += 'Running installer...\n';
+      let installResult = await execPromise(`msiexec /i "${tmpPath}" /qn /norestart`);
+
+      // msiexec /qn may fail without admin — try /qb (basic UI, user can approve UAC)
+      if (!installResult.ok) {
+        output += 'Silent install failed, trying with UI...\n';
+        installResult = await execPromise(`msiexec /i "${tmpPath}" /qb /norestart`);
+      }
+
+      if (!installResult.ok) {
+        // Last resort: just launch the MSI normally and let user click through
+        output += 'Launching installer manually...\n';
+        execCb(`msiexec /i "${tmpPath}"`, () => {});
+        return { ok: true, output: output + '\nNode.js installer launched. Complete the installation, then click Retry.' };
+      }
+
+      output += installResult.output + '\n';
 
       // Clean up
       try { fs.unlinkSync(tmpPath); } catch {}
 
-      // Verify
+      // Refresh PATH and verify
+      const nodePath = 'C:\\Program Files\\nodejs';
+      process.env.PATH = `${nodePath};${process.env.PATH}`;
       try {
-        // Refresh PATH
-        const nodePath = 'C:\\Program Files\\nodejs';
-        process.env.PATH = `${nodePath};${process.env.PATH}`;
         const v = execSync(`"${nodePath}\\node.exe" --version`, { encoding: 'utf8' }).trim();
-        return { ok: true, output: `Node.js ${v} installed successfully!` };
+        output += `Node.js ${v} installed successfully!\n`;
       } catch {
-        return { ok: true, output: 'Node.js installer completed. You may need to restart CyberClaw.' };
+        output += 'Installer completed. You may need to restart CyberClaw for PATH to update.\n';
       }
+
+      return { ok: true, output };
     } catch (err) {
-      return { ok: false, error: `Failed to install Node.js: ${err.message}` };
+      return { ok: false, error: `Failed: ${err.message}`, output };
     }
   } else if (platform === 'linux') {
-    // Use NodeSource setup script or package manager
     const cmds = [
       'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - 2>&1',
       'sudo apt-get install -y nodejs 2>&1',

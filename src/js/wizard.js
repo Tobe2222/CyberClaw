@@ -111,12 +111,15 @@ async function installOpenClaw() {
         systemState.node = true;
         systemState.npm = true;
       } else {
-        addTermLine(term, '❌ Node.js install failed: ' + (nodeResult.error || ''), 'error');
+        addTermLine(term, '❌ Node.js auto-install failed: ' + (nodeResult.error || ''), 'error');
         addTermLine(term, '', '');
-        addTermLine(term, '💡 Manual install: download from https://nodejs.org', 'warn');
-        addTermLine(term, '   Then restart CyberClaw.', 'warn');
+        addTermLine(term, '💡 Please install Node.js manually:', 'warn');
+        addTermLine(term, '   1. Go to https://nodejs.org', 'warn');
+        addTermLine(term, '   2. Download and run the installer', 'warn');
+        addTermLine(term, '   3. Click Retry below when done', 'warn');
         btn.textContent = 'Retry';
         btn.disabled = false;
+        btn.onclick = () => installOpenClaw();
         return;
       }
       addTermLine(term, '', '');
