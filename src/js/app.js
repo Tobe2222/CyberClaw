@@ -460,7 +460,14 @@ function initMainTerminal() {
   mainTerminal.loadAddon(new WebLinksAddon());
   mainTerminal.open(c);
   // Fit multiple times as layout settles
-  const doFit = () => { try { mainFit.fit(); const d = mainFit.proposeDimensions(); if (d) cyberclaw.terminal.resize(d.cols, d.rows); } catch {} };
+  const doFit = () => {
+    try {
+      mainFit.fit();
+      const d = mainFit.proposeDimensions();
+      console.log('[TERM] fit:', d, 'container:', c.clientWidth, 'x', c.clientHeight, 'parent:', c.parentElement?.clientHeight);
+      if (d) cyberclaw.terminal.resize(d.cols, d.rows);
+    } catch(e) { console.error('[TERM] fit error:', e); }
+  };
   doFit();
   setTimeout(doFit, 100);
   setTimeout(doFit, 300);
