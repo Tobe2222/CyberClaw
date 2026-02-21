@@ -393,11 +393,38 @@ window.selectQuest = function(el, questId) {
   }
 };
 
+// Estimate progress to next full version based on semver
+function getVersionProgress(version) {
+  if (!version) return 0;
+  const parts = version.split('.');
+  if (parts.length < 2) return 0;
+  const minor = parseInt(parts[1]) || 0;
+  const patch = parseInt(parts[2]) || 0;
+  // Assume 10 minor versions = 1 major, each minor = 10%
+  // Patch adds fractional progress within the minor
+  const progress = Math.min(95, (minor * 10) + Math.min(9, patch));
+  return progress;
+}
+
+window.setQuestVersion = async function(e, id) {
+  e.stopPropagation();
+  const current = (await cyberclaw.quests.list()).find(q => q.id === id)?.version || '';
+  const version = prompt('Enter current version (e.g. 0.1.2):', current);
+  if (version !== null) {
+    await cyberclaw.quests.update(id, { version: version.replace(/^v/, '') });
+    renderQuests();
+  }
+};
+
 window.setQuestDir = async function(e, id) {
   e.stopPropagation();
   const dir = await cyberclaw.quests.pickDirectory();
   if (dir) {
-    await cyberclaw.quests.update(id, { directory: dir });
+    const updates = { directory: dir };
+    // Auto-detect version from package.json
+    const ver = await cyberclaw.quests.detectVersion(dir);
+    if (ver) updates.version = ver;
+    await cyberclaw.quests.update(id, updates);
     renderQuests();
   }
 };
@@ -450,9 +477,17 @@ async function renderQuests() {
       <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
       ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
       ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : `<button class="quest-dir-add" onclick="setQuestDir(event,'${q.id}')">📁 Set directory</button>`}
-      <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
-        ${isComplete ? '↩ Reopen' : '✓ Complete'}
-      </button>
+      ${q.version ? `<div class="quest-version">v${escapeHtml(q.version)}</div>` : ''}
+      <div class="quest-progress">
+        <div class="quest-bar"><div class="quest-fill" style="width:${getVersionProgress(q.version)}%"></div></div>
+        <span class="quest-pct">${getVersionProgress(q.version)}%</span>
+      </div>
+      <div class="quest-actions-row">
+        <button class="quest-version-btn" onclick="setQuestVersion(event,'${q.id}')" title="Set version">📌 ${q.version ? 'v' + escapeHtml(q.version) : 'Set version'}</button>
+        <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
+          ${isComplete ? '↩ Reopen' : '🏁 Mark done'}
+        </button>
+      </div>
     `;
     list.appendChild(div);
   }

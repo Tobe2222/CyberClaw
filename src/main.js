@@ -483,6 +483,17 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
   return quests[idx] || null;
 });
+ipcMain.handle('quests:detect-version', (event, dir) => {
+  if (!dir) return null;
+  try {
+    const pkgPath = path.join(dir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      return pkg.version || null;
+    }
+  } catch {}
+  return null;
+});
 ipcMain.handle('quests:pick-directory', async () => {
   const { dialog } = require('electron');
   const result = await dialog.showOpenDialog(mainWindow, {

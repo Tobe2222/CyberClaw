@@ -521,6 +521,19 @@
   font-family: var(--font-mono);
 }
 
+.quest-version {
+  font-size: 9px; color: var(--gold); font-family: var(--font-mono); margin-top: 3px;
+}
+.quest-actions-row {
+  display: flex; gap: 4px; margin-top: 4px;
+}
+.quest-version-btn {
+  font-size: 8px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(247,147,30,0.08); border: 1px solid rgba(247,147,30,0.2);
+  color: var(--gold-dim); cursor: pointer;
+}
+.quest-version-btn:hover { background: rgba(247,147,30,0.15); }
+
 .quest-status-toggle {
   font-size: 9px; padding: 2px 6px; border-radius: 3px;
   background: rgba(255,107,53,0.08); border: 1px solid rgba(255,107,53,0.15);
