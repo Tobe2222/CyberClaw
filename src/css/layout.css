@@ -291,16 +291,13 @@
 
 /* === TERMINAL STRIP === */
 #terminal-strip {
-  height: 120px; min-height: 60px; max-height: 35%;
+  height: 140px; min-height: 60px; max-height: 40%;
   display: flex; flex-direction: column;
   border-top: 2px solid var(--border-mid); flex-shrink: 0;
   overflow: hidden;
 }
 #terminal-strip .term-view.active { flex: 1; min-height: 0; overflow: hidden; }
-#terminal-container { flex: 1; min-height: 0; overflow: hidden; padding: 2px 4px; background: #050507; position: relative; }
-#terminal-container .xterm,
-#terminal-container .xterm-viewport,
-#terminal-container .xterm-screen { height: 100% !important; }
+#terminal-container { flex: 1; min-height: 0; overflow: hidden; padding: 0; background: #050507; }
 .terminal-tabs {
   display: flex; background: var(--bg-panel); border-bottom: 1px solid var(--border-dark);
   height: 30px; align-items: flex-end; padding: 0 6px; gap: 2px; flex-shrink: 0;
