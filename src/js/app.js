@@ -459,10 +459,14 @@ function initMainTerminal() {
   mainTerminal.loadAddon(mainFit);
   mainTerminal.loadAddon(new WebLinksAddon());
   mainTerminal.open(c);
-  mainFit.fit();
-  // Re-fit after layout settles
-  setTimeout(() => mainFit.fit(), 200);
-  setTimeout(() => mainFit.fit(), 1000);
+  // Fit multiple times as layout settles
+  const doFit = () => { try { mainFit.fit(); const d = mainFit.proposeDimensions(); if (d) cyberclaw.terminal.resize(d.cols, d.rows); } catch {} };
+  doFit();
+  setTimeout(doFit, 100);
+  setTimeout(doFit, 300);
+  setTimeout(doFit, 700);
+  setTimeout(doFit, 1500);
+  window.addEventListener('load', () => setTimeout(doFit, 100));
   mainTerminal.onData(data => cyberclaw.terminal.write(data));
   cyberclaw.terminal.onData(data => mainTerminal.write(data));
   cyberclaw.terminal.onExit(code => mainTerminal.write(`\r\n\x1b[33m[Exit ${code}]\x1b[0m\r\n`));
