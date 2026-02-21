@@ -22,6 +22,7 @@ window.cyberclaw = {
   },
   agents: {
     discover: () => ipcRenderer.invoke('openclaw:discover'),
+    systemInfo: () => ipcRenderer.invoke('openclaw:system-info'),
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),

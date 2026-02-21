@@ -208,6 +208,16 @@ function discoverAgents() {
 
 ipcMain.handle('openclaw:discover', () => discoverAgents());
 
+ipcMain.handle('openclaw:system-info', () => {
+  const config = readOpenClawConfig();
+  return {
+    host: os.hostname(),
+    os: `${os.platform()} ${os.arch()}`,
+    node: process.versions.node,
+    gatewayPort: config?.gateway?.port || 18789,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Terminal (OpenClaw process viewer)
 // ---------------------------------------------------------------------------

@@ -33,62 +33,12 @@
       <div class="panel-header">
         <span class="rune-icon">📜</span> QUEST LOG
       </div>
-      <div class="quest-section">
-        <div class="quest-category">
-          <div class="quest-cat-header active-cat">⚔️ Active Quests</div>
-          <div class="quest-item active-quest" onclick="selectQuest(this)">
-            <div class="quest-name">🔮 Wattoshi Gateway</div>
-            <div class="quest-desc">Deploy relay server to VPS</div>
-            <div class="quest-companions">
-              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
-              <span class="quest-companion-tag"><span class="quest-companion-icon">🔧</span> Repairsuu</span>
-            </div>
-            <div class="quest-progress">
-              <div class="quest-bar"><div class="quest-fill" style="width:60%"></div></div>
-              <span class="quest-pct">60%</span>
-            </div>
-          </div>
-          <div class="quest-item active-quest" onclick="selectQuest(this)">
-            <div class="quest-name">⚡ Hive Control v2.2</div>
-            <div class="quest-desc">Wattoshi mode integration</div>
-            <div class="quest-companions">
-              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
-            </div>
-            <div class="quest-progress">
-              <div class="quest-bar"><div class="quest-fill" style="width:85%"></div></div>
-              <span class="quest-pct">85%</span>
-            </div>
-          </div>
-          <div class="quest-item active-quest" onclick="selectQuest(this)">
-            <div class="quest-name">🗡️ CyberClaw GUI</div>
-            <div class="quest-desc">RPG companion interface</div>
-            <div class="quest-companions">
-              <span class="quest-companion-tag"><span class="quest-companion-icon">💻</span> Codesuu</span>
-              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
-            </div>
-            <div class="quest-progress">
-              <div class="quest-bar"><div class="quest-fill" style="width:35%"></div></div>
-              <span class="quest-pct">35%</span>
-            </div>
-          </div>
-        </div>
-        <div class="quest-category">
-          <div class="quest-cat-header completed-cat">✅ Completed</div>
-          <div class="quest-item completed-quest" onclick="selectQuest(this)">
-            <div class="quest-name">📱 Android App</div>
-            <div class="quest-desc">Capacitor + Tailscale</div>
-            <div class="quest-progress">
-              <div class="quest-bar"><div class="quest-fill" style="width:100%"></div></div>
-              <span class="quest-pct">100%</span>
-            </div>
-          </div>
-          <div class="quest-item completed-quest" onclick="selectQuest(this)">
-            <div class="quest-name">🌐 CyberHive Website</div>
-            <div class="quest-desc">E-commerce + 6 products</div>
-            <div class="quest-progress">
-              <div class="quest-bar"><div class="quest-fill" style="width:100%"></div></div>
-              <span class="quest-pct">100%</span>
-            </div>
+      <div class="quest-section" id="quest-list">
+        <!-- Quests populated dynamically -->
+        <div class="quest-empty" id="quest-empty">
+          <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px">
+            <div style="font-size:24px;margin-bottom:8px">📜</div>
+            No quests yet.<br>Create your first quest!
           </div>
         </div>
       </div>
@@ -98,10 +48,10 @@
         <span class="rune-icon">🖥️</span> SYSTEM
       </div>
       <div class="system-section">
-        <div class="stat-row"><span class="stat-key">Host</span><span class="stat-value">cybercomputer</span></div>
-        <div class="stat-row"><span class="stat-key">OS</span><span class="stat-value">Linux x64</span></div>
-        <div class="stat-row"><span class="stat-key">Node</span><span class="stat-value">v22.22.0</span></div>
-        <div class="stat-row"><span class="stat-key">Gateway</span><span class="stat-value cyan-text">:18789</span></div>
+        <div class="stat-row"><span class="stat-key">Host</span><span class="stat-value" id="stat-host">—</span></div>
+        <div class="stat-row"><span class="stat-key">OS</span><span class="stat-value" id="stat-os">—</span></div>
+        <div class="stat-row"><span class="stat-key">Node</span><span class="stat-value" id="stat-node">—</span></div>
+        <div class="stat-row"><span class="stat-key">Gateway</span><span class="stat-value cyan-text" id="stat-gateway">—</span></div>
         <div class="stat-row"><span class="stat-key">Runtime</span><span class="stat-value" id="stat-runtime">00:00:00</span></div>
         <div class="stat-row"><span class="stat-key">Companions</span><span class="stat-value" id="stat-companions">0</span></div>
         <div class="stat-row"><span class="stat-key">Rate Limit</span><span class="stat-value" id="stat-ratelimit">—</span></div>
@@ -265,14 +215,14 @@
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Equipment -->
+        <!-- Equipment (populated dynamically in future) -->
         <div class="inspect-section">
           <div class="section-title">Equipment</div>
-          <div class="gear-grid">
-            <div class="gear-slot equipped legendary"><div class="gear-icon">⚔️</div><div class="gear-label">Code Edge</div></div>
-            <div class="gear-slot equipped rare"><div class="gear-icon">🛡️</div><div class="gear-label">API Shield</div></div>
+          <div class="gear-grid" id="inspect-gear">
+            <div class="gear-slot"><div class="gear-icon">⚔️</div><div class="gear-label">Weapon</div></div>
+            <div class="gear-slot"><div class="gear-icon">🛡️</div><div class="gear-label">Shield</div></div>
             <div class="gear-slot"><div class="gear-icon">🪖</div><div class="gear-label">Helm</div></div>
-            <div class="gear-slot equipped uncommon"><div class="gear-icon">💍</div><div class="gear-label">Git Ring</div></div>
+            <div class="gear-slot"><div class="gear-icon">💍</div><div class="gear-label">Ring</div></div>
             <div class="gear-slot"><div class="gear-icon">👢</div><div class="gear-label">Boots</div></div>
             <div class="gear-slot"><div class="gear-icon">📿</div><div class="gear-label">Amulet</div></div>
           </div>

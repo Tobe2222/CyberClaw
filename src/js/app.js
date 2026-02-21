@@ -443,11 +443,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAgents();
 
   if (agentOrder.length === 0) {
-    console.warn('No agents found');
+    console.warn('No companions found');
   }
 
   buildCarousel();
   updateSystemInfo();
+
+  // Populate system info
+  try {
+    const sysInfo = await cyberclaw.agents.systemInfo();
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('stat-host', sysInfo.host);
+    setEl('stat-os', sysInfo.os);
+    setEl('stat-node', 'v' + sysInfo.node);
+    setEl('stat-gateway', ':' + sysInfo.gatewayPort);
+  } catch {}
 
   // Right panel always shows the party leader
   const leaderId = agentOrder.find(id => agents[id].isMain) || agentOrder[0];
@@ -460,23 +470,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   const msgs = document.getElementById('chat-messages');
   const bootMsgs = [
     { d: 400,  t: '> CyberClaw v0.1.0 initializing...' },
-    { d: 900,  t: `> Loading ${agentOrder.length} agents from ~/.openclaw...` },
   ];
 
-  // Add each discovered agent
-  agentOrder.forEach((id, i) => {
-    const a = agents[id];
-    const statusIcon = a.status === 'online' ? '⚔️' : '💤';
-    bootMsgs.push({
-      d: 1400 + i * 400,
-      t: `> ${statusIcon} ${a.name} (${a.class}) — ${a.status.toUpperCase()}`
+  if (agentOrder.length > 0) {
+    bootMsgs.push({ d: 900, t: `> Discovered ${agentOrder.length} companion(s)...` });
+    agentOrder.forEach((id, i) => {
+      const a = agents[id];
+      const statusIcon = a.status === 'online' ? '⚔️' : '💤';
+      bootMsgs.push({
+        d: 1400 + i * 300,
+        t: `> ${statusIcon} ${a.name} (${a.class}) — ${a.status.toUpperCase()}`
+      });
     });
-  });
-
-  bootMsgs.push({
-    d: 1400 + agentOrder.length * 400 + 500,
-    t: '> Party assembled. Use ← → to rotate.'
-  });
+    bootMsgs.push({
+      d: 1400 + agentOrder.length * 300 + 400,
+      t: '> Party assembled. Use ← → to rotate.'
+    });
+  } else {
+    bootMsgs.push({ d: 900, t: '> No companions found. Create one to get started!' });
+  }
 
   bootMsgs.forEach(({ d, t }) => {
     setTimeout(() => {
