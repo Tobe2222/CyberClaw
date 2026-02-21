@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberClaw</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="../node_modules/xterm/css/xterm.css">
+</head>
+<body>
+  <!-- Title bar -->
+  <div id="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-icon">⚔️</span>
+      <span class="titlebar-title">CyberClaw</span>
+      <span class="titlebar-version">v0.1.0</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="tb-btn tb-min" onclick="cyberclaw.window.minimize()">─</button>
+      <button class="tb-btn tb-max" onclick="cyberclaw.window.maximize()">☐</button>
+      <button class="tb-btn tb-close" onclick="cyberclaw.window.close()">✕</button>
+    </div>
+  </div>
+
+  <div id="app">
+
+    <!-- ========== LEFT: QUESTS (top) + SYSTEM (bottom) ========== -->
+    <aside id="panel-left" class="panel">
+      <!-- Quests -->
+      <div class="panel-header">
+        <span class="rune-icon">📜</span> QUEST LOG
+      </div>
+      <div class="quest-section">
+        <div class="quest-category">
+          <div class="quest-cat-header active-cat">⚔️ Active Quests</div>
+          <div class="quest-item active-quest" onclick="selectQuest(this)">
+            <div class="quest-name">🔮 Wattoshi Gateway</div>
+            <div class="quest-desc">Deploy relay server to VPS</div>
+            <div class="quest-companions">
+              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
+              <span class="quest-companion-tag"><span class="quest-companion-icon">🔧</span> Repairsuu</span>
+            </div>
+            <div class="quest-progress">
+              <div class="quest-bar"><div class="quest-fill" style="width:60%"></div></div>
+              <span class="quest-pct">60%</span>
+            </div>
+          </div>
+          <div class="quest-item active-quest" onclick="selectQuest(this)">
+            <div class="quest-name">⚡ Hive Control v2.2</div>
+            <div class="quest-desc">Wattoshi mode integration</div>
+            <div class="quest-companions">
+              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
+            </div>
+            <div class="quest-progress">
+              <div class="quest-bar"><div class="quest-fill" style="width:85%"></div></div>
+              <span class="quest-pct">85%</span>
+            </div>
+          </div>
+          <div class="quest-item active-quest" onclick="selectQuest(this)">
+            <div class="quest-name">🗡️ CyberClaw GUI</div>
+            <div class="quest-desc">RPG companion interface</div>
+            <div class="quest-companions">
+              <span class="quest-companion-tag"><span class="quest-companion-icon">💻</span> Codesuu</span>
+              <span class="quest-companion-tag"><span class="quest-companion-icon">🐾</span> Clawsuu</span>
+            </div>
+            <div class="quest-progress">
+              <div class="quest-bar"><div class="quest-fill" style="width:35%"></div></div>
+              <span class="quest-pct">35%</span>
+            </div>
+          </div>
+        </div>
+        <div class="quest-category">
+          <div class="quest-cat-header completed-cat">✅ Completed</div>
+          <div class="quest-item completed-quest" onclick="selectQuest(this)">
+            <div class="quest-name">📱 Android App</div>
+            <div class="quest-desc">Capacitor + Tailscale</div>
+            <div class="quest-progress">
+              <div class="quest-bar"><div class="quest-fill" style="width:100%"></div></div>
+              <span class="quest-pct">100%</span>
+            </div>
+          </div>
+          <div class="quest-item completed-quest" onclick="selectQuest(this)">
+            <div class="quest-name">🌐 CyberHive Website</div>
+            <div class="quest-desc">E-commerce + 6 products</div>
+            <div class="quest-progress">
+              <div class="quest-bar"><div class="quest-fill" style="width:100%"></div></div>
+              <span class="quest-pct">100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System (bottom) -->
+      <div class="panel-header system-hdr">
+        <span class="rune-icon">🖥️</span> SYSTEM
+      </div>
+      <div class="system-section">
+        <div class="stat-row"><span class="stat-key">Host</span><span class="stat-value">cybercomputer</span></div>
+        <div class="stat-row"><span class="stat-key">OS</span><span class="stat-value">Linux x64</span></div>
+        <div class="stat-row"><span class="stat-key">Node</span><span class="stat-value">v22.22.0</span></div>
+        <div class="stat-row"><span class="stat-key">Gateway</span><span class="stat-value cyan-text">:18789</span></div>
+        <div class="stat-row"><span class="stat-key">Runtime</span><span class="stat-value" id="stat-runtime">00:00:00</span></div>
+        <div class="stat-row"><span class="stat-key">Companions</span><span class="stat-value" id="stat-companions">0</span></div>
+        <div class="stat-row"><span class="stat-key">Rate Limit</span><span class="stat-value" id="stat-ratelimit">—</span></div>
+      </div>
+    </aside>
+
+    <!-- ========== CENTER: ARENA CAROUSEL + TERMINAL ========== -->
+    <main id="panel-center">
+      <!-- Arena with rotating carousel -->
+      <div id="party-arena">
+        <div id="arena-bg">
+          <div class="arena-grid"></div>
+          <div class="arena-glow"></div>
+        </div>
+
+        <!-- Carousel platform -->
+        <div id="carousel">
+          <div id="carousel-ring">
+            <!-- Agents rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Navigation arrows -->
+        <button class="carousel-arrow carousel-left" onclick="carouselPrev()">‹</button>
+        <button class="carousel-arrow carousel-right" onclick="carouselNext()">›</button>
+
+        <!-- Center agent name plate (the one in focus) -->
+        <div id="carousel-nameplate">
+          <span id="carousel-name" class="legendary-text">Codesuu</span>
+          <span id="carousel-class">Code Architect</span>
+          <div id="carousel-channel"></div>
+        </div>
+      </div>
+
+      <!-- Focused companion info strip (below carousel) -->
+      <div id="focused-agent-strip">
+        <div id="focused-portrait">
+          <div class="focused-avatar-border legendary" id="focused-border">
+            <img src="assets/avatars/codesuu.png" alt="Companion" id="focused-avatar-img">
+            <div class="focused-emoji" id="focused-emoji" style="display:none">🤖</div>
+          </div>
+        </div>
+        <div id="focused-info">
+          <div id="focused-name" class="legendary-text">Codesuu</div>
+          <div id="focused-class">Code Architect</div>
+          <div id="focused-id">anthropic-hiveclaw</div>
+          <div id="focused-status"><span class="status-dot online"></span> Online</div>
+          <div id="focused-channel-badge"></div>
+        </div>
+        <div id="focused-center-col">
+          <div class="focused-section-label">Skills</div>
+          <div id="focused-skills"></div>
+        </div>
+        <div id="focused-right-col">
+          <div id="focused-stats">
+            <div class="stat-bar-sm"><span class="stat-label-sm">HP</span><div class="bar-track-sm"><div class="bar-fill hp" id="focused-hp" style="width:100%"></div></div><span class="stat-val-sm" id="focused-hp-val">100/100</span></div>
+            <div class="stat-bar-sm"><span class="stat-label-sm">MP</span><div class="bar-track-sm"><div class="bar-fill mp" id="focused-mp" style="width:85%"></div></div><span class="stat-val-sm" id="focused-mp-val">85/100</span></div>
+            <div class="stat-bar-sm"><span class="stat-label-sm">XP</span><div class="bar-track-sm"><div class="bar-fill xp" id="focused-xp" style="width:30%"></div></div><span class="stat-val-sm" id="focused-xp-val">1,250/4,000</span></div>
+          </div>
+          <div id="focused-model-info">
+            <div class="model-indicator pulse-green"></div>
+            <span id="focused-model">Claude Opus 4</span>
+            <span id="focused-provider">Anthropic</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal strip -->
+      <div id="terminal-strip">
+        <div class="terminal-tabs">
+          <button class="term-tab active" data-tab="terminal" onclick="switchTermTab('terminal')">
+            <span class="tab-icon">⚔️</span> OpenClaw
+          </button>
+          <button class="term-tab" data-tab="chat" onclick="switchTermTab('chat')">
+            <span class="tab-icon">💬</span> Chat
+          </button>
+          <button class="term-tab-toggle" onclick="toggleTerminal()" title="Expand/Collapse">▼</button>
+        </div>
+        <div id="view-terminal" class="term-view active">
+          <div id="terminal-container"></div>
+        </div>
+        <div id="view-chat" class="term-view">
+          <div id="chat-messages">
+            <div class="chat-msg system">
+              <span class="msg-prefix">[SYS]</span>
+              <span class="msg-text">CyberClaw initialized. Your agents await.</span>
+            </div>
+          </div>
+          <div id="chat-input-area">
+            <div id="chat-terminal-container"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ========== RIGHT: PARTY LEADER / INSPECT ========== -->
+    <aside id="panel-right" class="panel">
+      <div class="panel-header">
+        <span class="rune-icon">👑</span> <span id="right-header-text">PARTY LEADER</span>
+      </div>
+
+      <div id="inspect-panel">
+        <!-- Big portrait -->
+        <div id="inspect-portrait">
+          <div class="inspect-avatar-border legendary" id="inspect-border">
+            <img src="assets/avatars/codesuu.png" alt="Agent" id="inspect-avatar-img">
+            <div class="inspect-emoji" id="inspect-emoji" style="display:none">🤖</div>
+          </div>
+          <div class="inspect-status" id="inspect-status">
+            <span class="status-dot online"></span> Online
+          </div>
+          <div id="inspect-name" class="legendary-text">Codesuu</div>
+          <div id="inspect-class">Code Architect</div>
+          <div id="inspect-id">anthropic-hiveclaw</div>
+          <div id="inspect-channel-badge"></div>
+        </div>
+
+        <!-- Bars -->
+        <div id="inspect-bars">
+          <div class="stat-bar-lg">
+            <span class="stat-label-lg">HP</span>
+            <div class="bar-track-lg"><div class="bar-fill hp" id="inspect-hp" style="width:100%"></div></div>
+            <span class="stat-val-lg" id="inspect-hp-val">100/100</span>
+          </div>
+          <div class="stat-bar-lg">
+            <span class="stat-label-lg">MP</span>
+            <div class="bar-track-lg"><div class="bar-fill mp" id="inspect-mp" style="width:85%"></div></div>
+            <span class="stat-val-lg" id="inspect-mp-val">85/100</span>
+          </div>
+          <div class="stat-bar-lg">
+            <span class="stat-label-lg">XP</span>
+            <div class="bar-track-lg"><div class="bar-fill xp" id="inspect-xp" style="width:30%"></div></div>
+            <span class="stat-val-lg" id="inspect-xp-val">1,250/4,000</span>
+          </div>
+        </div>
+
+        <!-- Model -->
+        <div class="inspect-section">
+          <div class="section-title">Model</div>
+          <div class="model-card active-model">
+            <div class="model-indicator pulse-green"></div>
+            <div class="model-info">
+              <div class="model-name" id="inspect-model">Claude Opus 4</div>
+              <div class="model-provider" id="inspect-provider">Anthropic</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session -->
+        <div class="inspect-section">
+          <div class="section-title">Session</div>
+          <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
+          <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
+          <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
+          <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
+        </div>
+
+        <!-- Skills -->
+        <div class="inspect-section">
+          <div class="section-title">Skills</div>
+          <div id="inspect-skills"></div>
+        </div>
+
+        <!-- Equipment -->
+        <div class="inspect-section">
+          <div class="section-title">Equipment</div>
+          <div class="gear-grid">
+            <div class="gear-slot equipped legendary"><div class="gear-icon">⚔️</div><div class="gear-label">Code Edge</div></div>
+            <div class="gear-slot equipped rare"><div class="gear-icon">🛡️</div><div class="gear-label">API Shield</div></div>
+            <div class="gear-slot"><div class="gear-icon">🪖</div><div class="gear-label">Helm</div></div>
+            <div class="gear-slot equipped uncommon"><div class="gear-icon">💍</div><div class="gear-label">Git Ring</div></div>
+            <div class="gear-slot"><div class="gear-icon">👢</div><div class="gear-label">Boots</div></div>
+            <div class="gear-slot"><div class="gear-icon">📿</div><div class="gear-label">Amulet</div></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

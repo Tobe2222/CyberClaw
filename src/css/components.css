@@ -1,0 +1,500 @@
+/* ============================================================
+   Components — Agent cards, stats, gear, skills
+   ============================================================ */
+
+/* ----- Agent Cards ----- */
+.agent-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-card:hover {
+  background: var(--bg-hover);
+}
+
+.agent-active, .agent-main {
+  background: linear-gradient(135deg, rgba(0,255,204,0.05), rgba(168,85,247,0.05));
+  border-left: 3px solid var(--cyan);
+}
+
+.agent-selected {
+  background: linear-gradient(135deg, rgba(0,255,204,0.1), rgba(168,85,247,0.1)) !important;
+  border-color: var(--cyan) !important;
+  box-shadow: inset 0 0 12px rgba(0,255,204,0.05);
+}
+
+.agent-badge {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.main-badge {
+  background: rgba(251,191,36,0.15);
+  color: var(--legendary);
+  border: 1px solid rgba(251,191,36,0.3);
+}
+
+.agent-model {
+  font-size: 9px;
+  color: var(--cyan-dim);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+.agent-sub {
+  border-left: 2px solid transparent;
+  padding: 8px 10px;
+}
+
+.quest-selected {
+  border-color: var(--cyan) !important;
+  background: rgba(0,255,204,0.05);
+}
+
+/* Arena selected highlight */
+.arena-selected .arena-avatar,
+.arena-selected .arena-sub-avatar {
+  filter: brightness(1.2);
+}
+.arena-selected .arena-nameplate,
+.arena-selected .arena-sub-name {
+  color: var(--cyan);
+}
+
+.agent-idle {
+  opacity: 0.7;
+}
+
+/* Avatar frames (RPG borders) */
+.agent-avatar-frame {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.avatar-border {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.avatar-border.common    { border: 2px solid var(--common); }
+.avatar-border.uncommon  { border: 2px solid var(--uncommon); box-shadow: 0 0 8px rgba(74,222,128,0.2); }
+.avatar-border.rare      { border: 2px solid var(--rare); box-shadow: 0 0 8px rgba(59,130,246,0.3); }
+.avatar-border.epic      { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(168,85,247,0.3); }
+.avatar-border.legendary {
+  border: 2px solid var(--legendary);
+  box-shadow: 0 0 12px rgba(251,191,36,0.3), inset 0 0 8px rgba(251,191,36,0.1);
+  animation: legendary-pulse 3s ease-in-out infinite;
+}
+.avatar-border.mythic {
+  border: 2px solid var(--mythic);
+  box-shadow: 0 0 15px rgba(244,114,182,0.4);
+  animation: mythic-shimmer 2s ease-in-out infinite;
+}
+
+.agent-avatar {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-card);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.agent-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  font-size: 28px;
+  filter: grayscale(0.3);
+}
+
+.agent-level {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: var(--bg-darkest);
+  border: 1px solid var(--border-mid);
+  border-radius: 4px;
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--gold);
+  padding: 1px 4px;
+}
+
+/* Agent info */
+.agent-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-name {
+  font-family: var(--font-cyber);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.agent-class {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+
+.agent-status {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.agent-status.online { color: var(--green); }
+.agent-status.idle   { color: var(--gold); }
+.agent-status.busy   { color: var(--red); }
+
+/* Stat bars (HP/MP/XP) */
+.stat-bars {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-label {
+  font-family: var(--font-pixel);
+  font-size: 6px;
+  color: var(--text-muted);
+  width: 16px;
+}
+
+.bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-darkest);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border-dark);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.bar-fill.hp { background: linear-gradient(90deg, #dc2626, #ef4444); }
+.bar-fill.mp { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+.bar-fill.xp { background: linear-gradient(90deg, #7c3aed, #a855f7); }
+
+/* Small agent cards (sub-agents) */
+.agent-avatar-small {
+  flex-shrink: 0;
+}
+
+.agent-avatar-small .avatar-border {
+  width: 38px;
+  height: 38px;
+}
+
+.avatar-placeholder-sm {
+  font-size: 16px;
+}
+
+.agent-info-sm {
+  flex: 1;
+}
+
+.agent-info-sm .agent-name {
+  font-size: 11px;
+}
+
+.agent-class-sm {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* ----- Skills ----- */
+.skill-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.skill-slot:hover {
+  background: var(--bg-hover);
+}
+
+.skill-icon {
+  width: 30px;
+  height: 30px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.skill-name {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.skill-desc {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ----- Right Panel Stats ----- */
+.stats-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.section-title {
+  font-family: var(--font-cyber);
+  font-size: 9px;
+  color: var(--purple);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+/* Model cards */
+.model-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dark);
+}
+
+.active-model {
+  border-color: var(--cyan-dim);
+  background: linear-gradient(135deg, rgba(0,255,204,0.05), transparent);
+}
+
+.model-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pulse-green {
+  background: var(--green);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.model-name {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.model-provider {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.model-badge {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.legendary-badge { background: rgba(251,191,36,0.15); color: var(--legendary); border: 1px solid rgba(251,191,36,0.3); }
+.rare-badge      { background: rgba(59,130,246,0.15); color: var(--rare); border: 1px solid rgba(59,130,246,0.3); }
+.uncommon-badge  { background: rgba(74,222,128,0.15); color: var(--uncommon); border: 1px solid rgba(74,222,128,0.3); }
+
+/* Stat rows */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.stat-key { color: var(--text-secondary); }
+.stat-value { color: var(--text-primary); font-weight: 700; font-family: var(--font-mono); }
+
+/* ----- Gear Grid ----- */
+.gear-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.gear-slot {
+  aspect-ratio: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dark);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.gear-slot:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-mid);
+}
+
+.gear-slot.equipped {
+  background: linear-gradient(135deg, rgba(0,0,0,0.3), var(--bg-card));
+}
+
+.gear-slot.legendary { border-color: var(--legendary); box-shadow: inset 0 0 8px rgba(251,191,36,0.1); }
+.gear-slot.rare      { border-color: var(--rare); box-shadow: inset 0 0 8px rgba(59,130,246,0.1); }
+.gear-slot.uncommon  { border-color: var(--uncommon); box-shadow: inset 0 0 8px rgba(74,222,128,0.1); }
+
+.gear-icon { font-size: 20px; }
+.gear-label {
+  font-size: 7px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-family: var(--font-pixel);
+}
+
+/* ----- Chat Messages ----- */
+.chat-msg {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.chat-msg.system {
+  background: rgba(168,85,247,0.1);
+  border-left: 2px solid var(--purple);
+}
+
+.msg-prefix {
+  color: var(--purple);
+  font-weight: 700;
+  margin-right: 6px;
+  font-size: 10px;
+}
+
+.msg-text { color: var(--text-primary); }
+
+/* ----- Quest Log ----- */
+.quest-log-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.quest-title {
+  font-family: var(--font-cyber);
+  font-size: 16px;
+  color: var(--gold);
+  margin-bottom: 16px;
+  letter-spacing: 2px;
+}
+
+.quest-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+}
+
+.active-quest { border-left: 3px solid var(--cyan); }
+.completed-quest { border-left: 3px solid var(--green); opacity: 0.7; }
+
+.quest-name {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.quest-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.quest-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quest-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-darkest);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quest-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+  border-radius: 4px;
+  transition: width 0.5s;
+}
+
+.completed-quest .quest-fill {
+  background: linear-gradient(90deg, #059669, var(--green));
+}
+
+.quest-pct {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  width: 32px;
+  text-align: right;
+}
+
+.quest-companions {
+  display: flex; flex-wrap: wrap; gap: 3px;
+  margin-bottom: 6px;
+}
+.quest-companion-tag {
+  font-size: 8px; padding: 1px 6px; border-radius: 3px;
+  background: rgba(0,255,204,0.08); border: 1px solid rgba(0,255,204,0.15);
+  color: var(--cyan-dim); display: inline-flex; align-items: center; gap: 3px;
+}
+.quest-companion-icon { font-size: 9px; }
