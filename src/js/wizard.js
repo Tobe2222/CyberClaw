@@ -94,8 +94,8 @@ async function installOpenClaw() {
   term.innerHTML = '';
 
   try {
-    // Step 1: Install Node.js if needed
-    if (!systemState.node) {
+    // Step 1: Install Node.js if needed (also if npm is missing — they come together)
+    if (!systemState.node || !systemState.npm) {
       addTermLine(term, '📦 Installing Node.js...', 'info');
       addTermLine(term, 'This may take a minute — downloading from nodejs.org', 'wt-line');
 

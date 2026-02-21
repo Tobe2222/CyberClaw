@@ -466,8 +466,14 @@ ipcMain.handle('wizard:check', async (event, what) => {
         const v = execSync('node --version', { encoding: 'utf8', timeout: 5000 }).trim();
         return { ok: true, version: v };
       } catch {
-        // Electron bundles Node — we can use process.execPath
-        return { ok: true, version: 'v' + process.versions.node + ' (bundled)', bundled: true };
+        // Also check common Windows install path
+        if (os.platform() === 'win32') {
+          try {
+            const v = execSync('"C:\\Program Files\\nodejs\\node.exe" --version', { encoding: 'utf8', timeout: 5000 }).trim();
+            return { ok: true, version: v };
+          } catch {}
+        }
+        return { ok: false, message: 'not installed' };
       }
 
     case 'check-npm':
@@ -475,7 +481,14 @@ ipcMain.handle('wizard:check', async (event, what) => {
         const v = execSync('npm --version', { encoding: 'utf8', timeout: 5000 }).trim();
         return { ok: true, version: 'v' + v };
       } catch {
-        // Try to find npm relative to bundled node
+        // Check common paths
+        const npmPath = findNpm();
+        if (npmPath) {
+          try {
+            const v = execSync(`"${npmPath}" --version`, { encoding: 'utf8', timeout: 5000 }).trim();
+            return { ok: true, version: 'v' + v };
+          } catch {}
+        }
         return { ok: false, message: 'not installed' };
       }
 
