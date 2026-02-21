@@ -1,6 +1,6 @@
 {
   "name": "cyberclaw",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "CyberClaw — RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
   "main": "src/main.js",
   "scripts": {
