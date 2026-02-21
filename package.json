@@ -37,7 +37,7 @@
         "deb"
       ],
       "category": "Utility",
-      "icon": "src/assets/icons"
+      "icon": "src/assets/icons/cyberclaw.png"
     },
     "mac": {
       "target": [
