@@ -8,13 +8,12 @@
     "dev": "electron . --dev",
     "build": "electron-builder",
     "build:linux": "electron-builder --linux",
-    "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "dist": "electron-builder --linux --mac --win"
+    "dist": "electron-builder --linux --win"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/CyberHive-Digital/cyberclaw.git"
+    "url": "https://github.com/Tobe2222/CyberClaw.git"
   },
   "author": "CyberHive Digital",
   "license": "MIT",
@@ -63,8 +62,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "CyberHive-Digital",
-      "repo": "cyberclaw"
+      "owner": "Tobe2222",
+      "repo": "CyberClaw"
     }
   },
   "devDependencies": {
