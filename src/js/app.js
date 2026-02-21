@@ -281,7 +281,7 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  document.getElementById('right-header-text').textContent = agent.name?.toUpperCase() || 'COMPANION';
+  document.getElementById('right-header-text').textContent = agent.isMain ? 'PARTY LEADER' : agent.name?.toUpperCase() || 'COMPANION';
 
   // Portrait
   const img = document.getElementById('inspect-avatar-img');
