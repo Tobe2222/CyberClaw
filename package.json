@@ -53,10 +53,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToDesktop": true,
-      "installerIcon": "src/assets/icons/cyberclaw.ico",
-      "uninstallerIcon": "src/assets/icons/cyberclaw.ico",
-      "installerHeaderIcon": "src/assets/icons/cyberclaw.ico",
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
