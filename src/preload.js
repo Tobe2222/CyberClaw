@@ -26,6 +26,12 @@ window.cyberclaw = {
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),
   },
+  quests: {
+    list: () => ipcRenderer.invoke('quests:list'),
+    create: (quest) => ipcRenderer.invoke('quests:create', quest),
+    update: (id, updates) => ipcRenderer.invoke('quests:update', id, updates),
+    delete: (id) => ipcRenderer.invoke('quests:delete', id),
+  },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),
     install: (pkg) => ipcRenderer.invoke('wizard:install', pkg),

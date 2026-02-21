@@ -331,10 +331,94 @@ window.openDoctor = function() {
   cyberclaw.agents.openDoctor();
 };
 
+// ---------------------------------------------------------------------------
+// Quest Management
+// ---------------------------------------------------------------------------
+window.showQuestForm = function() {
+  document.getElementById('quest-form').classList.remove('hidden');
+  document.getElementById('quest-name-input').focus();
+};
+
+window.hideQuestForm = function() {
+  document.getElementById('quest-form').classList.add('hidden');
+  document.getElementById('quest-name-input').value = '';
+  document.getElementById('quest-desc-input').value = '';
+};
+
+window.createQuest = async function() {
+  const name = document.getElementById('quest-name-input').value.trim();
+  if (!name) return;
+  const desc = document.getElementById('quest-desc-input').value.trim();
+  await cyberclaw.quests.create({ name, description: desc });
+  hideQuestForm();
+  renderQuests();
+};
+
+window.toggleQuestStatus = async function(e, id) {
+  e.stopPropagation();
+  const quests = await cyberclaw.quests.list();
+  const q = quests.find(q => q.id === id);
+  if (!q) return;
+  const newStatus = q.status === 'active' ? 'completed' : 'active';
+  await cyberclaw.quests.update(id, { status: newStatus });
+  renderQuests();
+};
+
+window.deleteQuest = async function(e, id) {
+  e.stopPropagation();
+  await cyberclaw.quests.delete(id);
+  renderQuests();
+};
+
 window.selectQuest = function(el) {
   document.querySelectorAll('.quest-item').forEach(q => q.classList.remove('quest-selected'));
   el.classList.add('quest-selected');
 };
+
+async function renderQuests() {
+  const quests = await cyberclaw.quests.list();
+  const list = document.getElementById('quest-list');
+  const empty = document.getElementById('quest-empty');
+
+  // Clear existing items (keep the empty div)
+  list.querySelectorAll('.quest-item').forEach(el => el.remove());
+
+  if (!quests.length) {
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Active first, then completed
+  const sorted = [...quests].sort((a, b) => {
+    if (a.status === 'active' && b.status !== 'active') return -1;
+    if (a.status !== 'active' && b.status === 'active') return 1;
+    return 0;
+  });
+
+  for (const q of sorted) {
+    const isComplete = q.status === 'completed';
+    const div = document.createElement('div');
+    div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'}`;
+    div.onclick = () => selectQuest(div);
+    div.innerHTML = `
+      <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
+      <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
+      ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
+      <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
+        ${isComplete ? '↩ Reopen' : '✓ Complete'}
+      </button>
+    `;
+    list.appendChild(div);
+  }
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Load quests on startup
+renderQuests();
 
 // ---------------------------------------------------------------------------
 // Terminal

@@ -32,13 +32,22 @@
       <!-- Quests -->
       <div class="panel-header">
         <span class="rune-icon">📜</span> QUEST LOG
+        <button class="quest-add-btn" onclick="showQuestForm()" title="New Quest">+</button>
+      </div>
+      <div class="quest-form hidden" id="quest-form">
+        <input type="text" id="quest-name-input" placeholder="Quest name..." maxlength="60" />
+        <textarea id="quest-desc-input" placeholder="Description (optional)..." rows="2" maxlength="200"></textarea>
+        <div class="quest-form-actions">
+          <button class="quest-form-btn save" onclick="createQuest()">Create</button>
+          <button class="quest-form-btn cancel" onclick="hideQuestForm()">Cancel</button>
+        </div>
       </div>
       <div class="quest-section" id="quest-list">
         <!-- Quests populated dynamically -->
         <div class="quest-empty" id="quest-empty">
           <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px">
             <div style="font-size:24px;margin-bottom:8px">📜</div>
-            No quests yet.<br>Create your first quest!
+            No quests yet.<br>Click + to create your first quest!
           </div>
         </div>
       </div>

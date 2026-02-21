@@ -10,6 +10,19 @@ let chatPty = null;
 let isQuitting = false;
 
 const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
+const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
+const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
+
+// Quest persistence
+function loadQuests() {
+  try {
+    return JSON.parse(fs.readFileSync(QUESTS_FILE, 'utf8'));
+  } catch { return []; }
+}
+function saveQuests(quests) {
+  fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
+  fs.writeFileSync(QUESTS_FILE, JSON.stringify(quests, null, 2));
+}
 
 const { execSync, exec: execCb } = require('child_process');
 
@@ -447,6 +460,30 @@ ipcMain.on('window:maximize', () => {
   mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize();
 });
 ipcMain.on('window:close', () => mainWindow?.close());
+
+// Quest CRUD
+ipcMain.handle('quests:list', () => loadQuests());
+ipcMain.handle('quests:create', (event, quest) => {
+  const quests = loadQuests();
+  quest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  quest.created = new Date().toISOString();
+  quest.status = 'active';
+  quests.unshift(quest);
+  saveQuests(quests);
+  return quest;
+});
+ipcMain.handle('quests:update', (event, id, updates) => {
+  const quests = loadQuests();
+  const idx = quests.findIndex(q => q.id === id);
+  if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
+  return quests[idx] || null;
+});
+ipcMain.handle('quests:delete', (event, id) => {
+  let quests = loadQuests();
+  quests = quests.filter(q => q.id !== id);
+  saveQuests(quests);
+  return true;
+});
 ipcMain.on('window:open-external', (event, url) => {
   const { shell } = require('electron');
   if (url && (url.startsWith('https://') || url.startsWith('http://'))) {

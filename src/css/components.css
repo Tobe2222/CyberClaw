@@ -434,6 +434,75 @@
 .msg-text { color: var(--text-primary); }
 
 /* ----- Quest Log ----- */
+/* Quest add button & form */
+.quest-add-btn {
+  float: right;
+  background: none;
+  border: 1px solid var(--cyan-dim);
+  color: var(--cyan);
+  width: 20px; height: 20px;
+  border-radius: 4px;
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+.quest-add-btn:hover { background: rgba(0,255,204,0.1); }
+
+.quest-form {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-dark);
+  background: var(--bg-card);
+}
+.quest-form.hidden { display: none; }
+.quest-form input, .quest-form textarea {
+  width: 100%;
+  background: var(--bg-darkest);
+  border: 1px solid var(--border-mid);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: var(--font-main);
+  margin-bottom: 6px;
+  box-sizing: border-box;
+  resize: none;
+}
+.quest-form input:focus, .quest-form textarea:focus {
+  outline: none; border-color: var(--cyan-dim);
+}
+.quest-form-actions {
+  display: flex; gap: 6px;
+}
+.quest-form-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.quest-form-btn.save { background: var(--cyan-dim); color: var(--bg-darkest); }
+.quest-form-btn.save:hover { background: var(--cyan); }
+.quest-form-btn.cancel { background: var(--bg-hover); color: var(--text-muted); }
+
+.quest-item { cursor: pointer; position: relative; }
+.quest-item:hover .quest-delete { opacity: 1; }
+.quest-delete {
+  position: absolute; top: 6px; right: 6px;
+  background: none; border: none; color: var(--text-muted);
+  font-size: 10px; cursor: pointer; opacity: 0; transition: opacity 0.2s;
+}
+.quest-delete:hover { color: #f44; }
+
+.quest-status-toggle {
+  font-size: 9px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(0,255,204,0.08); border: 1px solid rgba(0,255,204,0.15);
+  color: var(--cyan-dim); cursor: pointer; margin-top: 4px; display: inline-block;
+}
+.quest-status-toggle:hover { background: rgba(0,255,204,0.15); }
+
 .quest-log-content {
   padding: 20px;
   overflow-y: auto;
