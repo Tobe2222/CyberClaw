@@ -739,23 +739,27 @@ ipcMain.handle('wizard:run', async (event, cmd) => {
 });
 
 ipcMain.handle('wizard:save-apikey', async (event, key) => {
+  // Try CLI first, fall back to direct file write
   const bin = findOpenClaw();
-  if (!bin) throw new Error('OpenClaw not installed');
-  // Use openclaw configure to set the key
-  try {
-    execSync(`"${bin}" config set anthropic.apiKey "${key}"`, { encoding: 'utf8' });
-    return { ok: true };
-  } catch (err) {
-    // Fallback: write directly to auth profiles
+  if (bin) {
     try {
-      const authDir = path.join(OPENCLAW_DIR, 'credentials');
-      fs.mkdirSync(authDir, { recursive: true });
-      const authFile = path.join(authDir, 'anthropic.json');
-      fs.writeFileSync(authFile, JSON.stringify({ apiKey: key }, null, 2));
+      execSync(`"${bin}" config set anthropic.apiKey "${key}"`, { encoding: 'utf8' });
       return { ok: true };
-    } catch (e) {
-      throw new Error(e.message);
-    }
+    } catch {}
+  }
+
+  // Direct write — works even if openclaw binary isn't installed yet
+  try {
+    fs.mkdirSync(OPENCLAW_DIR, { recursive: true });
+    const configFile = path.join(OPENCLAW_DIR, 'openclaw.json');
+    let config = {};
+    try { config = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch {}
+    if (!config.anthropic) config.anthropic = {};
+    config.anthropic.apiKey = key;
+    fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
+    return { ok: true };
+  } catch (e) {
+    throw new Error(e.message);
   }
 });
 
