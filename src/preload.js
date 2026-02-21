@@ -31,6 +31,7 @@ window.cyberclaw = {
     create: (quest) => ipcRenderer.invoke('quests:create', quest),
     update: (id, updates) => ipcRenderer.invoke('quests:update', id, updates),
     delete: (id) => ipcRenderer.invoke('quests:delete', id),
+    pickDirectory: () => ipcRenderer.invoke('quests:pick-directory'),
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),

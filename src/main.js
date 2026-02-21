@@ -483,6 +483,15 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
   return quests[idx] || null;
 });
+ipcMain.handle('quests:pick-directory', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select project directory',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
 ipcMain.handle('quests:delete', (event, id) => {
   let quests = loadQuests();
   quests = quests.filter(q => q.id !== id);

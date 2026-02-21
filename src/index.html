@@ -37,6 +37,10 @@
       <div class="quest-form hidden" id="quest-form">
         <input type="text" id="quest-name-input" placeholder="Quest name..." maxlength="60" />
         <textarea id="quest-desc-input" placeholder="Description (optional)..." rows="2" maxlength="200"></textarea>
+        <div class="quest-dir-row">
+          <input type="text" id="quest-dir-input" placeholder="Project directory (optional)..." readonly />
+          <button class="quest-dir-btn" onclick="pickQuestDir()">📁</button>
+        </div>
         <div class="quest-form-actions">
           <button class="quest-form-btn save" onclick="createQuest()">Create</button>
           <button class="quest-form-btn cancel" onclick="hideQuestForm()">Cancel</button>
@@ -157,6 +161,7 @@
             </div>
           </div>
           <div id="chat-input-area">
+            <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
             <div id="chat-input-row">
               <span id="chat-target" class="chat-target">🤖 —</span>
               <input type="text" id="chat-input" placeholder="Type a message..." />

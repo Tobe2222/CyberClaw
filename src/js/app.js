@@ -334,6 +334,13 @@ window.openDoctor = function() {
 // ---------------------------------------------------------------------------
 // Quest Management
 // ---------------------------------------------------------------------------
+let activeQuestId = null;
+
+window.pickQuestDir = async function() {
+  const dir = await cyberclaw.quests.pickDirectory();
+  if (dir) document.getElementById('quest-dir-input').value = dir;
+};
+
 window.showQuestForm = function() {
   document.getElementById('quest-form').classList.remove('hidden');
   document.getElementById('quest-name-input').focus();
@@ -343,13 +350,15 @@ window.hideQuestForm = function() {
   document.getElementById('quest-form').classList.add('hidden');
   document.getElementById('quest-name-input').value = '';
   document.getElementById('quest-desc-input').value = '';
+  document.getElementById('quest-dir-input').value = '';
 };
 
 window.createQuest = async function() {
   const name = document.getElementById('quest-name-input').value.trim();
   if (!name) return;
   const desc = document.getElementById('quest-desc-input').value.trim();
-  await cyberclaw.quests.create({ name, description: desc });
+  const dir = document.getElementById('quest-dir-input').value.trim();
+  await cyberclaw.quests.create({ name, description: desc, directory: dir || undefined });
   hideQuestForm();
   renderQuests();
 };
@@ -370,10 +379,45 @@ window.deleteQuest = async function(e, id) {
   renderQuests();
 };
 
-window.selectQuest = function(el) {
+window.selectQuest = function(el, questId) {
+  const wasSelected = el.classList.contains('quest-selected');
   document.querySelectorAll('.quest-item').forEach(q => q.classList.remove('quest-selected'));
-  el.classList.add('quest-selected');
+  if (wasSelected) {
+    // Deselect
+    activeQuestId = null;
+    updateQuestIndicator();
+  } else {
+    el.classList.add('quest-selected');
+    activeQuestId = questId;
+    updateQuestIndicator();
+  }
 };
+
+window.setQuestDir = async function(e, id) {
+  e.stopPropagation();
+  const dir = await cyberclaw.quests.pickDirectory();
+  if (dir) {
+    await cyberclaw.quests.update(id, { directory: dir });
+    renderQuests();
+  }
+};
+
+function updateQuestIndicator() {
+  const indicator = document.getElementById('chat-quest-indicator');
+  if (!indicator) return;
+  if (activeQuestId) {
+    cyberclaw.quests.list().then(quests => {
+      const q = quests.find(q => q.id === activeQuestId);
+      if (q) {
+        indicator.textContent = `📜 ${q.name}`;
+        indicator.title = q.directory || '';
+        indicator.style.display = '';
+      }
+    });
+  } else {
+    indicator.style.display = 'none';
+  }
+}
 
 async function renderQuests() {
   const quests = await cyberclaw.quests.list();
@@ -399,12 +443,13 @@ async function renderQuests() {
   for (const q of sorted) {
     const isComplete = q.status === 'completed';
     const div = document.createElement('div');
-    div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'}`;
-    div.onclick = () => selectQuest(div);
+    div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${q.id === activeQuestId ? 'quest-selected' : ''}`;
+    div.onclick = () => selectQuest(div, q.id);
     div.innerHTML = `
       <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
       <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
       ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
+      ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : `<button class="quest-dir-add" onclick="setQuestDir(event,'${q.id}')">📁 Set directory</button>`}
       <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
         ${isComplete ? '↩ Reopen' : '✓ Complete'}
       </button>
@@ -511,13 +556,27 @@ window.sendChat = async function() {
   addChatMsg('user', message, agent.name);
   input.value = '';
 
+  // Build message with quest context if active
+  let fullMessage = message;
+  if (activeQuestId) {
+    const quests = await cyberclaw.quests.list();
+    const q = quests.find(q => q.id === activeQuestId);
+    if (q) {
+      let ctx = `[Active Quest: "${q.name}"`;
+      if (q.description) ctx += ` — ${q.description}`;
+      if (q.directory) ctx += ` | Project dir: ${q.directory}`;
+      ctx += `] `;
+      fullMessage = ctx + message;
+    }
+  }
+
   // Show typing indicator
   chatBusy = true;
   document.getElementById('chat-send').disabled = true;
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
   try {
-    const result = await cyberclaw.chat.sendMessage(agent.id, message);
+    const result = await cyberclaw.chat.sendMessage(agent.id, fullMessage);
     removeChatMsg(typingId);
 
     if (result.ok) {

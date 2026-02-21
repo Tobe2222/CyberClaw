@@ -496,6 +496,31 @@
 }
 .quest-delete:hover { color: #f44; }
 
+.quest-dir {
+  font-size: 9px; color: var(--text-muted); margin-top: 3px;
+  font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.quest-dir-add {
+  font-size: 9px; color: var(--text-muted); background: none; border: 1px dashed var(--border-mid);
+  border-radius: 3px; padding: 1px 6px; cursor: pointer; margin-top: 3px;
+}
+.quest-dir-add:hover { border-color: var(--cyan-dim); color: var(--cyan-dim); }
+
+.quest-dir-row { display: flex; gap: 4px; }
+.quest-dir-row input { flex: 1; }
+.quest-dir-btn {
+  background: var(--bg-hover); border: 1px solid var(--border-mid); color: var(--text-secondary);
+  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;
+}
+.quest-dir-btn:hover { border-color: var(--cyan-dim); }
+
+.chat-quest-badge {
+  display: inline-block; font-size: 9px; padding: 2px 8px;
+  background: rgba(255,107,53,0.1); border: 1px solid rgba(255,107,53,0.25);
+  color: var(--gold); border-radius: 4px; margin-bottom: 4px;
+  font-family: var(--font-mono);
+}
+
 .quest-status-toggle {
   font-size: 9px; padding: 2px 6px; border-radius: 3px;
   background: rgba(255,107,53,0.08); border: 1px solid rgba(255,107,53,0.15);
