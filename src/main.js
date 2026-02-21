@@ -394,15 +394,21 @@ ipcMain.handle('wizard:check', async (event, what) => {
   switch (what) {
     case 'check-node':
       try {
-        const v = execSync('node --version', { encoding: 'utf8' }).trim();
+        const v = execSync('node --version', { encoding: 'utf8', timeout: 5000 }).trim();
         return { ok: true, version: v };
-      } catch { return { ok: false, message: 'not installed' }; }
+      } catch {
+        // Electron bundles Node — we can use process.execPath
+        return { ok: true, version: 'v' + process.versions.node + ' (bundled)', bundled: true };
+      }
 
     case 'check-npm':
       try {
-        const v = execSync('npm --version', { encoding: 'utf8' }).trim();
+        const v = execSync('npm --version', { encoding: 'utf8', timeout: 5000 }).trim();
         return { ok: true, version: 'v' + v };
-      } catch { return { ok: false, message: 'not installed' }; }
+      } catch {
+        // Try to find npm relative to bundled node
+        return { ok: false, message: 'not installed' };
+      }
 
     case 'check-openclaw': {
       const bin = findOpenClaw();
@@ -440,11 +446,111 @@ ipcMain.handle('wizard:check', async (event, what) => {
 });
 
 ipcMain.handle('wizard:install', async (event, pkg) => {
+  if (pkg === 'node') {
+    return await installNode();
+  }
   if (pkg === 'openclaw') {
-    return await execPromise('npm install -g openclaw 2>&1');
+    // Try system npm first, then fall back to npx
+    try {
+      execSync('npm --version', { timeout: 5000 });
+      return await execPromise('npm install -g openclaw 2>&1');
+    } catch {
+      // No system npm — try using bundled node's npm
+      const npmPath = findNpm();
+      if (npmPath) {
+        return await execPromise(`"${npmPath}" install -g openclaw 2>&1`);
+      }
+      return { ok: false, error: 'npm not found. Please install Node.js first.' };
+    }
   }
   return { ok: false, error: 'unknown package' };
 });
+
+function findNpm() {
+  const platform = os.platform();
+  const candidates = platform === 'win32'
+    ? [
+        'C:\\Program Files\\nodejs\\npm.cmd',
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npm.cmd'),
+      ]
+    : [
+        '/usr/local/bin/npm',
+        '/usr/bin/npm',
+        path.join(os.homedir(), '.npm-global', 'bin', 'npm'),
+        path.join(os.homedir(), '.nvm', 'current', 'bin', 'npm'),
+      ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
+}
+
+async function installNode() {
+  const platform = os.platform();
+  const arch = os.arch();
+
+  if (platform === 'win32') {
+    // Download Node.js MSI and run silent install
+    const nodeVersion = 'v22.12.0';
+    const msiName = arch === 'x64' ? `node-${nodeVersion}-x64.msi` : `node-${nodeVersion}-x86.msi`;
+    const url = `https://nodejs.org/dist/${nodeVersion}/${msiName}`;
+    const tmpPath = path.join(os.tmpdir(), msiName);
+
+    try {
+      // Download
+      const https = require('https');
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(tmpPath);
+        https.get(url, (response) => {
+          // Handle redirects
+          if (response.statusCode === 302 || response.statusCode === 301) {
+            https.get(response.headers.location, (res) => {
+              res.pipe(file);
+              file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', reject);
+          } else {
+            response.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+          }
+        }).on('error', reject);
+      });
+
+      // Run MSI installer silently
+      const result = await execPromise(`msiexec /i "${tmpPath}" /qn /norestart`);
+
+      // Clean up
+      try { fs.unlinkSync(tmpPath); } catch {}
+
+      // Verify
+      try {
+        // Refresh PATH
+        const nodePath = 'C:\\Program Files\\nodejs';
+        process.env.PATH = `${nodePath};${process.env.PATH}`;
+        const v = execSync(`"${nodePath}\\node.exe" --version`, { encoding: 'utf8' }).trim();
+        return { ok: true, output: `Node.js ${v} installed successfully!` };
+      } catch {
+        return { ok: true, output: 'Node.js installer completed. You may need to restart CyberClaw.' };
+      }
+    } catch (err) {
+      return { ok: false, error: `Failed to install Node.js: ${err.message}` };
+    }
+  } else if (platform === 'linux') {
+    // Use NodeSource setup script or package manager
+    const cmds = [
+      'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - 2>&1',
+      'sudo apt-get install -y nodejs 2>&1',
+    ];
+    let output = '';
+    for (const cmd of cmds) {
+      const r = await execPromise(cmd);
+      output += r.output + '\n';
+      if (!r.ok) return { ok: false, error: r.error, output };
+    }
+    return { ok: true, output };
+  } else {
+    return { ok: false, error: `Auto-install not supported on ${platform}. Please install Node.js from https://nodejs.org` };
+  }
+}
 
 ipcMain.handle('wizard:run', async (event, cmd) => {
   const bin = findOpenClaw();

@@ -57,18 +57,20 @@ async function runChecks() {
   const btn = document.getElementById('btn-check');
   btn.disabled = false;
 
-  if (!systemState.node) {
-    btn.textContent = 'Node.js Required';
-    btn.disabled = true;
-    addTermLine('install-terminal', 'Node.js is required. Install from https://nodejs.org', 'error');
-  } else if (!systemState.openclaw) {
-    btn.textContent = 'Install OpenClaw →';
+  // Determine what needs to happen next
+  const needsNode = !systemState.node;
+  const needsNpm = !systemState.npm;
+  const needsOpenClaw = !systemState.openclaw;
+  const needsGateway = !systemState.gateway;
+
+  if (needsNode || needsNpm || needsOpenClaw) {
+    // Go to install step — it will handle everything
+    btn.textContent = 'Install Requirements →';
     btn.onclick = () => goStep(1);
-  } else if (!systemState.gateway) {
+  } else if (needsGateway) {
     btn.textContent = 'Start Gateway →';
     btn.onclick = () => goStep(5);
   } else {
-    // Everything installed — check if agents exist
     const hasAgents = await cyberclaw.wizard.check('check-agents');
     if (hasAgents.ok && hasAgents.count > 0) {
       btn.textContent = 'Launch CyberClaw →';
@@ -89,41 +91,76 @@ async function installOpenClaw() {
   btn.textContent = 'Installing...';
 
   const term = document.getElementById('install-terminal');
-  addTermLine(term, '$ npm install -g openclaw', 'info');
+  term.innerHTML = '';
 
   try {
-    const result = await cyberclaw.wizard.install('openclaw');
+    // Step 1: Install Node.js if needed
+    if (!systemState.node) {
+      addTermLine(term, '📦 Installing Node.js...', 'info');
+      addTermLine(term, 'This may take a minute — downloading from nodejs.org', 'wt-line');
 
-    // Stream output
-    if (result.output) {
-      result.output.split('\n').forEach(line => {
-        if (line.trim()) addTermLine(term, line, 'wt-line');
-      });
-    }
-
-    if (result.ok) {
-      addTermLine(term, '✅ OpenClaw installed successfully!', 'success');
-      systemState.openclaw = true;
-
-      // Run doctor
-      addTermLine(term, '', '');
-      addTermLine(term, '$ openclaw doctor --non-interactive', 'info');
-      const doctorResult = await cyberclaw.wizard.run('doctor');
-      if (doctorResult.output) {
-        doctorResult.output.split('\n').forEach(line => {
+      const nodeResult = await cyberclaw.wizard.install('node');
+      if (nodeResult.output) {
+        nodeResult.output.split('\n').forEach(line => {
           if (line.trim()) addTermLine(term, line, 'wt-line');
         });
       }
-      addTermLine(term, '✅ OpenClaw configured!', 'success');
 
-      btn.textContent = 'Continue →';
-      btn.disabled = false;
-      btn.onclick = () => goStep(2);
-    } else {
-      addTermLine(term, '❌ Installation failed: ' + (result.error || 'unknown error'), 'error');
-      btn.textContent = 'Retry';
-      btn.disabled = false;
+      if (nodeResult.ok) {
+        addTermLine(term, '✅ Node.js installed!', 'success');
+        systemState.node = true;
+        systemState.npm = true;
+      } else {
+        addTermLine(term, '❌ Node.js install failed: ' + (nodeResult.error || ''), 'error');
+        addTermLine(term, '', '');
+        addTermLine(term, '💡 Manual install: download from https://nodejs.org', 'warn');
+        addTermLine(term, '   Then restart CyberClaw.', 'warn');
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+        return;
+      }
+      addTermLine(term, '', '');
     }
+
+    // Step 2: Install OpenClaw
+    if (!systemState.openclaw) {
+      addTermLine(term, '⚔️ Installing OpenClaw...', 'info');
+      addTermLine(term, '$ npm install -g openclaw', 'info');
+
+      const result = await cyberclaw.wizard.install('openclaw');
+      if (result.output) {
+        result.output.split('\n').forEach(line => {
+          if (line.trim()) addTermLine(term, line, 'wt-line');
+        });
+      }
+
+      if (result.ok) {
+        addTermLine(term, '✅ OpenClaw installed!', 'success');
+        systemState.openclaw = true;
+      } else {
+        addTermLine(term, '❌ OpenClaw install failed: ' + (result.error || ''), 'error');
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+        return;
+      }
+      addTermLine(term, '', '');
+    }
+
+    // Step 3: Run doctor
+    addTermLine(term, '🔧 Configuring OpenClaw...', 'info');
+    const doctorResult = await cyberclaw.wizard.run('doctor');
+    if (doctorResult.output) {
+      doctorResult.output.split('\n').forEach(line => {
+        if (line.trim()) addTermLine(term, line, 'wt-line');
+      });
+    }
+    addTermLine(term, '', '');
+    addTermLine(term, '✅ All set! Ready to configure your API key.', 'success');
+
+    btn.textContent = 'Continue →';
+    btn.disabled = false;
+    btn.onclick = () => goStep(2);
+
   } catch (err) {
     addTermLine(term, '❌ ' + err.message, 'error');
     btn.textContent = 'Retry';
