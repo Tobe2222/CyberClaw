@@ -1,43 +1,53 @@
 /* ============================================================
-   CyberClaw Theme — Old-school RPG meets Cyberpunk
+   CyberClaw Theme — Hive Control palette meets RPG fantasy
+   Neon orange + neon blue/cyan on black
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
 
 :root {
-  /* Base colors — warm dark tones */
-  --bg-darkest:    #080806;
-  --bg-dark:       #0e0d08;
-  --bg-panel:      #12110c;
-  --bg-card:       #1a1810;
-  --bg-hover:      #252218;
-  --border-dark:   #2a2618;
-  --border-mid:    #3d3828;
+  /* Base colors — pure dark */
+  --bg-darkest:    #050507;
+  --bg-dark:       #0a0a0e;
+  --bg-panel:      #0c0c12;
+  --bg-card:       #111118;
+  --bg-hover:      #1a1a24;
+  --border-dark:   #1a1a28;
+  --border-mid:    #2a2a3a;
   
-  /* Accent colors — orange/amber primary */
-  --cyan:          #ff9900;
-  --cyan-dim:      #cc7a00;
-  --purple:        #ff9900;
-  --purple-dim:    #cc7a00;
-  --gold:          #fbbf24;
+  /* Primary accent — neon orange */
+  --orange:        #ff6b35;
+  --orange-dim:    #cc5528;
+  --orange-bright: #f7931e;
+  --orange-glow:   rgba(255,107,53,0.5);
+  
+  /* Secondary accent — neon blue/cyan */
+  --cyan:          #00d4ff;
+  --cyan-dim:      #0099bb;
+  --cyan-glow:     rgba(0,212,255,0.4);
+  
+  /* Mapped for backwards compat */
+  --purple:        #ff6b35;
+  --purple-dim:    #cc5528;
+  --gold:          #f7931e;
   --gold-dim:      #d97706;
-  --red:           #ef4444;
+  --red:           #ff3366;
   --green:         #4ade80;
-  --blue:          #3b82f6;
+  --blue:          #00d4ff;
   --pink:          #f472b6;
   
   /* Rarity colors (RPG item tiers) */
   --common:        #9ca3af;
   --uncommon:      #4ade80;
-  --rare:          #3b82f6;
-  --epic:          #ff9900;
-  --legendary:     #fbbf24;
+  --rare:          #00d4ff;
+  --epic:          #ff6b35;
+  --legendary:     #f7931e;
   --mythic:        #f472b6;
   
   /* Text */
-  --text-primary:  #e0e0e0;
-  --text-secondary:#888;
-  --text-muted:    #555;
+  --text-primary:  #e8e8ec;
+  --text-secondary:#8888a0;
+  --text-muted:    #555566;
 
   /* Fonts */
   --font-pixel:    'Press Start 2P', cursive;
@@ -72,22 +82,22 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-dark); }
 ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #cc7a00; }
+::-webkit-scrollbar-thumb:hover { background: var(--orange-dim); }
 
 /* Selection */
-::selection { background: var(--cyan); color: black; }
+::selection { background: var(--orange); color: black; }
 
 /* Rarity text colors */
 .common-text    { color: var(--common); }
 .uncommon-text  { color: var(--uncommon); text-shadow: 0 0 8px rgba(74,222,128,0.3); }
-.rare-text      { color: var(--rare); text-shadow: 0 0 8px rgba(59,130,246,0.3); }
-.epic-text      { color: var(--epic); text-shadow: 0 0 8px rgba(255,153,0,0.3); }
-.legendary-text { color: var(--legendary); text-shadow: 0 0 10px rgba(251,191,36,0.4); }
+.rare-text      { color: var(--rare); text-shadow: 0 0 8px rgba(0,212,255,0.3); }
+.epic-text      { color: var(--epic); text-shadow: 0 0 8px rgba(255,107,53,0.3); }
+.legendary-text { color: var(--legendary); text-shadow: 0 0 10px rgba(247,147,30,0.4); }
 .mythic-text    { color: var(--mythic); text-shadow: 0 0 10px rgba(244,114,182,0.4); }
 .gold-text      { color: var(--gold); }
 .cyan-text      { color: var(--cyan); }
 
 /* Global glow effect for important elements */
 .neon-glow {
-  box-shadow: 0 0 10px rgba(255,153,0,0.1), inset 0 0 10px rgba(255,153,0,0.05);
+  box-shadow: 0 0 10px rgba(255,107,53,0.1), inset 0 0 10px rgba(255,107,53,0.05);
 }
