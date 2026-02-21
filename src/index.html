@@ -137,11 +137,15 @@
           <div id="chat-messages">
             <div class="chat-msg system">
               <span class="msg-prefix">[SYS]</span>
-              <span class="msg-text">CyberClaw initialized. Your agents await.</span>
+              <span class="msg-text">CyberClaw initialized. Select a companion and start chatting.</span>
             </div>
           </div>
           <div id="chat-input-area">
-            <div id="chat-terminal-container"></div>
+            <div id="chat-input-row">
+              <span id="chat-target" class="chat-target">🤖 —</span>
+              <input type="text" id="chat-input" placeholder="Type a message..." />
+              <button id="chat-send" onclick="sendChat()">⚔️</button>
+            </div>
           </div>
         </div>
       </div>

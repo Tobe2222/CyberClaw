@@ -10,10 +10,7 @@ window.cyberclaw = {
     resize: (cols, rows) => ipcRenderer.send('terminal:resize', { cols, rows }),
   },
   chat: {
-    spawn: (opts) => ipcRenderer.invoke('chat:spawn', opts),
-    onData: (cb) => ipcRenderer.on('chat:data', (_, data) => cb(data)),
-    write: (data) => ipcRenderer.send('chat:input', data),
-    resize: (cols, rows) => ipcRenderer.send('chat:resize', { cols, rows }),
+    sendMessage: (agentId, message) => ipcRenderer.invoke('chat:send-message', { agentId, message }),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

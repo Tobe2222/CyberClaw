@@ -13,7 +13,7 @@ let agentOrder = [];
 let agents = {};
 let focusIndex = 0;
 let terminalExpanded = false;
-let mainTerminal = null, chatTerminal = null, mainFit = null, chatFit = null;
+let mainTerminal = null, mainFit = null;
 let startTime = Date.now();
 
 // Rarity assignment based on role/binding
@@ -216,6 +216,7 @@ function updateCarousel() {
 
   // Update focused agent strip (below carousel)
   updateFocused(agentOrder[focusIndex]);
+  updateChatTarget();
 }
 
 window.carouselNext = function() {
@@ -339,7 +340,7 @@ window.switchTermTab = function(tabName) {
   document.querySelectorAll('.term-view').forEach(v => v.classList.remove('active'));
   document.querySelector(`.term-tab[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`view-${tabName}`).classList.add('active');
-  setTimeout(() => { mainFit?.fit(); chatFit?.fit(); }, 50);
+  setTimeout(() => { mainFit?.fit(); }, 50);
 };
 
 window.toggleTerminal = function() {
@@ -348,7 +349,7 @@ window.toggleTerminal = function() {
   terminalExpanded = !terminalExpanded;
   strip.style.height = terminalExpanded ? '50%' : '160px';
   btn.textContent = terminalExpanded ? '▲' : '▼';
-  setTimeout(() => { mainFit?.fit(); chatFit?.fit(); }, 100);
+  setTimeout(() => { mainFit?.fit(); }, 100);
 };
 
 function termTheme() {
@@ -379,18 +380,99 @@ function initMainTerminal() {
   new ResizeObserver(() => { mainFit.fit(); const dd = mainFit.proposeDimensions(); if (dd) cyberclaw.terminal.resize(dd.cols, dd.rows); }).observe(c);
 }
 
-function initChatTerminal() {
-  const c = document.getElementById('chat-terminal-container');
-  chatTerminal = new Terminal({ theme: { ...termTheme(), background: '#0a0a14', cursor: '#a855f7' }, fontFamily: '"JetBrains Mono", monospace', fontSize: 11, cursorBlink: true, cursorStyle: 'underline', scrollback: 1000, allowProposedApi: true });
-  chatFit = new FitAddon();
-  chatTerminal.loadAddon(chatFit);
-  chatTerminal.open(c);
-  chatFit.fit();
-  chatTerminal.onData(data => cyberclaw.chat.write(data));
-  cyberclaw.chat.onData(data => chatTerminal.write(data));
-  const d = chatFit.proposeDimensions();
-  cyberclaw.chat.spawn({ cols: d?.cols || 120, rows: d?.rows || 5 });
-  new ResizeObserver(() => { chatFit.fit(); const dd = chatFit.proposeDimensions(); if (dd) cyberclaw.chat.resize(dd.cols, dd.rows); }).observe(c);
+// ---------------------------------------------------------------------------
+// Chat — message companions
+// ---------------------------------------------------------------------------
+let chatBusy = false;
+
+function updateChatTarget() {
+  const el = document.getElementById('chat-target');
+  if (agentOrder.length === 0) {
+    el.textContent = '🤖 —';
+    return;
+  }
+  const agent = agents[agentOrder[focusIndex]];
+  if (agent) {
+    el.textContent = `${agent.emoji || '🤖'} ${agent.name}`;
+  }
+}
+
+window.sendChat = async function() {
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message || chatBusy || agentOrder.length === 0) return;
+
+  const agent = agents[agentOrder[focusIndex]];
+  if (!agent) return;
+
+  // Show user message
+  addChatMsg('user', message, agent.name);
+  input.value = '';
+
+  // Show typing indicator
+  chatBusy = true;
+  document.getElementById('chat-send').disabled = true;
+  const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
+
+  try {
+    const result = await cyberclaw.chat.sendMessage(agent.id, message);
+    removeChatMsg(typingId);
+
+    if (result.ok) {
+      addChatMsg('agent', result.reply, agent.name, agent.emoji);
+    } else {
+      addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
+    }
+  } catch (err) {
+    removeChatMsg(typingId);
+    addChatMsg('error', `Error: ${err.message}`);
+  }
+
+  chatBusy = false;
+  document.getElementById('chat-send').disabled = false;
+  input.focus();
+};
+
+let chatMsgId = 0;
+function addChatMsg(type, text, name, emoji) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  const id = `chat-msg-${++chatMsgId}`;
+  div.id = id;
+  div.className = `chat-msg ${type}`;
+
+  switch (type) {
+    case 'user':
+      div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(text)}</span>`;
+      break;
+    case 'agent':
+      div.innerHTML = `<span class="msg-prefix">${emoji || '🤖'} [${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
+      break;
+    case 'typing':
+      div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
+      break;
+    case 'error':
+      div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
+      break;
+    case 'system':
+      div.innerHTML = `<span class="msg-prefix">[SYS]</span><span class="msg-text">${escHtml(text)}</span>`;
+      break;
+  }
+
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return id;
+}
+
+function removeChatMsg(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 // Runtime counter
@@ -464,7 +546,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (leaderId) updateInspect(leaderId);
 
   initMainTerminal();
-  initChatTerminal();
+
+  // Chat input Enter key
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendChat(); }
+  });
 
   // Boot messages in chat
   const msgs = document.getElementById('chat-messages');

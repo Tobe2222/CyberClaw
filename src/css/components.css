@@ -407,6 +407,22 @@
   background: rgba(168,85,247,0.1);
   border-left: 2px solid var(--purple);
 }
+.chat-msg.user {
+  background: rgba(0,255,204,0.08);
+  border-left: 2px solid var(--cyan);
+}
+.chat-msg.agent {
+  background: rgba(251,191,36,0.08);
+  border-left: 2px solid var(--gold);
+}
+.chat-msg.typing {
+  background: transparent;
+  border-left: 2px solid var(--border-mid);
+}
+.chat-msg.error {
+  background: rgba(239,68,68,0.08);
+  border-left: 2px solid var(--red);
+}
 
 .msg-prefix {
   color: var(--purple);

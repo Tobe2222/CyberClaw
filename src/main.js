@@ -339,6 +339,38 @@ ipcMain.on('chat:resize', (event, { cols, rows }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Chat — send messages to agents via gateway
+// ---------------------------------------------------------------------------
+ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
+  const bin = findOpenClaw();
+  if (!bin) return { ok: false, error: 'OpenClaw not found' };
+
+  try {
+    const result = await new Promise((resolve) => {
+      execCb(
+        `"${bin}" agent -m "${message.replace(/"/g, '\\"')}" --agent "${agentId}" --json 2>&1`,
+        { timeout: 120000, maxBuffer: 1024 * 512, env: { ...process.env } },
+        (err, stdout, stderr) => {
+          if (err) {
+            resolve({ ok: false, error: err.message, output: stdout + stderr });
+          } else {
+            try {
+              const parsed = JSON.parse(stdout);
+              resolve({ ok: true, reply: parsed.reply || parsed.message || parsed.text || stdout });
+            } catch {
+              resolve({ ok: true, reply: stdout.trim() });
+            }
+          }
+        }
+      );
+    });
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Window controls
 // ---------------------------------------------------------------------------
 ipcMain.on('window:minimize', () => mainWindow?.minimize());
