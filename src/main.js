@@ -537,19 +537,40 @@ ipcMain.handle('wizard:install', async (event, pkg) => {
   if (pkg === 'node') {
     return await installNode();
   }
+  if (pkg === 'git') {
+    return await installGit();
+  }
   if (pkg === 'openclaw') {
-    // Try system npm first, then fall back to npx
+    // Find npm
+    let npmCmd = null;
     try {
       execSync('npm --version', { timeout: 5000 });
-      return await execPromise('npm install -g openclaw 2>&1');
+      npmCmd = 'npm';
     } catch {
-      // No system npm — try using bundled node's npm
       const npmPath = findNpm();
-      if (npmPath) {
-        return await execPromise(`"${npmPath}" install -g openclaw 2>&1`);
-      }
+      if (npmPath) npmCmd = `"${npmPath}"`;
+    }
+
+    if (!npmCmd) {
       return { ok: false, error: 'npm not found. Please install Node.js first.' };
     }
+
+    // Check if git is available (needed by some npm packages)
+    let hasGit = false;
+    try {
+      execSync('git --version', { timeout: 5000 });
+      hasGit = true;
+    } catch {}
+
+    if (!hasGit && os.platform() === 'win32') {
+      // Try installing git first
+      const gitResult = await installGit();
+      if (!gitResult.ok) {
+        // Try npm install anyway — it might work without git
+      }
+    }
+
+    return await execPromise(`${npmCmd} install -g openclaw 2>&1`);
   }
   return { ok: false, error: 'unknown package' };
 });
@@ -571,6 +592,35 @@ function findNpm() {
     if (fs.existsSync(c)) return c;
   }
   return null;
+}
+
+async function installGit() {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    // Download Git for Windows (portable or installer)
+    const url = 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/Git-2.47.1.2-64-bit.exe';
+    const tmpPath = path.join(os.tmpdir(), 'Git-installer.exe');
+
+    try {
+      await downloadFile(url, tmpPath);
+      // Run silent install
+      let result = await execPromise(`"${tmpPath}" /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS="icons,ext\\reg\\shellhere,assoc,assoc_sh" 2>&1`);
+      if (!result.ok) {
+        // Try with UI
+        execCb(`"${tmpPath}"`, () => {});
+        return { ok: false, error: 'manual', output: 'Git installer launched. Complete installation, then click Retry.' };
+      }
+      // Add to PATH
+      const gitPath = 'C:\\Program Files\\Git\\cmd';
+      process.env.PATH = `${gitPath};${process.env.PATH}`;
+      try { fs.unlinkSync(tmpPath); } catch {}
+      return { ok: true, output: 'Git installed!' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  } else {
+    return await execPromise('sudo apt-get install -y git 2>&1');
+  }
 }
 
 function downloadFile(url, destPath) {
@@ -636,7 +686,8 @@ async function installNode() {
         // Last resort: just launch the MSI normally and let user click through
         output += 'Launching installer manually...\n';
         execCb(`msiexec /i "${tmpPath}"`, () => {});
-        return { ok: true, output: output + '\nNode.js installer launched. Complete the installation, then click Retry.' };
+        // Return NOT ok so the wizard shows Retry and waits
+        return { ok: false, error: 'manual', output: output + '\nNode.js installer launched.\nComplete the installation wizard, then click Retry.' };
       }
 
       output += installResult.output + '\n';

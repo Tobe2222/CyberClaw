@@ -110,6 +110,15 @@ async function installOpenClaw() {
         addTermLine(term, '✅ Node.js installed!', 'success');
         systemState.node = true;
         systemState.npm = true;
+      } else if (nodeResult.error === 'manual') {
+        // MSI launched manually — user needs to finish it
+        addTermLine(term, '', '');
+        addTermLine(term, '⏳ Node.js installer is open.', 'warn');
+        addTermLine(term, '   Complete the installer, then click Retry.', 'warn');
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+        btn.onclick = () => installOpenClaw();
+        return;
       } else {
         addTermLine(term, '❌ Node.js auto-install failed: ' + (nodeResult.error || ''), 'error');
         addTermLine(term, '', '');
@@ -125,9 +134,10 @@ async function installOpenClaw() {
       addTermLine(term, '', '');
     }
 
-    // Step 2: Install OpenClaw
+    // Step 2: Install OpenClaw (may also install git if needed)
     if (!systemState.openclaw) {
       addTermLine(term, '⚔️ Installing OpenClaw...', 'info');
+      addTermLine(term, '   (This may also install Git if needed)', 'wt-line');
       addTermLine(term, '$ npm install -g openclaw', 'info');
 
       const result = await cyberclaw.wizard.install('openclaw');
