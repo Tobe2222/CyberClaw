@@ -17,14 +17,14 @@
 }
 
 .agent-active, .agent-main {
-  background: linear-gradient(135deg, rgba(0,255,204,0.05), rgba(168,85,247,0.05));
+  background: linear-gradient(135deg, rgba(255,153,0,0.05), rgba(255,153,0,0.05));
   border-left: 3px solid var(--cyan);
 }
 
 .agent-selected {
-  background: linear-gradient(135deg, rgba(0,255,204,0.1), rgba(168,85,247,0.1)) !important;
+  background: linear-gradient(135deg, rgba(255,153,0,0.1), rgba(255,153,0,0.1)) !important;
   border-color: var(--cyan) !important;
-  box-shadow: inset 0 0 12px rgba(0,255,204,0.05);
+  box-shadow: inset 0 0 12px rgba(255,153,0,0.05);
 }
 
 .agent-badge {
@@ -56,7 +56,7 @@
 
 .quest-selected {
   border-color: var(--cyan) !important;
-  background: rgba(0,255,204,0.05);
+  background: rgba(255,153,0,0.05);
 }
 
 /* Arena selected highlight */
@@ -94,7 +94,7 @@
 .avatar-border.common    { border: 2px solid var(--common); }
 .avatar-border.uncommon  { border: 2px solid var(--uncommon); box-shadow: 0 0 8px rgba(74,222,128,0.2); }
 .avatar-border.rare      { border: 2px solid var(--rare); box-shadow: 0 0 8px rgba(59,130,246,0.3); }
-.avatar-border.epic      { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(168,85,247,0.3); }
+.avatar-border.epic      { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(255,153,0,0.3); }
 .avatar-border.legendary {
   border: 2px solid var(--legendary);
   box-shadow: 0 0 12px rgba(251,191,36,0.3), inset 0 0 8px rgba(251,191,36,0.1);
@@ -206,7 +206,7 @@
 
 .bar-fill.hp { background: linear-gradient(90deg, #dc2626, #ef4444); }
 .bar-fill.mp { background: linear-gradient(90deg, #2563eb, #3b82f6); }
-.bar-fill.xp { background: linear-gradient(90deg, #7c3aed, #a855f7); }
+.bar-fill.xp { background: linear-gradient(90deg, #cc7a00, #ff9900); }
 
 /* Small agent cards (sub-agents) */
 .agent-avatar-small {
@@ -303,7 +303,7 @@
 
 .active-model {
   border-color: var(--cyan-dim);
-  background: linear-gradient(135deg, rgba(0,255,204,0.05), transparent);
+  background: linear-gradient(135deg, rgba(255,153,0,0.05), transparent);
 }
 
 .model-indicator {
@@ -404,11 +404,11 @@
 }
 
 .chat-msg.system {
-  background: rgba(168,85,247,0.1);
+  background: rgba(255,153,0,0.1);
   border-left: 2px solid var(--purple);
 }
 .chat-msg.user {
-  background: rgba(0,255,204,0.08);
+  background: rgba(255,153,0,0.08);
   border-left: 2px solid var(--cyan);
 }
 .chat-msg.agent {
@@ -447,7 +447,7 @@
   transition: all 0.2s;
   padding: 0;
 }
-.quest-add-btn:hover { background: rgba(0,255,204,0.1); }
+.quest-add-btn:hover { background: rgba(255,153,0,0.1); }
 
 .quest-form {
   padding: 8px 10px;
@@ -498,10 +498,10 @@
 
 .quest-status-toggle {
   font-size: 9px; padding: 2px 6px; border-radius: 3px;
-  background: rgba(0,255,204,0.08); border: 1px solid rgba(0,255,204,0.15);
+  background: rgba(255,153,0,0.08); border: 1px solid rgba(255,153,0,0.15);
   color: var(--cyan-dim); cursor: pointer; margin-top: 4px; display: inline-block;
 }
-.quest-status-toggle:hover { background: rgba(0,255,204,0.15); }
+.quest-status-toggle:hover { background: rgba(255,153,0,0.15); }
 
 .quest-log-content {
   padding: 20px;
@@ -579,7 +579,7 @@
 }
 .quest-companion-tag {
   font-size: 8px; padding: 1px 6px; border-radius: 3px;
-  background: rgba(0,255,204,0.08); border: 1px solid rgba(0,255,204,0.15);
+  background: rgba(255,153,0,0.08); border: 1px solid rgba(255,153,0,0.15);
   color: var(--cyan-dim); display: inline-flex; align-items: center; gap: 3px;
 }
 .quest-companion-icon { font-size: 9px; }

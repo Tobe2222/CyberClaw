@@ -22,7 +22,7 @@
 /* Main grid */
 #app {
   display: grid;
-  grid-template-columns: 260px 1fr 190px;
+  grid-template-columns: 260px 1fr 170px;
   height: calc(100vh - var(--titlebar-h));
   overflow: hidden;
 }
@@ -35,7 +35,7 @@
   font-family: var(--font-cyber); font-size: 11px; font-weight: 700; color: var(--cyan);
   letter-spacing: 2px; padding: 10px 14px 8px; border-bottom: 1px solid var(--border-dark);
   text-transform: uppercase; display: flex; align-items: center; gap: 6px;
-  background: linear-gradient(180deg, rgba(0,255,204,0.03), transparent); flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(255,153,0,0.03), transparent); flex-shrink: 0;
 }
 .rune-icon { font-size: 13px; }
 
@@ -56,7 +56,7 @@
   border-radius: 4px; cursor: pointer; transition: all 0.2s;
   display: flex; align-items: center; justify-content: center; gap: 4px;
 }
-.sys-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(0,255,204,0.05); }
+.sys-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(255,153,0,0.05); }
 
 /* ---- CENTER ---- */
 #panel-center { display: flex; flex-direction: column; background: var(--bg-darkest); overflow: hidden; position: relative; }
@@ -80,14 +80,14 @@
 #arena-bg { position: absolute; inset: 0; overflow: hidden; }
 .arena-grid {
   position: absolute; inset: 0;
-  background: linear-gradient(rgba(0,255,204,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,204,0.03) 1px, transparent 1px);
+  background: linear-gradient(rgba(255,153,0,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,153,0,0.03) 1px, transparent 1px);
   background-size: 40px 40px;
   transform: perspective(500px) rotateX(50deg); transform-origin: center 85%;
 }
 .arena-glow {
   position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);
   width: 500px; height: 250px;
-  background: radial-gradient(ellipse, rgba(0,255,204,0.06), transparent 70%);
+  background: radial-gradient(ellipse, rgba(255,153,0,0.08), transparent 70%);
   pointer-events: none;
 }
 
@@ -166,7 +166,7 @@
 
 /* Rarity auras */
 .carousel-avatar.legendary-aura { border: 3px solid var(--legendary); box-shadow: 0 0 20px rgba(251,191,36,0.3), 0 8px 25px rgba(0,0,0,0.5); animation: legendary-pulse 3s ease-in-out infinite; }
-.carousel-avatar.epic-aura      { border: 2px solid var(--epic); box-shadow: 0 0 12px rgba(168,85,247,0.25), 0 6px 20px rgba(0,0,0,0.5); }
+.carousel-avatar.epic-aura      { border: 2px solid var(--epic); box-shadow: 0 0 12px rgba(255,153,0,0.25), 0 6px 20px rgba(0,0,0,0.5); }
 .carousel-avatar.rare-aura      { border: 2px solid var(--rare); box-shadow: 0 0 10px rgba(59,130,246,0.2), 0 6px 20px rgba(0,0,0,0.5); }
 .carousel-avatar.uncommon-aura  { border: 2px solid var(--uncommon); box-shadow: 0 0 8px rgba(74,222,128,0.15), 0 6px 20px rgba(0,0,0,0.5); }
 .carousel-avatar.common-aura    { border: 2px solid var(--common); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
@@ -204,7 +204,7 @@
   display: inline-block;
 }
 .channel-badge.discord { background: rgba(88,101,242,0.2); color: #7289da; border: 1px solid rgba(88,101,242,0.3); }
-.channel-badge.terminal { background: rgba(0,255,204,0.1); color: var(--cyan-dim); border: 1px solid rgba(0,255,204,0.2); }
+.channel-badge.terminal { background: rgba(255,153,0,0.1); color: var(--cyan-dim); border: 1px solid rgba(255,153,0,0.2); }
 .channel-badge.none { background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-dark); }
 
 /* Carousel arrows */
@@ -217,7 +217,7 @@
   transition: all 0.2s; display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px);
 }
-.carousel-arrow:hover { background: rgba(0,255,204,0.1); border-color: var(--cyan-dim); color: white; }
+.carousel-arrow:hover { background: rgba(255,153,0,0.1); border-color: var(--cyan-dim); color: white; }
 .carousel-left { left: 12px; }
 .carousel-right { right: 12px; }
 
@@ -241,7 +241,7 @@
   padding: 2px; display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .focused-avatar-border.legendary { border: 2px solid var(--legendary); box-shadow: 0 0 10px rgba(251,191,36,0.25); }
-.focused-avatar-border.epic     { border: 2px solid var(--epic); box-shadow: 0 0 8px rgba(168,85,247,0.2); }
+.focused-avatar-border.epic     { border: 2px solid var(--epic); box-shadow: 0 0 8px rgba(255,153,0,0.2); }
 .focused-avatar-border.rare     { border: 2px solid var(--rare); box-shadow: 0 0 8px rgba(59,130,246,0.2); }
 .focused-avatar-border.uncommon { border: 2px solid var(--uncommon); box-shadow: 0 0 6px rgba(74,222,128,0.15); }
 .focused-avatar-border.common   { border: 2px solid var(--common); }
@@ -291,7 +291,7 @@
 
 /* === TERMINAL STRIP === */
 #terminal-strip {
-  height: 220px; min-height: 100px; max-height: 55%;
+  height: 150px; min-height: 80px; max-height: 45%;
   display: flex; flex-direction: column;
   border-top: 2px solid var(--border-mid); flex-shrink: 0;
   resize: vertical; overflow: hidden;
@@ -331,11 +331,11 @@
 #chat-input:focus { border-color: var(--cyan-dim); }
 #chat-input::placeholder { color: var(--text-muted); }
 #chat-send {
-  background: rgba(0,255,204,0.1); border: 1px solid var(--cyan-dim);
+  background: rgba(255,153,0,0.1); border: 1px solid var(--cyan-dim);
   color: var(--cyan); border-radius: 4px; padding: 4px 10px;
   cursor: pointer; font-size: 14px; transition: all 0.2s;
 }
-#chat-send:hover { background: rgba(0,255,204,0.2); }
+#chat-send:hover { background: rgba(255,153,0,0.2); }
 #chat-send:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ---- RIGHT: Inspect ---- */
@@ -351,7 +351,7 @@
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .inspect-avatar-border.legendary { border: 3px solid var(--legendary); box-shadow: 0 0 15px rgba(251,191,36,0.3); animation: legendary-pulse 3s ease-in-out infinite; }
-.inspect-avatar-border.epic     { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(168,85,247,0.2); }
+.inspect-avatar-border.epic     { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(255,153,0,0.2); }
 .inspect-avatar-border.rare     { border: 2px solid var(--rare); box-shadow: 0 0 10px rgba(59,130,246,0.2); }
 .inspect-avatar-border.uncommon { border: 2px solid var(--uncommon); box-shadow: 0 0 8px rgba(74,222,128,0.15); }
 .inspect-avatar-border.common   { border: 2px solid var(--common); }
