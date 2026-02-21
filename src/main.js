@@ -371,6 +371,75 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Doctor — opens in a new terminal window
+// ---------------------------------------------------------------------------
+let doctorWindow = null;
+let doctorPty = null;
+
+ipcMain.handle('openclaw:doctor', () => {
+  if (doctorWindow && !doctorWindow.isDestroyed()) {
+    doctorWindow.focus();
+    return { ok: true };
+  }
+
+  doctorWindow = new BrowserWindow({
+    width: 800,
+    height: 500,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0a0a0f',
+    parent: mainWindow,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: false,
+      nodeIntegration: true,
+    }
+  });
+
+  doctorWindow.loadFile(path.join(__dirname, 'doctor.html'));
+  doctorWindow.on('closed', () => {
+    doctorWindow = null;
+    if (doctorPty) { try { doctorPty.kill(); } catch {} doctorPty = null; }
+  });
+
+  return { ok: true };
+});
+
+ipcMain.handle('doctor:spawn', (event, { cols, rows }) => {
+  if (doctorPty) { try { doctorPty.kill(); } catch {} }
+
+  const openclawBin = findOpenClaw();
+  const cmd = openclawBin
+    ? `"${openclawBin}" doctor`
+    : 'echo "OpenClaw not found. Install it first."';
+
+  doctorPty = pty.spawn(shell, ['-c', cmd], {
+    name: 'xterm-256color',
+    cols: cols || 100,
+    rows: rows || 24,
+    cwd: process.env.HOME,
+    env: { ...process.env, TERM: 'xterm-256color' },
+  });
+
+  doctorPty.onData(data => {
+    if (doctorWindow && !doctorWindow.isDestroyed()) {
+      doctorWindow.webContents.send('doctor:data', data);
+    }
+  });
+  doctorPty.onExit(({ exitCode }) => {
+    if (doctorWindow && !doctorWindow.isDestroyed()) {
+      doctorWindow.webContents.send('doctor:exit', exitCode);
+    }
+  });
+
+  return true;
+});
+
+ipcMain.on('doctor:input', (event, data) => { doctorPty?.write(data); });
+ipcMain.on('doctor:resize', (event, { cols, rows }) => { try { doctorPty?.resize(cols, rows); } catch {} });
+ipcMain.on('doctor:close', () => { doctorWindow?.close(); });
+
+// ---------------------------------------------------------------------------
 // Window controls
 // ---------------------------------------------------------------------------
 ipcMain.on('window:minimize', () => mainWindow?.minimize());

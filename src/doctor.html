@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OpenClaw Doctor</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="../node_modules/xterm/css/xterm.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #05050a; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    #titlebar {
+      height: var(--titlebar-h); background: linear-gradient(180deg, #12122a, #0a0a18);
+      border-bottom: 1px solid var(--border-mid); display: flex; align-items: center;
+      justify-content: space-between; padding: 0 8px; -webkit-app-region: drag;
+    }
+    .titlebar-drag { display: flex; align-items: center; gap: 8px; }
+    .titlebar-icon { font-size: 14px; }
+    .titlebar-title { font-family: var(--font-cyber); font-size: 12px; font-weight: 700; color: var(--cyan); letter-spacing: 2px; }
+    .tb-btn { width: 36px; height: 28px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; border-radius: 4px; -webkit-app-region: no-drag; }
+    .tb-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .tb-close:hover { background: var(--red); color: white; }
+    #terminal { flex: 1; padding: 4px; }
+  </style>
+</head>
+<body>
+  <div id="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-icon">🩺</span>
+      <span class="titlebar-title">OpenClaw Doctor</span>
+    </div>
+    <button class="tb-btn tb-close" onclick="cyberclaw.doctorWindow.close()">✕</button>
+  </div>
+  <div id="terminal"></div>
+  <script>
+    const { Terminal } = require('xterm');
+    const { FitAddon } = require('xterm-addon-fit');
+    const { ipcRenderer } = require('electron');
+
+    const term = new Terminal({
+      theme: {
+        background: '#05050a', foreground: '#e0e0e0', cursor: '#00ffcc',
+        black: '#1a1a2e', red: '#ef4444', green: '#4ade80', yellow: '#fbbf24',
+        blue: '#3b82f6', magenta: '#a855f7', cyan: '#00ffcc', white: '#e0e0e0',
+        brightBlack: '#555', brightRed: '#f87171', brightGreen: '#86efac',
+        brightYellow: '#fde68a', brightBlue: '#93c5fd', brightMagenta: '#c084fc',
+        brightCyan: '#5eead4', brightWhite: '#ffffff',
+      },
+      fontFamily: '"JetBrains Mono", monospace',
+      fontSize: 12, lineHeight: 1.2, cursorBlink: true, cursorStyle: 'bar',
+      scrollback: 5000, allowProposedApi: true,
+    });
+
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('terminal'));
+    fit.fit();
+
+    term.onData(data => ipcRenderer.send('doctor:input', data));
+    ipcRenderer.on('doctor:data', (_, data) => term.write(data));
+    ipcRenderer.on('doctor:exit', (_, code) => {
+      term.write(`\r\n\x1b[33m[Doctor exited with code ${code}]\x1b[0m\r\n`);
+      term.write('\x1b[36mPress any key to close...\x1b[0m');
+      term.onData(() => ipcRenderer.send('doctor:close'));
+    });
+
+    const d = fit.proposeDimensions();
+    ipcRenderer.invoke('doctor:spawn', { cols: d?.cols || 100, rows: d?.rows || 24 });
+
+    new ResizeObserver(() => {
+      fit.fit();
+      const dd = fit.proposeDimensions();
+      if (dd) ipcRenderer.send('doctor:resize', { cols: dd.cols, rows: dd.rows });
+    }).observe(document.getElementById('terminal'));
+  </script>
+</body>
+</html>

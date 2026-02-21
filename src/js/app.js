@@ -327,6 +327,10 @@ function setBar(id, [cur, max]) {
   }
 }
 
+window.openDoctor = function() {
+  cyberclaw.agents.openDoctor();
+};
+
 window.selectQuest = function(el) {
   document.querySelectorAll('.quest-item').forEach(q => q.classList.remove('quest-selected'));
   el.classList.add('quest-selected');
