@@ -15,7 +15,10 @@
     "type": "git",
     "url": "https://github.com/Tobe2222/CyberClaw.git"
   },
-  "author": "CyberHive Digital",
+  "author": {
+    "name": "CyberHive Digital",
+    "email": "dev@cyberhive.digital"
+  },
   "license": "MIT",
   "build": {
     "appId": "com.cyberhive.cyberclaw",
