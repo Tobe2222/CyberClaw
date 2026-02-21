@@ -73,7 +73,7 @@
 
 /* === ARENA === */
 #party-arena {
-  flex: 3; position: relative; overflow: hidden; min-height: 180px;
+  flex: 1.5; position: relative; overflow: hidden; min-height: 180px;
   display: flex; align-items: center; justify-content: center;
 }
 
