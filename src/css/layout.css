@@ -297,10 +297,7 @@
   overflow: hidden;
 }
 #terminal-strip .term-view.active { flex: 1; min-height: 0; overflow: hidden; }
-#terminal-container { flex: 1; min-height: 0; overflow: hidden; padding: 2px 4px; position: relative; }
-#terminal-container .xterm { height: 100% !important; }
-#terminal-container .xterm-viewport { overflow-y: auto !important; }
-#terminal-container .xterm-screen { height: 100% !important; }
+#terminal-container { flex: 1; min-height: 0; overflow: hidden; padding: 2px 4px; background: #050507; }
 .terminal-tabs {
   display: flex; background: var(--bg-panel); border-bottom: 1px solid var(--border-dark);
   height: 30px; align-items: flex-end; padding: 0 6px; gap: 2px; flex-shrink: 0;
@@ -316,9 +313,9 @@
 .term-tab-toggle { margin-left: auto; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 10px; padding: 4px 8px; transition: all 0.2s; }
 .term-tab-toggle:hover { color: var(--cyan); }
 .tab-icon { font-size: 12px; }
-.term-view { display: none; flex: 1; overflow: hidden; }
+.term-view { display: none; flex: 1; overflow: hidden; background: #050507; }
 .term-view.active { display: flex; flex-direction: column; }
-#chat-messages { flex: 1; overflow-y: auto; padding: 8px; }
+#chat-messages { flex: 1; overflow-y: auto; padding: 8px; background: #050507; }
 #chat-input-area { border-top: 1px solid var(--border-dark); flex-shrink: 0; padding: 6px 8px; }
 #chat-input-row {
   display: flex; align-items: center; gap: 6px; height: 32px;
