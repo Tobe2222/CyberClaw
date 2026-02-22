@@ -142,18 +142,18 @@
       <!-- Terminal strip -->
       <div id="terminal-strip">
         <div class="terminal-tabs">
-          <button class="term-tab active" data-tab="terminal" onclick="switchTermTab('terminal')">
+          <button class="term-tab" data-tab="terminal" onclick="switchTermTab('terminal')">
             <span class="tab-icon">⚔️</span> OpenClaw
           </button>
-          <button class="term-tab" data-tab="chat" onclick="switchTermTab('chat')">
+          <button class="term-tab active" data-tab="chat" onclick="switchTermTab('chat')">
             <span class="tab-icon">💬</span> Chat
           </button>
           <button class="term-tab-toggle" onclick="toggleTerminal()" title="Expand/Collapse">▼</button>
         </div>
-        <div id="view-terminal" class="term-view active">
+        <div id="view-terminal" class="term-view">
           <div id="terminal-container"></div>
         </div>
-        <div id="view-chat" class="term-view">
+        <div id="view-chat" class="term-view active">
           <div id="chat-messages">
             <div class="chat-msg system">
               <span class="msg-prefix">[SYS]</span>
@@ -226,15 +226,6 @@
           </div>
         </div>
 
-        <!-- Session -->
-        <div class="inspect-section">
-          <div class="section-title">Session</div>
-          <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
-          <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
-          <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
-          <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
-        </div>
-
         <!-- Skills -->
         <div class="inspect-section">
           <div class="section-title">Skills</div>
@@ -252,6 +243,15 @@
             <div class="gear-slot"><div class="gear-icon">👢</div><div class="gear-label">Boots</div></div>
             <div class="gear-slot"><div class="gear-icon">📿</div><div class="gear-label">Amulet</div></div>
           </div>
+        </div>
+
+        <!-- Session (bottom) -->
+        <div class="inspect-section">
+          <div class="section-title">Session</div>
+          <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
+          <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
+          <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
+          <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
         </div>
       </div>
     </aside>
