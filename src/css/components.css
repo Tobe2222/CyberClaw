@@ -521,6 +521,12 @@
   font-family: var(--font-mono);
 }
 
+.inspect-level {
+  font-family: var(--font-cyber); font-size: 10px; color: var(--gold);
+  background: rgba(247,147,30,0.1); border: 1px solid rgba(247,147,30,0.25);
+  padding: 1px 8px; border-radius: 4px; display: inline-block; margin-top: 2px;
+}
+
 .quest-version {
   font-size: 9px; color: var(--gold); font-family: var(--font-mono); margin-top: 3px;
 }

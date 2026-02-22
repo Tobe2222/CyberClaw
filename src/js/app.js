@@ -301,21 +301,36 @@ function updateInspect(agentId) {
   document.getElementById('inspect-channel-badge').innerHTML =
     `<span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channelDetail}</span>`;
 
-  setBar('inspect-hp', agent.hp);
-  setBar('inspect-mp', agent.mp);
-  setBar('inspect-xp', agent.xp);
+  // Load earned stats
+  cyberclaw.agents.getStats(agentId).then(stats => {
+    const xpNeeded = Math.floor(100 * Math.pow(1.8, stats.level - 1));
+    setBar('inspect-hp', agent.hp);
+    setBar('inspect-mp', agent.mp);
+    setBar('inspect-xp', [stats.xp, xpNeeded]);
+
+    // Show level
+    const levelEl = document.getElementById('inspect-level');
+    if (levelEl) levelEl.textContent = `Lv.${stats.level}`;
+
+    // Show earned skills
+    const skillsEl = document.getElementById('inspect-skills');
+    const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
+    const earnedSkills = Object.entries(stats.skills || {});
+    if (earnedSkills.length === 0) {
+      skillsEl.innerHTML = '<div style="color:var(--text-muted);font-size:10px">No skills yet — start chatting!</div>';
+    } else {
+      skillsEl.innerHTML = earnedSkills
+        .sort((a, b) => b[1].level - a[1].level)
+        .map(([name, s]) => `<div class="skill-slot-sm"><div class="skill-icon-sm">${skillIcons[name]||'✨'}</div><span class="skill-name-sm">${name} Lv.${s.level}</span></div>`)
+        .join('');
+    }
+  });
 
   document.getElementById('inspect-model').textContent = agent.model;
   document.getElementById('inspect-provider').textContent = agent.provider;
   document.getElementById('inspect-channel').textContent = agent.channel;
   document.getElementById('inspect-workspace').textContent = agent.workspace;
   document.getElementById('inspect-workspace').title = agent.workspace;
-
-  const skillsEl = document.getElementById('inspect-skills');
-  const icons = { 'Coding Agent': '💻', 'Weather': '🌤️', 'Healthcheck': '🔒', 'Skill Creator': '📜' };
-  skillsEl.innerHTML = agent.skills.length === 0
-    ? '<div style="color:var(--text-muted);font-size:10px">No skills equipped</div>'
-    : agent.skills.map(s => `<div class="skill-slot-sm"><div class="skill-icon-sm">${icons[s]||'✨'}</div><span class="skill-name-sm">${s}</span></div>`).join('');
 }
 
 function setBar(id, [cur, max]) {

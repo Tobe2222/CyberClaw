@@ -22,6 +22,7 @@ window.cyberclaw = {
     discover: () => ipcRenderer.invoke('openclaw:discover'),
     systemInfo: () => ipcRenderer.invoke('openclaw:system-info'),
     openDoctor: () => ipcRenderer.invoke('openclaw:doctor'),
+    getStats: (agentId) => ipcRenderer.invoke('companion:stats', agentId),
   },
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),

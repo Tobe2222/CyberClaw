@@ -12,6 +12,49 @@ let isQuitting = false;
 const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
+const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
+
+// Companion stats persistence (skills, XP, levels)
+function loadStats() {
+  try { return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return {}; }
+}
+function saveStats(stats) {
+  fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+}
+
+// XP needed for each level: 100, 250, 500, 1000, 2000, 4000...
+function xpForLevel(level) { return Math.floor(100 * Math.pow(1.8, level - 1)); }
+
+function addSkillXP(agentId, skillName, xpGain) {
+  const stats = loadStats();
+  if (!stats[agentId]) stats[agentId] = { level: 1, xp: 0, xpTotal: 0, skills: {} };
+  const agent = stats[agentId];
+
+  // Add skill XP
+  if (!agent.skills[skillName]) agent.skills[skillName] = { level: 1, xp: 0 };
+  const skill = agent.skills[skillName];
+  skill.xp += xpGain;
+
+  // Level up skill
+  while (skill.xp >= xpForLevel(skill.level)) {
+    skill.xp -= xpForLevel(skill.level);
+    skill.level++;
+  }
+
+  // Add to companion total XP
+  agent.xp += xpGain;
+  agent.xpTotal += xpGain;
+
+  // Level up companion
+  while (agent.xp >= xpForLevel(agent.level)) {
+    agent.xp -= xpForLevel(agent.level);
+    agent.level++;
+  }
+
+  saveStats(stats);
+  return stats[agentId];
+}
 
 // Quest persistence
 function loadQuests() {
@@ -179,7 +222,7 @@ function discoverAgents() {
       const av = extract(/\*\*Avatar:\*\*\s*(.+)/i);
 
       if (n) agentName = n;
-      if (c) agentClass = c;
+      if (c) agentClass = c.replace(/\bAI\b/gi, 'companion').replace(/\s+/g, ' ').trim();
       if (e) emoji = e;
       if (av) {
         if (av.startsWith('http') || av.startsWith('data:')) {
@@ -382,11 +425,29 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
         }
       );
     });
+    // Award skill XP based on message content
+    if (result.ok) {
+      const skill = classifyTask(message);
+      if (skill) addSkillXP(agentId, skill, 10 + Math.floor(Math.random() * 10));
+    }
+
     return result;
   } catch (err) {
     return { ok: false, error: err.message };
   }
 });
+
+function classifyTask(message) {
+  const m = message.toLowerCase();
+  if (/\b(code|bug|fix|function|class|api|build|compile|deploy|git|commit|test|refactor|debug)\b/.test(m)) return 'Coding';
+  if (/\b(write|draft|edit|essay|article|blog|copy|summarize|rewrite|document)\b/.test(m)) return 'Writing';
+  if (/\b(design|css|layout|ui|ux|style|color|font|image|icon|logo)\b/.test(m)) return 'Design';
+  if (/\b(analyze|data|chart|graph|numbers|calculate|statistics|math)\b/.test(m)) return 'Analysis';
+  if (/\b(plan|strategy|project|manage|organize|schedule|prioritize|roadmap)\b/.test(m)) return 'Strategy';
+  if (/\b(search|find|research|look up|what is|how to|explain|learn)\b/.test(m)) return 'Research';
+  if (/\b(chat|talk|tell me|hello|hey|thanks|help|advice)\b/.test(m)) return 'Communication';
+  return 'General';
+}
 
 // ---------------------------------------------------------------------------
 // Doctor — opens in a new terminal window
@@ -482,6 +543,10 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   const idx = quests.findIndex(q => q.id === id);
   if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
   return quests[idx] || null;
+});
+ipcMain.handle('companion:stats', (event, agentId) => {
+  const stats = loadStats();
+  return stats[agentId] || { level: 1, xp: 0, xpTotal: 0, skills: {} };
 });
 ipcMain.handle('quests:detect-version', (event, dir) => {
   if (!dir) return null;
