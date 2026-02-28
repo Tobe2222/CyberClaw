@@ -1278,15 +1278,12 @@
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 60px; /* Leave space for buttons at bottom */
   z-index: 5;
-  pointer-events: auto;
+  pointer-events: none; /* Pass through by default */
 }
 #arena-3d-viewer canvas {
   width: 100% !important;
   height: 100% !important;
-}
-/* When no 3D model loaded, hide the overlay to show carousel */
-#arena-3d-viewer:empty {
-  pointer-events: none;
+  pointer-events: auto; /* Only the canvas captures mouse for rotation */
 }
