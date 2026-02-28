@@ -545,18 +545,34 @@ async function renderQuests() {
     const div = document.createElement('div');
     div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${q.id === activeQuestId ? 'quest-selected' : ''}`;
     div.onclick = () => selectQuest(div, q.id);
+    // Find companions assigned to this quest
+    const assignedCompanions = agentOrder
+      .map(id => agents[id])
+      .filter(a => a && a.assignedQuest === q.id);
+    const companionAvatars = assignedCompanions.length > 0
+      ? `<div class="quest-companions">${assignedCompanions.map(a =>
+          a.avatar
+            ? `<img class="quest-companion-avatar" src="${a.avatar}" title="${a.name}" />`
+            : `<span class="quest-companion-emoji" title="${a.name}">${a.emoji || '🤖'}</span>`
+        ).join('')}</div>`
+      : '';
+
     div.innerHTML = `
-      <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
-      <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
+      <div class="quest-top-row">
+        <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
+        <div class="quest-top-actions">
+          <button class="quest-edit-btn" onclick="openQuestEditor(event,'${q.id}')" title="Edit">✏️</button>
+          <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
+        </div>
+      </div>
       ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
-      ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : `<button class="quest-dir-add" onclick="setQuestDir(event,'${q.id}')">📁 Set directory</button>`}
-      ${q.version ? `<div class="quest-version">v${escapeHtml(q.version)}</div>` : ''}
+      ${companionAvatars}
+      ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : ''}
       <div class="quest-progress">
         <div class="quest-bar"><div class="quest-fill" style="width:${getVersionProgress(q.version)}%"></div></div>
         <span class="quest-pct">${getVersionProgress(q.version)}%</span>
       </div>
       <div class="quest-actions-row">
-        <button class="quest-version-btn" onclick="setQuestVersion(event,'${q.id}')" title="Set version">📌 ${q.version ? 'v' + escapeHtml(q.version) : 'Set version'}</button>
         <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
           ${isComplete ? '↩ Reopen' : '🏁 Mark done'}
         </button>
@@ -572,6 +588,196 @@ function escapeHtml(str) {
 
 // Load quests on startup
 renderQuests();
+
+// ---------------------------------------------------------------------------
+// Quest Editor (transforms left panel into quest detail view)
+// ---------------------------------------------------------------------------
+let editingQuestId = null;
+
+window.openQuestEditor = async function(event, questId) {
+  if (event) event.stopPropagation();
+  const quests = await cyberclaw.quests.list();
+  const quest = quests.find(q => q.id === questId);
+  if (!quest) return;
+
+  editingQuestId = questId;
+  const panel = document.getElementById('panel-left');
+
+  // Get all companions for assignment checkboxes
+  const companionChecks = agentOrder.map(id => {
+    const a = agents[id];
+    if (!a) return '';
+    const checked = a.assignedQuest === questId ? 'checked' : '';
+    const avatar = a.avatar
+      ? `<img src="${a.avatar}" class="qe-companion-img" />`
+      : `<span class="qe-companion-emoji">${a.emoji || '🤖'}</span>`;
+    return `<label class="qe-companion-row">
+      <input type="checkbox" value="${id}" ${checked} />
+      ${avatar}
+      <span>${a.name}</span>
+    </label>`;
+  }).join('');
+
+  // Skill categories for the quest
+  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'General'];
+  const questSkills = quest.skills || [];
+  const skillChecks = skillTypes.map(s => {
+    const icons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
+    return `<label class="qe-skill-tag"><input type="checkbox" value="${s}" ${questSkills.includes(s) ? 'checked' : ''} /> ${icons[s]} ${s}</label>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <span class="rune-icon">📜</span> EDIT QUEST
+      <button class="quest-add-btn" onclick="closeQuestEditor()" title="Back">✕</button>
+    </div>
+    <div class="qe-content">
+      <div class="editor-field">
+        <label>Quest Name</label>
+        <input type="text" id="qe-name" value="${escapeHtml(quest.name)}" />
+      </div>
+      <div class="editor-field">
+        <label>Description</label>
+        <textarea id="qe-desc" rows="3">${escapeHtml(quest.description || '')}</textarea>
+      </div>
+      <div class="editor-field">
+        <label>Goals</label>
+        <textarea id="qe-goals" rows="3" placeholder="What needs to be accomplished...">${escapeHtml(quest.goals || '')}</textarea>
+      </div>
+      <div class="editor-field">
+        <label>Directory</label>
+        <div class="quest-dir-row">
+          <input type="text" id="qe-dir" value="${escapeHtml(quest.directory || '')}" readonly />
+          <button class="quest-dir-btn" onclick="pickQuestEditorDir()">📁</button>
+        </div>
+      </div>
+      <div class="editor-field">
+        <label>Work Categories</label>
+        <div class="skill-checkbox-grid">${skillChecks}</div>
+      </div>
+      <div class="editor-field">
+        <label>Assigned Companions</label>
+        <div class="qe-companions-list">${companionChecks}</div>
+      </div>
+      <div class="qe-actions">
+        <button class="btn-sm btn-muted" onclick="closeQuestEditor()">Cancel</button>
+        <button class="btn-sm btn-primary" onclick="saveQuestEdit()">⚔️ Save</button>
+      </div>
+    </div>
+  `;
+};
+
+window.pickQuestEditorDir = async function() {
+  const dir = await cyberclaw.quests.pickDirectory();
+  if (dir) document.getElementById('qe-dir').value = dir;
+};
+
+window.saveQuestEdit = async function() {
+  if (!editingQuestId) return;
+
+  const name = document.getElementById('qe-name').value.trim();
+  const description = document.getElementById('qe-desc').value.trim();
+  const goals = document.getElementById('qe-goals').value.trim();
+  const directory = document.getElementById('qe-dir').value.trim();
+
+  // Gather skills
+  const skillChecks = document.querySelectorAll('.qe-content .skill-checkbox-grid input[type="checkbox"]');
+  const skills = Array.from(skillChecks).filter(cb => cb.checked).map(cb => cb.value);
+
+  // Gather assigned companions
+  const companionChecks = document.querySelectorAll('.qe-companions-list input[type="checkbox"]');
+  const assignedIds = Array.from(companionChecks).filter(cb => cb.checked).map(cb => cb.value);
+  const unassignedIds = Array.from(companionChecks).filter(cb => !cb.checked).map(cb => cb.value);
+
+  // Update quest
+  await cyberclaw.quests.update(editingQuestId, { name, description, goals, skills, directory: directory || undefined });
+
+  // Update companion assignments
+  for (const id of assignedIds) {
+    if (agents[id]) {
+      agents[id].assignedQuest = editingQuestId;
+      await cyberclaw.agents.saveSpriteConfig(id, {
+        ...(await cyberclaw.agents.getSpriteConfig(id) || {}),
+        assignedQuest: editingQuestId,
+      });
+    }
+  }
+  for (const id of unassignedIds) {
+    if (agents[id] && agents[id].assignedQuest === editingQuestId) {
+      agents[id].assignedQuest = null;
+      const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
+      cfg.assignedQuest = null;
+      await cyberclaw.agents.saveSpriteConfig(id, cfg);
+    }
+  }
+
+  closeQuestEditor();
+};
+
+window.closeQuestEditor = function() {
+  editingQuestId = null;
+  // Rebuild the entire left panel
+  rebuildLeftPanel();
+  renderQuests();
+};
+
+function rebuildLeftPanel() {
+  const panel = document.getElementById('panel-left');
+  panel.innerHTML = `
+    <div class="panel-header">
+      <span class="rune-icon">📜</span> QUEST LOG
+      <button class="quest-add-btn" onclick="showQuestForm()" title="New Quest">+</button>
+    </div>
+    <div class="quest-form hidden" id="quest-form">
+      <input type="text" id="quest-name-input" placeholder="Quest name..." maxlength="60" />
+      <textarea id="quest-desc-input" placeholder="Description (optional)..." rows="2" maxlength="200"></textarea>
+      <div class="quest-dir-row">
+        <input type="text" id="quest-dir-input" placeholder="Project directory (optional)..." readonly />
+        <button class="quest-dir-btn" onclick="pickQuestDir()">📁</button>
+      </div>
+      <div class="quest-form-actions">
+        <button class="quest-form-btn save" onclick="createQuest()">Create</button>
+        <button class="quest-form-btn cancel" onclick="hideQuestForm()">Cancel</button>
+      </div>
+    </div>
+    <div class="quest-section" id="quest-list">
+      <div class="quest-empty" id="quest-empty">
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px">
+          <div style="font-size:24px;margin-bottom:8px">📜</div>
+          No quests yet.<br>Click + to create your first quest!
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-header system-hdr">
+      <span class="rune-icon">📡</span> SESSION
+    </div>
+    <div class="system-section">
+      <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
+      <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
+      <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
+      <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
+    </div>
+
+    <div class="panel-header system-hdr">
+      <span class="rune-icon">🖥️</span> SYSTEM
+    </div>
+    <div class="system-section">
+      <div class="stat-row"><span class="stat-key">Host</span><span class="stat-value" id="stat-host">—</span></div>
+      <div class="stat-row"><span class="stat-key">OS</span><span class="stat-value" id="stat-os">—</span></div>
+      <div class="stat-row"><span class="stat-key">Node</span><span class="stat-value" id="stat-node">—</span></div>
+      <div class="stat-row"><span class="stat-key">Gateway</span><span class="stat-value cyan-text" id="stat-gateway">—</span></div>
+      <div class="stat-row"><span class="stat-key">Runtime</span><span class="stat-value" id="stat-runtime">00:00:00</span></div>
+      <div class="stat-row"><span class="stat-key">Companions</span><span class="stat-value" id="stat-companions">0</span></div>
+      <div class="stat-row"><span class="stat-key">Rate Limit</span><span class="stat-value" id="stat-ratelimit">—</span></div>
+      <div class="system-actions">
+        <button class="sys-btn" onclick="openDoctor()" title="Run OpenClaw Doctor">🩺 Doctor</button>
+      </div>
+    </div>
+  `;
+  // Re-populate system info
+  updateSystemInfo();
+}
 
 // ---------------------------------------------------------------------------
 // Terminal
