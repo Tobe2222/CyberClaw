@@ -1128,10 +1128,112 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Companion Editor (Sprite Generator + Skill Assignment)
+// Companion Editor (Cybermon Gallery + Sprite Generator + Skill Assignment)
 // ---------------------------------------------------------------------------
 let editorAgentId = null;
 let editorSprite = null;
+let editorMode = 'cybermon'; // 'cybermon' or 'sprite'
+let selectedCybermon = null;
+let cybermonCatalog = null;
+let activeFilters = { animal: null, element: null, mood: null };
+
+const ELEMENT_COLORS = {
+  fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
+  shadow: '#6a1ab3', ice: '#99d9ff', steel: '#8c949e', toxic: '#73cc19', cyber: '#00a8d9'
+};
+const ELEMENT_EMOJI = {
+  fire: '🔥', water: '💧', electric: '⚡', nature: '🌿', shadow: '🌑',
+  ice: '❄️', steel: '⚙️', toxic: '☠️', cyber: '🤖'
+};
+const ANIMAL_EMOJI = {
+  fox: '🦊', cat: '🐱', dog: '🐕', bird: '🐦', fish: '🐟', snake: '🐍',
+  turtle: '🐢', rabbit: '🐰', dragon: '🐉', wolf: '🐺', frog: '🐸',
+  owl: '🦉', bat: '🦇', bear: '🐻', shark: '🦈'
+};
+const MOOD_EMOJI = { cute: '🥰', fierce: '😤', chill: '😎', angry: '😠', playful: '😜' };
+
+async function loadCybermonCatalog() {
+  if (cybermonCatalog) return cybermonCatalog;
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const catalogPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    const data = fs.readFileSync(catalogPath, 'utf-8');
+    cybermonCatalog = JSON.parse(data);
+    return cybermonCatalog;
+  } catch (e) {
+    console.error('Failed to load Cybermon catalog:', e);
+    return { cybermons: [], animals: [], elements: [], moods: [], sizes: [] };
+  }
+}
+
+function buildFilterChips(containerId, items, emojiMap, filterKey) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = items.map(item =>
+    `<span class="filter-chip" data-filter="${filterKey}" data-value="${item}" onclick="toggleFilter('${filterKey}','${item}')">${emojiMap[item] || ''} ${item}</span>`
+  ).join('');
+}
+
+window.toggleFilter = function(key, value) {
+  activeFilters[key] = activeFilters[key] === value ? null : value;
+  // Update chip styles
+  document.querySelectorAll(`.filter-chip[data-filter="${key}"]`).forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.value === activeFilters[key]);
+  });
+  renderCybermonGallery();
+};
+
+function renderCybermonGallery() {
+  if (!cybermonCatalog) return;
+  const grid = document.getElementById('cybermon-gallery');
+  const filtered = cybermonCatalog.cybermons.filter(mon => {
+    if (activeFilters.animal && mon.animal !== activeFilters.animal) return false;
+    if (activeFilters.element && !mon.elements.includes(activeFilters.element)) return false;
+    if (activeFilters.mood && mon.mood !== activeFilters.mood) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="cybermon-empty">No matches — try different filters</div>';
+    return;
+  }
+
+  const path = require('path');
+  grid.innerHTML = filtered.map(mon => {
+    const imgPath = path.join(__dirname, 'assets', 'cybermons', `${mon.id}.png`);
+    const selected = selectedCybermon === mon.id ? 'selected' : '';
+    const elementDots = mon.elements.map(e =>
+      `<span class="element-dot" style="background:${ELEMENT_COLORS[e] || '#666'}"></span>`
+    ).join('');
+    return `<div class="cybermon-card ${selected}" onclick="selectCybermon('${mon.id}')" title="${mon.name} (${mon.elements.join('/')})">
+      <div class="cybermon-elements">${elementDots}</div>
+      <img src="file://${imgPath}" alt="${mon.name}" />
+      <div class="cybermon-label">${mon.name}</div>
+    </div>`;
+  }).join('');
+}
+
+window.selectCybermon = function(id) {
+  selectedCybermon = id;
+  // Update gallery selection
+  document.querySelectorAll('.cybermon-card').forEach(card => {
+    card.classList.toggle('selected', card.querySelector('img').alt === cybermonCatalog.cybermons.find(m => m.id === id)?.name);
+  });
+  // Show preview
+  const path = require('path');
+  const imgPath = path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
+  const preview = document.getElementById('editor-cybermon-preview');
+  preview.innerHTML = `<img src="file://${imgPath}" alt="${id}" />`;
+};
+
+window.switchEditorMode = function(mode) {
+  editorMode = mode;
+  document.querySelectorAll('.editor-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.mode === mode);
+  });
+  document.getElementById('editor-cybermon-mode').classList.toggle('hidden', mode !== 'cybermon');
+  document.getElementById('editor-sprite-mode').classList.toggle('hidden', mode !== 'sprite');
+};
 
 window.openCompanionEditor = function() {
   const agentId = agentOrder[focusIndex];
@@ -1152,9 +1254,30 @@ window.openCompanionEditor = function() {
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
 
+  // Initialize Cybermon gallery
+  loadCybermonCatalog().then(catalog => {
+    buildFilterChips('filter-animals', catalog.animals, ANIMAL_EMOJI, 'animal');
+    buildFilterChips('filter-elements', catalog.elements, ELEMENT_EMOJI, 'element');
+    buildFilterChips('filter-moods', catalog.moods, MOOD_EMOJI, 'mood');
+    activeFilters = { animal: null, element: null, mood: null };
+    selectedCybermon = null;
+    renderCybermonGallery();
+  });
+
+  // Default to cybermon mode
+  switchEditorMode('cybermon');
+
   // Load saved sprite attributes if any
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
     if (config) {
+      // If they had a cybermon selected, restore it
+      if (config.cybermonId) {
+        selectedCybermon = config.cybermonId;
+        switchEditorMode('cybermon');
+        selectCybermon(config.cybermonId);
+      } else if (config.element) {
+        switchEditorMode('sprite');
+      }
       if (config.element) document.getElementById('editor-element').value = config.element;
       if (config.body) document.getElementById('editor-body').value = config.body;
       if (config.ears) document.getElementById('editor-ears').value = config.ears;
@@ -1234,7 +1357,7 @@ window.randomizeSprite = function() {
 };
 
 window.saveCompanion = async function() {
-  if (!editorAgentId || !editorSprite) return;
+  if (!editorAgentId) return;
   const agent = agents[editorAgentId];
 
   // Gather skill focus
@@ -1244,20 +1367,39 @@ window.saveCompanion = async function() {
   // Gather quest assignment
   const questId = document.getElementById('editor-quest').value || null;
 
-  // Save sprite config + avatar
-  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-    ...editorSprite.attributes,
-    focusSkills,
-    assignedQuest: questId,
-  });
+  if (editorMode === 'cybermon' && selectedCybermon) {
+    // Save Cybermon selection
+    const path = require('path');
+    const fs = require('fs');
+    const imgPath = path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
+    const imgData = fs.readFileSync(imgPath);
+    const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
 
-  // Save sprite as PNG avatar
-  await cyberclaw.agents.saveAvatar(editorAgentId, editorSprite.dataUrl);
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      cybermonId: selectedCybermon,
+      focusSkills,
+      assignedQuest: questId,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+    agent.avatar = dataUrl;
+  } else if (editorMode === 'sprite' && editorSprite) {
+    // Save pixel sprite
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      ...editorSprite.attributes,
+      cybermonId: null,
+      focusSkills,
+      assignedQuest: questId,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, editorSprite.dataUrl);
+    agent.avatar = editorSprite.dataUrl;
+  } else {
+    // Nothing selected
+    return;
+  }
 
   // Update in-memory agent
   agent.focusSkills = focusSkills;
   agent.assignedQuest = questId;
-  agent.avatar = editorSprite.dataUrl;
 
   // Refresh UI
   buildCarousel();

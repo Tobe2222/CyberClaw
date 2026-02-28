@@ -286,51 +286,90 @@
         <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
       </div>
       <div class="editor-content">
-        <!-- Sprite Preview -->
-        <div class="editor-preview">
-          <div id="editor-sprite-container" class="sprite-preview-box"></div>
-          <button class="btn-sm btn-accent" onclick="randomizeSprite()">🎲 Randomize</button>
+        <!-- Avatar Mode Tabs -->
+        <div class="editor-mode-tabs">
+          <button class="editor-tab active" data-mode="cybermon" onclick="switchEditorMode('cybermon')">🐾 Cybermon</button>
+          <button class="editor-tab" data-mode="sprite" onclick="switchEditorMode('sprite')">🎨 Pixel Sprite</button>
         </div>
 
-        <!-- Editor Controls -->
+        <!-- Cybermon Gallery Mode -->
+        <div id="editor-cybermon-mode">
+          <div class="editor-preview">
+            <div id="editor-cybermon-preview" class="sprite-preview-box">
+              <div class="cybermon-empty">Select a Cybermon below</div>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="cybermon-filters">
+            <div class="filter-group">
+              <label>Animal</label>
+              <div id="filter-animals" class="filter-chips"></div>
+            </div>
+            <div class="filter-group">
+              <label>Element</label>
+              <div id="filter-elements" class="filter-chips"></div>
+            </div>
+            <div class="filter-group">
+              <label>Mood</label>
+              <div id="filter-moods" class="filter-chips"></div>
+            </div>
+          </div>
+
+          <!-- Cybermon Grid -->
+          <div id="cybermon-gallery" class="cybermon-grid"></div>
+        </div>
+
+        <!-- Pixel Sprite Mode (hidden by default) -->
+        <div id="editor-sprite-mode" class="hidden">
+          <div class="editor-preview">
+            <div id="editor-sprite-container" class="sprite-preview-box"></div>
+            <button class="btn-sm btn-accent" onclick="randomizeSprite()">🎲 Randomize</button>
+          </div>
+
+          <div class="editor-controls-sprite">
+            <div class="editor-field">
+              <label>Element</label>
+              <select id="editor-element"></select>
+            </div>
+            <div class="editor-row">
+              <div class="editor-field">
+                <label>Body</label>
+                <select id="editor-body"></select>
+              </div>
+              <div class="editor-field">
+                <label>Ears/Horns</label>
+                <select id="editor-ears"></select>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-field">
+                <label>Tail</label>
+                <select id="editor-tail"></select>
+              </div>
+              <div class="editor-field">
+                <label>Accessory</label>
+                <select id="editor-accessory"></select>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-field">
+                <label>Eyes</label>
+                <select id="editor-eyes"></select>
+              </div>
+              <div class="editor-field">
+                <label>Mouth</label>
+                <select id="editor-mouth"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shared Controls (always visible) -->
         <div class="editor-controls">
           <div class="editor-field">
             <label>Name</label>
             <input type="text" id="editor-name" placeholder="Companion name" />
-          </div>
-          <div class="editor-field">
-            <label>Element</label>
-            <select id="editor-element"></select>
-          </div>
-          <div class="editor-row">
-            <div class="editor-field">
-              <label>Body</label>
-              <select id="editor-body"></select>
-            </div>
-            <div class="editor-field">
-              <label>Ears/Horns</label>
-              <select id="editor-ears"></select>
-            </div>
-          </div>
-          <div class="editor-row">
-            <div class="editor-field">
-              <label>Tail</label>
-              <select id="editor-tail"></select>
-            </div>
-            <div class="editor-field">
-              <label>Accessory</label>
-              <select id="editor-accessory"></select>
-            </div>
-          </div>
-          <div class="editor-row">
-            <div class="editor-field">
-              <label>Eyes</label>
-              <select id="editor-eyes"></select>
-            </div>
-            <div class="editor-field">
-              <label>Mouth</label>
-              <select id="editor-mouth"></select>
-            </div>
           </div>
 
           <!-- Skill Focus -->

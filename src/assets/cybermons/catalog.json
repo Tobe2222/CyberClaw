@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "cybermons": [
+    {"id": "voltfox", "name": "Voltfox", "animal": "fox", "elements": ["electric", "cyber"], "mood": "playful", "size": "medium"},
+    {"id": "shadowcat", "name": "Shadowcat", "animal": "cat", "elements": ["shadow", "electric"], "mood": "cute", "size": "medium"},
+    {"id": "magmadog", "name": "Magmadog", "animal": "dog", "elements": ["fire", "steel"], "mood": "playful", "size": "medium"},
+    {"id": "stormbird", "name": "Stormbird", "animal": "bird", "elements": ["electric", "fire"], "mood": "fierce", "size": "medium"},
+    {"id": "infernofin", "name": "Infernofin", "animal": "fish", "elements": ["fire", "shadow"], "mood": "fierce", "size": "medium"},
+    {"id": "venomsnake", "name": "Venomsnake", "animal": "snake", "elements": ["toxic", "shadow"], "mood": "fierce", "size": "medium"},
+    {"id": "shellshock", "name": "Shellshock", "animal": "turtle", "elements": ["electric", "steel"], "mood": "chill", "size": "medium"},
+    {"id": "sparkhare", "name": "Sparkhare", "animal": "rabbit", "elements": ["electric", "nature"], "mood": "cute", "size": "medium"},
+    {"id": "icedragon", "name": "Icedragon", "animal": "dragon", "elements": ["ice", "shadow"], "mood": "angry", "size": "medium"},
+    {"id": "shadowolf", "name": "Shadowolf", "animal": "wolf", "elements": ["shadow", "fire"], "mood": "angry", "size": "medium"},
+    {"id": "toxifrog", "name": "Toxifrog", "animal": "frog", "elements": ["toxic", "nature"], "mood": "cute", "size": "medium"},
+    {"id": "nightowl", "name": "Nightowl", "animal": "owl", "elements": ["shadow", "ice"], "mood": "chill", "size": "medium"},
+    {"id": "duskbat", "name": "Duskbat", "animal": "bat", "elements": ["shadow", "toxic"], "mood": "playful", "size": "medium"},
+    {"id": "frostbear", "name": "Frostbear", "animal": "bear", "elements": ["ice", "steel"], "mood": "chill", "size": "medium"},
+    {"id": "cybershark", "name": "Cybershark", "animal": "shark", "elements": ["cyber", "steel"], "mood": "fierce", "size": "medium"}
+  ],
+  "animals": ["fox", "cat", "dog", "bird", "fish", "snake", "turtle", "rabbit", "dragon", "wolf", "frog", "owl", "bat", "bear", "shark"],
+  "elements": ["fire", "water", "electric", "nature", "shadow", "ice", "steel", "toxic", "cyber"],
+  "moods": ["cute", "fierce", "chill", "angry", "playful"],
+  "sizes": ["small", "medium", "large"]
+}
