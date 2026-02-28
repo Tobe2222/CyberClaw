@@ -233,35 +233,22 @@ function updateCarousel() {
 }
 
 async function updateArena3D(agentId) {
-  if (!agentId) return;
-  const agent = agents[agentId];
-  if (!agent) return;
+  const arenaEl = document.getElementById('arena-3d-viewer');
+  if (!arenaEl || !agentId) return;
 
-  // Get sprite config to find cybermonId
   try {
     const config = await cyberclaw.agents.getSpriteConfig(agentId);
     const cybermonId = config?.cybermonId;
 
     if (cybermonId) {
-      // Initialize arena viewer if needed
-      if (!arenaViewer && CybermonViewer) {
-        try { arenaViewer = new CybermonViewer('arena-3d-viewer'); } catch(e) { console.warn('Arena 3D viewer failed:', e); }
-      }
-      // Load the 3D model
-      const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
-      const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-      arenaViewer.show(cybermonId, { rimColor });
-
-      // Hide the focused carousel item's avatar (3D replaces it)
-      const focusedEl = document.querySelector('.carousel-agent.focused');
-      if (focusedEl) focusedEl.style.opacity = '0.15';
+      const _path = require('path');
+      const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${cybermonId}.png`);
+      arenaEl.innerHTML = `<img src="file://${imgPath}" alt="${cybermonId}" style="width:100%;height:100%;object-fit:contain;pointer-events:none" />`;
     } else {
-      // No cybermon — clear 3D, show default carousel
-      if (arenaViewer) arenaViewer.clear();
+      arenaEl.innerHTML = '';
     }
   } catch (e) {
-    // No config — just show normal carousel
-    if (arenaViewer) arenaViewer.clear();
+    arenaEl.innerHTML = '';
   }
 }
 
@@ -1174,16 +1161,10 @@ let editorAgentId = null;
 let selectedCybermon = null;
 let cybermonCatalog = null;
 let activeFilters = { animal: null, element: null, mood: null };
-let arenaViewer = null; // Three.js viewer for the arena
-let editorViewer = null; // Three.js viewer for the editor preview
+// 3D viewers planned — using PNG for now
 
-// Three.js viewer — lazy loaded to avoid breaking app if it fails
+// 3D viewer disabled for now — using PNG images until Three.js ESM issues resolved
 let CybermonViewer = null;
-try {
-  CybermonViewer = require('./js/cybermon-viewer.js').CybermonViewer;
-} catch (e) {
-  console.warn('CybermonViewer failed to load:', e.message);
-}
 
 const ELEMENT_COLORS = {
   fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
@@ -1203,15 +1184,18 @@ const MOOD_EMOJI = { cute: '🥰', fierce: '😤', chill: '😎', angry: '😠',
 async function loadCybermonCatalog() {
   if (cybermonCatalog) return cybermonCatalog;
   try {
-    const path = require('path');
-    const fs = require('fs');
-    const catalogPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
-    const data = fs.readFileSync(catalogPath, 'utf-8');
+    const _path = require('path');
+    const _fs = require('fs');
+    const catalogPath = _path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    console.log('[Catalog] Loading from:', catalogPath);
+    const data = _fs.readFileSync(catalogPath, 'utf-8');
     cybermonCatalog = JSON.parse(data);
+    console.log('[Catalog] Loaded', cybermonCatalog.cybermons.length, 'cybermons');
     return cybermonCatalog;
   } catch (e) {
-    console.error('Failed to load Cybermon catalog:', e);
-    return { cybermons: [], animals: [], elements: [], moods: [], sizes: [] };
+    console.error('[Catalog] Failed to load:', e);
+    cybermonCatalog = { cybermons: [], animals: [], elements: [], moods: [], sizes: [] };
+    return cybermonCatalog;
   }
 }
 
@@ -1246,9 +1230,9 @@ function renderCybermonGallery() {
     return;
   }
 
-  const path = require('path');
+  const _path = require('path');
   grid.innerHTML = filtered.map(mon => {
-    const imgPath = path.join(__dirname, 'assets', 'cybermons', `${mon.id}.png`);
+    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${mon.id}.png`);
     const selected = selectedCybermon === mon.id ? 'selected' : '';
     const elementDots = mon.elements.map(e =>
       `<span class="element-dot" style="background:${ELEMENT_COLORS[e] || '#666'}"></span>`
@@ -1267,28 +1251,29 @@ window.selectCybermon = function(id) {
   document.querySelectorAll('.cybermon-card').forEach(card => {
     card.classList.toggle('selected', card.querySelector('img')?.alt === cybermonCatalog?.cybermons.find(m => m.id === id)?.name);
   });
-  // Show 3D preview in editor
-  if (editorViewer) {
-    const mon = cybermonCatalog?.cybermons.find(m => m.id === id);
-    const rimColor = mon?.elements[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-    editorViewer.show(id, { rimColor });
+  // Show PNG preview
+  const _path = require('path');
+  const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
+  const preview = document.getElementById('editor-3d-viewer');
+  if (preview) {
+    preview.innerHTML = `<img src="file://${imgPath}" alt="${id}" style="width:100%;height:100%;object-fit:contain" />`;
   }
 };
 
 window.openCompanionEditor = function() {
+  console.log('[Editor] Opening companion editor...');
   const agentId = agentOrder[focusIndex];
-  if (!agentId) return;
+  if (!agentId) { console.warn('[Editor] No agent at focusIndex', focusIndex); return; }
   editorAgentId = agentId;
   const agent = agents[agentId];
+  console.log('[Editor] Agent:', agentId, agent?.name);
 
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
 
-  // Initialize editor 3D preview
-  if (editorViewer) editorViewer.dispose();
-  if (CybermonViewer) {
-    try { editorViewer = new CybermonViewer('editor-3d-viewer'); } catch(e) { console.warn('Editor 3D viewer failed:', e); }
-  }
+  // Clear editor preview
+  const previewEl = document.getElementById('editor-3d-viewer');
+  if (previewEl) previewEl.innerHTML = '<div class="cybermon-empty">Select a Cybermon below</div>';
 
   // Initialize Cybermon gallery
   loadCybermonCatalog().then(catalog => {
@@ -1330,7 +1315,6 @@ window.openCompanionEditor = function() {
 window.closeCompanionEditor = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('companion-editor-overlay').classList.add('hidden');
-  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
   editorAgentId = null;
 };
 

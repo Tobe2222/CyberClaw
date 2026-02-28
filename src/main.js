@@ -357,10 +357,18 @@ ipcMain.handle('terminal:spawn', (event, { cols, rows }) => {
     });
   }
   ptyProcess.onData(data => {
-    if (!isQuitting) mainWindow?.webContents.send('terminal:data', data);
+    try {
+      if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:data', data);
+      }
+    } catch (e) { /* frame disposed */ }
   });
   ptyProcess.onExit(({ exitCode }) => {
-    if (!isQuitting) mainWindow?.webContents.send('terminal:exit', exitCode);
+    try {
+      if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:exit', exitCode);
+      }
+    } catch (e) { /* frame disposed */ }
   });
   return true;
 });
