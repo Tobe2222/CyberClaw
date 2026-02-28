@@ -228,29 +228,10 @@ function updateCarousel() {
   updateInspect(focusedId);
   updateChatTarget();
 
-  // Show 3D model in arena for focused companion
-  updateArena3D(focusedId);
+  // Companions render directly on carousel cards — no separate arena overlay
 }
 
-async function updateArena3D(agentId) {
-  const arenaEl = document.getElementById('arena-3d-viewer');
-  if (!arenaEl || !agentId) return;
-
-  try {
-    const config = await cyberclaw.agents.getSpriteConfig(agentId);
-    const cybermonId = config?.cybermonId;
-
-    if (cybermonId) {
-      const _path = require('path');
-      const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${cybermonId}.png`);
-      arenaEl.innerHTML = `<img src="file://${imgPath}" alt="${cybermonId}" style="width:100%;height:100%;object-fit:contain;pointer-events:none" />`;
-    } else {
-      arenaEl.innerHTML = '';
-    }
-  } catch (e) {
-    arenaEl.innerHTML = '';
-  }
-}
+// Arena 3D overlay removed — companions render directly on carousel cards
 
 window.carouselNext = function() {
   focusIndex = (focusIndex + 1) % agentOrder.length;
@@ -1226,7 +1207,7 @@ function renderCybermonGallery() {
   });
 
   if (filtered.length === 0) {
-    grid.innerHTML = '<div class="cybermon-empty">No matches — try different filters</div>';
+    grid.innerHTML = '<div class="cybermon-empty">No matches — adjust filters</div>';
     return;
   }
 
@@ -1273,7 +1254,7 @@ window.openCompanionEditor = function() {
 
   // Clear editor preview
   const previewEl = document.getElementById('editor-3d-viewer');
-  if (previewEl) previewEl.innerHTML = '<div class="cybermon-empty">Select a Cybermon below</div>';
+  if (previewEl) previewEl.innerHTML = '<div class="cybermon-empty">Select a companion below</div>';
 
   // Initialize Cybermon gallery
   loadCybermonCatalog().then(catalog => {

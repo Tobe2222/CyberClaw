@@ -1272,27 +1272,10 @@
   border-radius: 10px;
 }
 
-/* Arena 3D viewer overlay */
-#arena-3d-viewer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 5;
-  pointer-events: none;
-}
-#arena-3d-viewer canvas {
-  width: 100% !important;
-  height: 100% !important;
-  pointer-events: auto;
-}
-
-/* Force buttons above 3D viewer */
+/* Companion buttons z-index */
 .carousel-edit-btn-bottom,
 .btn-generate,
 .carousel-arrow {
   position: absolute;
   z-index: 200 !important;
-  pointer-events: auto !important;
 }
