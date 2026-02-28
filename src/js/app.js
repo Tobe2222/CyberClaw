@@ -160,17 +160,17 @@ function buildCarousel() {
       ? `<img src="${agent.avatar}" alt="${agent.name}">`
       : `<div class="carousel-emoji">${agent.emoji}</div>`;
 
+    const crownHtml = agent.isMain ? '<div class="carousel-crown">👑</div>' : '';
+
     el.innerHTML = `
       <div class="carousel-avatar ${agent.rarity}-aura" style="position:relative">
+        ${crownHtml}
         ${avatarContent}
         <div class="carousel-status ${agent.status}"></div>
       </div>
       <div class="carousel-label">
         <span class="carousel-label-name ${agent.rarity}-text">${agent.name}</span>
         <span class="carousel-label-class">${agent.class}</span>
-        <div class="carousel-label-channel">
-          <span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channel}</span>
-        </div>
       </div>
     `;
     ring.appendChild(el);
@@ -306,13 +306,51 @@ function updateInspect(agentId) {
   const statusEl = document.getElementById('inspect-status');
   statusEl.innerHTML = `<span class="status-dot ${agent.status}"></span> ${agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}`;
 
-  document.getElementById('inspect-channel-badge').innerHTML =
-    `<span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channelDetail}</span>`;
+  // Channel info (bottom section)
+  const platformEl = document.getElementById('inspect-channel-platform');
+  if (platformEl) platformEl.innerHTML = `<span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channelDetail}</span>`;
+  const wsRight = document.getElementById('inspect-workspace-right');
+  if (wsRight) { wsRight.textContent = agent.workspace; wsRight.title = agent.workspace; }
 
-  // Load earned stats
-  cyberclaw.agents.getStats(agentId).then(stats => {
+  // Load earned stats + rate limit HP
+  cyberclaw.agents.getStats(agentId).then(async (stats) => {
     const xpNeeded = Math.floor(100 * Math.pow(1.8, stats.level - 1));
-    setBar('inspect-hp', agent.hp);
+
+    // HP = rate limit health (green=unlimited/healthy, red=low)
+    let hpCur = 100, hpMax = 100, isLocal = false;
+    try {
+      const resp = await fetch('http://localhost:18789/v1/models', {
+        headers: { 'Authorization': 'Bearer ' + (window._gwToken || '') },
+        signal: AbortSignal.timeout(3000),
+      });
+      const remaining = resp.headers.get('x-ratelimit-remaining-requests')
+        || resp.headers.get('anthropic-ratelimit-requests-remaining');
+      const limit = resp.headers.get('x-ratelimit-limit-requests')
+        || resp.headers.get('anthropic-ratelimit-requests-limit');
+      if (remaining && limit) {
+        hpCur = parseInt(remaining);
+        hpMax = parseInt(limit);
+      } else {
+        isLocal = true; // No rate limit headers = likely local/unlimited
+      }
+    } catch { isLocal = true; }
+
+    setBar('inspect-hp', [hpCur, hpMax]);
+    // Color the HP bar based on health
+    const hpFill = document.getElementById('inspect-hp');
+    if (hpFill) {
+      const pct = hpCur / hpMax;
+      if (isLocal) {
+        hpFill.style.background = 'linear-gradient(90deg, #39ff14, #4ade80)'; // green = unlimited
+      } else if (pct > 0.5) {
+        hpFill.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)'; // green
+      } else if (pct > 0.2) {
+        hpFill.style.background = 'linear-gradient(90deg, #ffaa00, #ff6b35)'; // orange
+      } else {
+        hpFill.style.background = 'linear-gradient(90deg, #ff4444, #cc0000)'; // red
+      }
+    }
+
     setBar('inspect-mp', agent.mp);
     setBar('inspect-xp', [stats.xp, xpNeeded]);
 
