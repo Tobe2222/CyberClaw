@@ -455,6 +455,29 @@ function classifyTask(message) {
 let doctorWindow = null;
 let doctorPty = null;
 
+ipcMain.handle('openclaw:list-skills', async () => {
+  try {
+    const { execSync } = require('child_process');
+    const openclawBin = path.join(os.homedir(), '.npm-global', 'bin', 'openclaw');
+    const output = execSync(`${openclawBin} skills list --no-color 2>/dev/null || true`, { encoding: 'utf8', timeout: 10000 });
+    // Parse the table output
+    const skills = [];
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const match = line.match(/│\s*(✓ ready|✗ missing)\s*│\s*([^\s│][^│]*?)\s*│\s*([^│]*?)\s*│/);
+      if (match) {
+        const [, status, name, desc] = match;
+        skills.push({
+          name: name.trim(),
+          description: desc.trim(),
+          ready: status.includes('ready'),
+        });
+      }
+    }
+    return skills;
+  } catch { return []; }
+});
+
 ipcMain.handle('openclaw:doctor', () => {
   if (doctorWindow && !doctorWindow.isDestroyed()) {
     doctorWindow.focus();

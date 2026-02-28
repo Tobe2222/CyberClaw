@@ -26,6 +26,7 @@ window.cyberclaw = {
     getSpriteConfig: (agentId) => ipcRenderer.invoke('companion:get-sprite', agentId),
     saveSpriteConfig: (agentId, config) => ipcRenderer.invoke('companion:save-sprite', agentId, config),
     saveAvatar: (agentId, dataUrl) => ipcRenderer.invoke('companion:save-avatar', agentId, dataUrl),
+    listSkills: () => ipcRenderer.invoke('openclaw:list-skills'),
   },
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),

@@ -236,16 +236,15 @@
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Equipment -->
+        <!-- Equipment (Skills/Tools) -->
         <div class="inspect-section">
-          <div class="section-title">Equipment</div>
+          <div class="section-title">Equipment <button class="equip-search-btn" onclick="toggleEquipSearch()" title="Find new skills">🔍</button></div>
+          <div id="equip-search-panel" class="equip-search hidden">
+            <input type="text" id="equip-search-input" placeholder="Search skills..." oninput="searchEquipment()" />
+            <div id="equip-search-results" class="equip-results"></div>
+          </div>
           <div class="gear-grid" id="inspect-gear">
-            <div class="gear-slot"><div class="gear-icon">⚔️</div><div class="gear-label">Weapon</div></div>
-            <div class="gear-slot"><div class="gear-icon">🛡️</div><div class="gear-label">Shield</div></div>
-            <div class="gear-slot"><div class="gear-icon">🪖</div><div class="gear-label">Helm</div></div>
-            <div class="gear-slot"><div class="gear-icon">💍</div><div class="gear-label">Ring</div></div>
-            <div class="gear-slot"><div class="gear-icon">👢</div><div class="gear-label">Boots</div></div>
-            <div class="gear-slot"><div class="gear-icon">📿</div><div class="gear-label">Amulet</div></div>
+            <!-- Populated dynamically from installed skills -->
           </div>
         </div>
 

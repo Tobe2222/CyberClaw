@@ -368,6 +368,7 @@ function updateInspect(agentId) {
       { name: 'Strategy', icon: '🗺️' },
       { name: 'Research', icon: '🔍' },
       { name: 'Communication', icon: '💬' },
+      { name: 'Game', icon: '🎮' },
       { name: 'General', icon: '✨' },
     ];
     const skills = stats.skills || {};
@@ -386,6 +387,7 @@ function updateInspect(agentId) {
 
   document.getElementById('inspect-model').textContent = agent.model;
   document.getElementById('inspect-provider').textContent = agent.provider;
+  loadEquipment(agentId);
   document.getElementById('inspect-channel').textContent = agent.channel;
   document.getElementById('inspect-workspace').textContent = agent.workspace;
   document.getElementById('inspect-workspace').title = agent.workspace;
@@ -594,6 +596,33 @@ renderQuests();
 // ---------------------------------------------------------------------------
 let editingQuestId = null;
 
+function buildGoalInputs(goals) {
+  // Ensure at least one empty input
+  const items = Array.isArray(goals) ? [...goals] : [];
+  if (items.length === 0 || items[items.length - 1].trim() !== '') items.push('');
+  return items.map((g, i) =>
+    `<div class="qe-goal-row">
+      <span class="qe-goal-num">${i + 1}.</span>
+      <input type="text" class="qe-goal-input" value="${escapeHtml(g)}" placeholder="Goal ${i + 1}..." oninput="onGoalInput()" />
+      ${i > 0 && g.trim() === '' ? '' : ''}
+    </div>`
+  ).join('');
+}
+
+window.onGoalInput = function() {
+  const container = document.getElementById('qe-goals-list');
+  const inputs = container.querySelectorAll('.qe-goal-input');
+  const last = inputs[inputs.length - 1];
+  // Auto-add new row if last input has text
+  if (last && last.value.trim() !== '') {
+    const idx = inputs.length;
+    const row = document.createElement('div');
+    row.className = 'qe-goal-row';
+    row.innerHTML = `<span class="qe-goal-num">${idx + 1}.</span><input type="text" class="qe-goal-input" value="" placeholder="Goal ${idx + 1}..." oninput="onGoalInput()" />`;
+    container.appendChild(row);
+  }
+};
+
 window.openQuestEditor = async function(event, questId) {
   if (event) event.stopPropagation();
   const quests = await cyberclaw.quests.list();
@@ -619,10 +648,10 @@ window.openQuestEditor = async function(event, questId) {
   }).join('');
 
   // Skill categories for the quest
-  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'General'];
+  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'Game', 'General'];
   const questSkills = quest.skills || [];
   const skillChecks = skillTypes.map(s => {
-    const icons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
+    const icons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', Game: '🎮', General: '✨' };
     return `<label class="qe-skill-tag"><input type="checkbox" value="${s}" ${questSkills.includes(s) ? 'checked' : ''} /> ${icons[s]} ${s}</label>`;
   }).join('');
 
@@ -641,8 +670,10 @@ window.openQuestEditor = async function(event, questId) {
         <textarea id="qe-desc" rows="3">${escapeHtml(quest.description || '')}</textarea>
       </div>
       <div class="editor-field">
-        <label>Goals</label>
-        <textarea id="qe-goals" rows="3" placeholder="What needs to be accomplished...">${escapeHtml(quest.goals || '')}</textarea>
+        <label>Goals (Priority Order)</label>
+        <div id="qe-goals-list" class="qe-goals-list">
+          ${buildGoalInputs(quest.goals || [])}
+        </div>
       </div>
       <div class="editor-field">
         <label>Directory</label>
@@ -677,7 +708,8 @@ window.saveQuestEdit = async function() {
 
   const name = document.getElementById('qe-name').value.trim();
   const description = document.getElementById('qe-desc').value.trim();
-  const goals = document.getElementById('qe-goals').value.trim();
+  const goalInputs = document.querySelectorAll('#qe-goals-list .qe-goal-input');
+  const goals = Array.from(goalInputs).map(i => i.value.trim()).filter(g => g !== '');
   const directory = document.getElementById('qe-dir').value.trim();
 
   // Gather skills
@@ -1135,8 +1167,8 @@ window.openCompanionEditor = function() {
   });
 
   // Populate skill checkboxes
-  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'General'];
-  const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
+  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'Game', 'General'];
+  const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', Game: '🎮', General: '✨' };
   const checkboxGrid = document.getElementById('editor-skill-checkboxes');
   const focusSkills = agent.focusSkills || [];
   checkboxGrid.innerHTML = skillTypes.map(s =>
@@ -1238,3 +1270,93 @@ function populateSelect(id, options) {
     `<option value="${o}">${o.charAt(0).toUpperCase() + o.slice(1).replace(/_/g, ' ')}</option>`
   ).join('');
 }
+
+// ---------------------------------------------------------------------------
+// Equipment / Skills System
+// ---------------------------------------------------------------------------
+let allSkillsCache = null;
+
+async function loadEquipment(agentId) {
+  const gear = document.getElementById('inspect-gear');
+  if (!gear) return;
+
+  // Load installed/equipped skills for this companion
+  const config = await cyberclaw.agents.getSpriteConfig(agentId) || {};
+  const equipped = config.equipment || [];
+
+  if (equipped.length === 0) {
+    gear.innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:4px">No equipment yet — search to equip skills!</div>';
+  } else {
+    gear.innerHTML = equipped.map(e =>
+      `<div class="gear-slot equipped" title="${escapeHtml(e.description || e.skill)}">
+        <div class="gear-icon">${e.icon || '🔧'}</div>
+        <div class="gear-label">${escapeHtml(e.name || e.skill)}</div>
+      </div>`
+    ).join('');
+  }
+}
+
+window.toggleEquipSearch = function() {
+  const panel = document.getElementById('equip-search-panel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    document.getElementById('equip-search-input').focus();
+    if (!allSkillsCache) {
+      document.getElementById('equip-search-results').innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:8px">Loading skills...</div>';
+      cyberclaw.agents.listSkills().then(skills => {
+        allSkillsCache = skills;
+        searchEquipment();
+      });
+    }
+  }
+};
+
+window.searchEquipment = function() {
+  const query = (document.getElementById('equip-search-input').value || '').toLowerCase();
+  const results = document.getElementById('equip-search-results');
+  if (!allSkillsCache) return;
+
+  const filtered = allSkillsCache.filter(s =>
+    s.name.toLowerCase().includes(query) || s.description.toLowerCase().includes(query)
+  ).slice(0, 8);
+
+  if (filtered.length === 0) {
+    results.innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:4px">No skills found</div>';
+    return;
+  }
+
+  results.innerHTML = filtered.map(s =>
+    `<div class="equip-result ${s.ready ? 'ready' : 'missing'}" onclick="equipSkill('${escapeHtml(s.name)}')">
+      <div class="equip-result-name">${s.ready ? '✓' : '✗'} ${s.name}</div>
+      <div class="equip-result-desc">${s.description.slice(0, 80)}${s.description.length > 80 ? '...' : ''}</div>
+    </div>`
+  ).join('');
+};
+
+window.equipSkill = async function(skillName) {
+  if (!agentOrder[focusIndex]) return;
+  const agentId = agentOrder[focusIndex];
+  const skill = allSkillsCache?.find(s => s.name === skillName);
+  if (!skill) return;
+
+  // Prompt for custom equipment name
+  const customName = prompt(`Name this equipment (${skillName}):`, skillName);
+  if (!customName) return;
+
+  const config = await cyberclaw.agents.getSpriteConfig(agentId) || {};
+  const equipment = config.equipment || [];
+  // Don't duplicate
+  if (equipment.find(e => e.skill === skillName)) return;
+
+  equipment.push({
+    skill: skillName,
+    name: customName,
+    icon: skill.ready ? '⚔️' : '📦',
+    description: skill.description,
+    ready: skill.ready,
+  });
+
+  config.equipment = equipment;
+  await cyberclaw.agents.saveSpriteConfig(agentId, config);
+  loadEquipment(agentId);
+};

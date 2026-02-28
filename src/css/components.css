@@ -1019,3 +1019,86 @@
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
+
+/* ─── Equipment Search ─── */
+.equip-search-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.equip-search-btn:hover { opacity: 1; }
+
+.equip-search {
+  padding: 6px 0;
+}
+.equip-search.hidden { display: none; }
+.equip-search input {
+  width: 100%;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: inherit;
+  margin-bottom: 4px;
+}
+.equip-search input:focus { border-color: var(--accent); outline: none; }
+
+.equip-results {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.equip-result {
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 2px;
+}
+.equip-result:hover { background: rgba(255,107,53,0.1); }
+.equip-result.ready .equip-result-name { color: #4ade80; }
+.equip-result.missing .equip-result-name { color: var(--text-muted); }
+.equip-result-name { font-size: 11px; font-weight: bold; }
+.equip-result-desc { font-size: 9px; color: var(--text-muted); }
+
+.gear-slot.equipped {
+  border-color: var(--accent);
+  background: rgba(255,107,53,0.08);
+}
+
+/* ─── Quest Goal Inputs ─── */
+.qe-goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qe-goal-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qe-goal-num {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--accent);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: 'MedievalSharp', serif;
+}
+.qe-goal-input {
+  flex: 1;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+}
+.qe-goal-input:focus { border-color: var(--accent); outline: none; }

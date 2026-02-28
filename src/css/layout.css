@@ -30,7 +30,7 @@
 /* Panels */
 .panel { background: var(--bg-panel); overflow-y: auto; overflow-x: hidden; }
 #panel-left { border-right: 1px solid var(--border-dark); display: flex; flex-direction: column; }
-#panel-right { border-left: 1px solid var(--border-dark); }
+#panel-right { border-left: 1px solid var(--border-dark); display: flex; flex-direction: column; }
 .panel-header {
   font-family: var(--font-cyber); font-size: 11px; font-weight: 700; color: var(--cyan);
   letter-spacing: 2px; padding: 10px 14px 8px; border-bottom: 1px solid var(--border-dark);
