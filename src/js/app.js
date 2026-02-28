@@ -79,7 +79,8 @@ async function loadAgents() {
         .replace(/^\(?\s*Agent\s*\)?\s*$/i, '')  // just "Agent" or "(Agent)"
         .replace(/\s*\(Agent\)\s*/i, '')          // "Something (Agent)"
         .replace(/\s*- Agent\s*/i, '')            // "Something - Agent"
-        .trim() || 'Companion';
+        .replace(/^Companion$/i, '')
+        .trim();
 
       agents[a.id] = {
         name: a.name,
@@ -319,18 +320,30 @@ function updateInspect(agentId) {
     const levelEl = document.getElementById('inspect-level');
     if (levelEl) levelEl.textContent = `Lv.${stats.level}`;
 
-    // Show earned skills
+    // RuneScape-style skill list — all categories shown with level + XP bar
     const skillsEl = document.getElementById('inspect-skills');
-    const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
-    const earnedSkills = Object.entries(stats.skills || {});
-    if (earnedSkills.length === 0) {
-      skillsEl.innerHTML = '<div style="color:var(--text-muted);font-size:10px">No skills yet — start chatting!</div>';
-    } else {
-      skillsEl.innerHTML = earnedSkills
-        .sort((a, b) => b[1].level - a[1].level)
-        .map(([name, s]) => `<div class="skill-slot-sm"><div class="skill-icon-sm">${skillIcons[name]||'✨'}</div><span class="skill-name-sm">${name} Lv.${s.level}</span></div>`)
-        .join('');
-    }
+    const allSkills = [
+      { name: 'Coding', icon: '💻' },
+      { name: 'Writing', icon: '✍️' },
+      { name: 'Design', icon: '🎨' },
+      { name: 'Analysis', icon: '📊' },
+      { name: 'Strategy', icon: '🗺️' },
+      { name: 'Research', icon: '🔍' },
+      { name: 'Communication', icon: '💬' },
+      { name: 'General', icon: '✨' },
+    ];
+    const skills = stats.skills || {};
+    skillsEl.innerHTML = allSkills.map(s => {
+      const sk = skills[s.name] || { level: 1, xp: 0 };
+      const xpNeeded = Math.floor(100 * Math.pow(1.5, sk.level - 1));
+      const pct = Math.min(100, (sk.xp / xpNeeded) * 100);
+      return `<div class="rs-skill-row">
+        <span class="rs-skill-icon">${s.icon}</span>
+        <span class="rs-skill-name">${s.name}</span>
+        <span class="rs-skill-level">${sk.level}</span>
+        <div class="rs-skill-bar"><div class="rs-skill-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
   });
 
   document.getElementById('inspect-model').textContent = agent.model;
