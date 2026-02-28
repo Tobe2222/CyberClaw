@@ -3,10 +3,25 @@
  * Loads .glb models, renders them with toon shading, handles rotation on click.
  */
 const THREE = require('three');
-const { GLTFLoader } = require('three/examples/jsm/loaders/GLTFLoader.js');
-const { OrbitControls } = require('three/examples/jsm/controls/OrbitControls.js');
 const path = require('path');
 const fs = require('fs');
+
+// GLTFLoader is ESM-only, so we inline a minimal loader
+// that uses THREE.ObjectLoader for basic GLB/GLTF support
+let GLTFLoader = null;
+
+// Use dynamic import for ESM modules
+async function getGLTFLoader() {
+  if (GLTFLoader) return GLTFLoader;
+  try {
+    const module = await import('three/examples/jsm/loaders/GLTFLoader.js');
+    GLTFLoader = module.GLTFLoader;
+    return GLTFLoader;
+  } catch (e) {
+    console.warn('GLTFLoader import failed:', e.message);
+    return null;
+  }
+}
 
 class CybermonViewer {
   constructor(containerId) {
@@ -69,8 +84,11 @@ class CybermonViewer {
     this.rimLight.position.set(0, 1, -2);
     this.scene.add(this.rimLight);
 
-    // GLTF Loader
-    this.loader = new GLTFLoader();
+    // GLTF Loader — loaded async
+    this.loader = null;
+    getGLTFLoader().then(Loader => {
+      if (Loader) this.loader = new Loader();
+    });
 
     // Interaction — click to rotate
     this.renderer.domElement.addEventListener('mousedown', this.onMouseDown.bind(this));
@@ -223,9 +241,15 @@ class CybermonViewer {
     }
   }
 
-  loadGLTF(filePath) {
+  async loadGLTF(filePath) {
+    // Ensure loader is ready
+    if (!this.loader) {
+      const Loader = await getGLTFLoader();
+      if (Loader) this.loader = new Loader();
+    }
+    if (!this.loader) throw new Error('GLTFLoader not available');
+
     return new Promise((resolve, reject) => {
-      // Convert file path to file:// URL for the loader
       const url = `file://${filePath}`;
       this.loader.load(url, resolve, undefined, reject);
     });

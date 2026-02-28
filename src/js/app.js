@@ -244,8 +244,8 @@ async function updateArena3D(agentId) {
 
     if (cybermonId) {
       // Initialize arena viewer if needed
-      if (!arenaViewer) {
-        arenaViewer = new CybermonViewer('arena-3d-viewer');
+      if (!arenaViewer && CybermonViewer) {
+        try { arenaViewer = new CybermonViewer('arena-3d-viewer'); } catch(e) { console.warn('Arena 3D viewer failed:', e); }
       }
       // Load the 3D model
       const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
@@ -1073,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Pre-load Cybermon catalog for 3D arena
-  await loadCybermonCatalog();
+  try { await loadCybermonCatalog(); } catch(e) { console.warn('Catalog load failed:', e); }
 
   buildCarousel();
   updateSystemInfo();
@@ -1177,8 +1177,13 @@ let activeFilters = { animal: null, element: null, mood: null };
 let arenaViewer = null; // Three.js viewer for the arena
 let editorViewer = null; // Three.js viewer for the editor preview
 
-// Initialize Three.js viewer
-const { CybermonViewer } = require('./js/cybermon-viewer.js');
+// Three.js viewer — lazy loaded to avoid breaking app if it fails
+let CybermonViewer = null;
+try {
+  CybermonViewer = require('./js/cybermon-viewer.js').CybermonViewer;
+} catch (e) {
+  console.warn('CybermonViewer failed to load:', e.message);
+}
 
 const ELEMENT_COLORS = {
   fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
@@ -1281,7 +1286,9 @@ window.openCompanionEditor = function() {
 
   // Initialize editor 3D preview
   if (editorViewer) editorViewer.dispose();
-  editorViewer = new CybermonViewer('editor-3d-viewer');
+  if (CybermonViewer) {
+    try { editorViewer = new CybermonViewer('editor-3d-viewer'); } catch(e) { console.warn('Editor 3D viewer failed:', e); }
+  }
 
   // Initialize Cybermon gallery
   loadCybermonCatalog().then(catalog => {
