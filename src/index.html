@@ -56,6 +56,17 @@
         </div>
       </div>
 
+      <!-- Session -->
+      <div class="panel-header system-hdr">
+        <span class="rune-icon">📡</span> SESSION
+      </div>
+      <div class="system-section">
+        <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
+        <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
+        <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
+        <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
+      </div>
+
       <!-- System (bottom) -->
       <div class="panel-header system-hdr">
         <span class="rune-icon">🖥️</span> SYSTEM
@@ -103,7 +114,11 @@
           <span id="carousel-name" class="legendary-text">Codesuu</span>
           <span id="carousel-class">Code Architect</span>
           <div id="carousel-channel"></div>
+          <button class="btn-xs btn-accent carousel-edit-btn" onclick="openCompanionEditor()" title="Edit Companion">🎨</button>
         </div>
+
+        <!-- Generate new companion button -->
+        <button id="btn-generate-companion" class="btn-generate" onclick="openCompanionEditor(true)" title="Generate New Companion">＋</button>
       </div>
 
       <!-- Focused companion info strip (below carousel) -->
@@ -117,7 +132,7 @@
         <div id="focused-info">
           <div id="focused-name" class="legendary-text">Codesuu</div>
           <div id="focused-class">Code Architect</div>
-          <div id="focused-id">anthropic-hiveclaw</div>
+          <div id="focused-id" style="display:none">anthropic-hiveclaw</div>
           <div id="focused-status"><span class="status-dot online"></span> Online</div>
           <div id="focused-channel-badge"></div>
         </div>
@@ -191,9 +206,8 @@
           <div id="inspect-name" class="legendary-text">Codesuu</div>
           <span id="inspect-level" class="inspect-level">Lv.1</span>
           <div id="inspect-class">Code Architect</div>
-          <div id="inspect-id">anthropic-hiveclaw</div>
+          <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
           <div id="inspect-channel-badge"></div>
-          <button class="btn-xs btn-accent" onclick="openCompanionEditor()" style="margin-top:6px">🎨 Edit Companion</button>
         </div>
 
         <!-- Bars -->
@@ -215,25 +229,13 @@
           </div>
         </div>
 
-        <!-- Model -->
-        <div class="inspect-section">
-          <div class="section-title">Model</div>
-          <div class="model-card active-model">
-            <div class="model-indicator pulse-green"></div>
-            <div class="model-info">
-              <div class="model-name" id="inspect-model">Claude Opus 4</div>
-              <div class="model-provider" id="inspect-provider">Anthropic</div>
-            </div>
-          </div>
-        </div>
-
         <!-- Skills -->
         <div class="inspect-section">
           <div class="section-title">Skills</div>
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Equipment (populated dynamically in future) -->
+        <!-- Equipment -->
         <div class="inspect-section">
           <div class="section-title">Equipment</div>
           <div class="gear-grid" id="inspect-gear">
@@ -246,13 +248,16 @@
           </div>
         </div>
 
-        <!-- Session (bottom) -->
+        <!-- Model (bottom) -->
         <div class="inspect-section">
-          <div class="section-title">Session</div>
-          <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
-          <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
-          <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
-          <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
+          <div class="section-title">Model</div>
+          <div class="model-card active-model">
+            <div class="model-indicator pulse-green"></div>
+            <div class="model-info">
+              <div class="model-name" id="inspect-model">Claude Opus 4</div>
+              <div class="model-provider" id="inspect-provider">Anthropic</div>
+            </div>
+          </div>
         </div>
       </div>
     </aside>

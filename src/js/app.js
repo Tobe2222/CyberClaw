@@ -74,9 +74,16 @@ async function loadAgents() {
       const rarity = isPartyLeader ? 'legendary' : assignRarity(a, i);
       const stats = defaultStats(rarity);
 
+      // Clean up class label — remove generic "Agent" suffix
+      const cleanClass = (a.class || '')
+        .replace(/^\(?\s*Agent\s*\)?\s*$/i, '')  // just "Agent" or "(Agent)"
+        .replace(/\s*\(Agent\)\s*/i, '')          // "Something (Agent)"
+        .replace(/\s*- Agent\s*/i, '')            // "Something - Agent"
+        .trim() || 'Companion';
+
       agents[a.id] = {
         name: a.name,
-        class: a.class,
+        class: cleanClass,
         id: a.id,
         avatar: a.avatar,
         emoji: a.emoji || '🤖',
