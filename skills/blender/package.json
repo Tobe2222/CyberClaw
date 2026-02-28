@@ -1,0 +1,9 @@
+{
+  "name": "blender-mcp",
+  "version": "1.0.0",
+  "description": "Control Blender 3D via MCP server — create, modify, and render 3D objects, materials, and scenes",
+  "keywords": ["blender", "3d", "mcp", "modeling", "rendering"],
+  "openclaw": {
+    "skill": true
+  }
+}
