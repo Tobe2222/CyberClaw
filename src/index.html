@@ -193,6 +193,7 @@
           <div id="inspect-class">Code Architect</div>
           <div id="inspect-id">anthropic-hiveclaw</div>
           <div id="inspect-channel-badge"></div>
+          <button class="btn-xs btn-accent" onclick="openCompanionEditor()" style="margin-top:6px">🎨 Edit Companion</button>
         </div>
 
         <!-- Bars -->
@@ -255,6 +256,84 @@
         </div>
       </div>
     </aside>
+  </div>
+
+  <!-- Companion Sprite Generator -->
+  <script src="js/sprite-generator.js"></script>
+
+  <!-- Companion Editor Modal -->
+  <div id="companion-editor-overlay" class="modal-overlay hidden" onclick="closeCompanionEditor(event)">
+    <div class="modal-panel companion-editor" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="rune-icon">🎨</span> COMPANION FORGE
+        <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
+      </div>
+      <div class="editor-content">
+        <!-- Sprite Preview -->
+        <div class="editor-preview">
+          <div id="editor-sprite-container" class="sprite-preview-box"></div>
+          <button class="btn-sm btn-accent" onclick="randomizeSprite()">🎲 Randomize</button>
+        </div>
+
+        <!-- Editor Controls -->
+        <div class="editor-controls">
+          <div class="editor-field">
+            <label>Name</label>
+            <input type="text" id="editor-name" placeholder="Companion name" />
+          </div>
+          <div class="editor-field">
+            <label>Element</label>
+            <select id="editor-element"></select>
+          </div>
+          <div class="editor-row">
+            <div class="editor-field">
+              <label>Body</label>
+              <select id="editor-body"></select>
+            </div>
+            <div class="editor-field">
+              <label>Ears/Horns</label>
+              <select id="editor-ears"></select>
+            </div>
+          </div>
+          <div class="editor-row">
+            <div class="editor-field">
+              <label>Tail</label>
+              <select id="editor-tail"></select>
+            </div>
+            <div class="editor-field">
+              <label>Accessory</label>
+              <select id="editor-accessory"></select>
+            </div>
+          </div>
+          <div class="editor-row">
+            <div class="editor-field">
+              <label>Eyes</label>
+              <select id="editor-eyes"></select>
+            </div>
+            <div class="editor-field">
+              <label>Mouth</label>
+              <select id="editor-mouth"></select>
+            </div>
+          </div>
+
+          <!-- Skill Focus -->
+          <div class="editor-field">
+            <label>Skill Focus</label>
+            <div id="editor-skill-checkboxes" class="skill-checkbox-grid"></div>
+          </div>
+
+          <!-- Project Assignment -->
+          <div class="editor-field">
+            <label>Assigned Quest</label>
+            <select id="editor-quest"></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-sm btn-muted" onclick="closeCompanionEditor()">Cancel</button>
+        <button class="btn-sm btn-primary" onclick="saveCompanion()">⚔️ Save</button>
+      </div>
+    </div>
   </div>
 
   <script src="js/app.js"></script>

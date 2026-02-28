@@ -23,6 +23,9 @@ window.cyberclaw = {
     systemInfo: () => ipcRenderer.invoke('openclaw:system-info'),
     openDoctor: () => ipcRenderer.invoke('openclaw:doctor'),
     getStats: (agentId) => ipcRenderer.invoke('companion:stats', agentId),
+    getSpriteConfig: (agentId) => ipcRenderer.invoke('companion:get-sprite', agentId),
+    saveSpriteConfig: (agentId, config) => ipcRenderer.invoke('companion:save-sprite', agentId, config),
+    saveAvatar: (agentId, dataUrl) => ipcRenderer.invoke('companion:save-avatar', agentId, dataUrl),
   },
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),

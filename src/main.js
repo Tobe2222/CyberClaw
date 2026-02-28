@@ -548,6 +548,35 @@ ipcMain.handle('companion:stats', (event, agentId) => {
   const stats = loadStats();
   return stats[agentId] || { level: 1, xp: 0, xpTotal: 0, skills: {} };
 });
+
+// ─── Companion Sprite Config ───
+const spriteConfigPath = path.join(CYBERCLAW_DIR, 'sprites.json');
+function loadSpriteConfigs() {
+  try { return JSON.parse(fs.readFileSync(spriteConfigPath, 'utf8')); } catch { return {}; }
+}
+function saveSpriteConfigs(configs) {
+  fs.writeFileSync(spriteConfigPath, JSON.stringify(configs, null, 2));
+}
+
+ipcMain.handle('companion:get-sprite', (event, agentId) => {
+  const configs = loadSpriteConfigs();
+  return configs[agentId] || null;
+});
+ipcMain.handle('companion:save-sprite', (event, agentId, config) => {
+  const configs = loadSpriteConfigs();
+  configs[agentId] = config;
+  saveSpriteConfigs(configs);
+  return true;
+});
+ipcMain.handle('companion:save-avatar', (event, agentId, dataUrl) => {
+  // Save the generated sprite as a PNG file
+  const avatarsDir = path.join(CYBERCLAW_DIR, 'avatars');
+  if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+  const avatarPath = path.join(avatarsDir, `${agentId}.png`);
+  fs.writeFileSync(avatarPath, Buffer.from(base64, 'base64'));
+  return avatarPath;
+});
 ipcMain.handle('quests:detect-version', (event, dir) => {
   if (!dir) return null;
   try {

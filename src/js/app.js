@@ -830,3 +830,147 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initial rate limit check
   updateRateLimit();
 });
+
+// ---------------------------------------------------------------------------
+// Companion Editor (Sprite Generator + Skill Assignment)
+// ---------------------------------------------------------------------------
+let editorAgentId = null;
+let editorSprite = null;
+
+window.openCompanionEditor = function() {
+  const agentId = agentOrder[focusIndex];
+  if (!agentId) return;
+  editorAgentId = agentId;
+  const agent = agents[agentId];
+
+  // Populate selects
+  const opts = SpriteGenerator.getOptions();
+  populateSelect('editor-element', opts.elements);
+  populateSelect('editor-body', opts.bodies);
+  populateSelect('editor-ears', opts.ears);
+  populateSelect('editor-tail', opts.tails);
+  populateSelect('editor-accessory', opts.accessories);
+  populateSelect('editor-eyes', opts.eyes);
+  populateSelect('editor-mouth', opts.mouths);
+
+  // Set name
+  document.getElementById('editor-name').value = agent.name || '';
+
+  // Load saved sprite attributes if any
+  cyberclaw.agents.getSpriteConfig(agentId).then(config => {
+    if (config) {
+      if (config.element) document.getElementById('editor-element').value = config.element;
+      if (config.body) document.getElementById('editor-body').value = config.body;
+      if (config.ears) document.getElementById('editor-ears').value = config.ears;
+      if (config.tail) document.getElementById('editor-tail').value = config.tail;
+      if (config.accessory) document.getElementById('editor-accessory').value = config.accessory;
+      if (config.eyes) document.getElementById('editor-eyes').value = config.eyes;
+      if (config.mouth) document.getElementById('editor-mouth').value = config.mouth;
+    }
+    updateEditorSprite();
+  });
+
+  // Populate skill checkboxes
+  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'General'];
+  const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', General: '✨' };
+  const checkboxGrid = document.getElementById('editor-skill-checkboxes');
+  const focusSkills = agent.focusSkills || [];
+  checkboxGrid.innerHTML = skillTypes.map(s =>
+    `<label><input type="checkbox" value="${s}" ${focusSkills.includes(s) ? 'checked' : ''}> ${skillIcons[s]||'✨'} ${s}</label>`
+  ).join('');
+
+  // Populate quest dropdown
+  cyberclaw.quests.list().then(quests => {
+    const select = document.getElementById('editor-quest');
+    select.innerHTML = '<option value="">— None —</option>' +
+      quests.map(q => `<option value="${q.id}" ${agent.assignedQuest === q.id ? 'selected' : ''}>${q.name}</option>`).join('');
+  });
+
+  // Attach live preview listeners
+  ['editor-element','editor-body','editor-ears','editor-tail','editor-accessory','editor-eyes','editor-mouth'].forEach(id => {
+    document.getElementById(id).onchange = updateEditorSprite;
+  });
+  document.getElementById('editor-name').oninput = updateEditorSprite;
+
+  document.getElementById('companion-editor-overlay').classList.remove('hidden');
+};
+
+window.closeCompanionEditor = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('companion-editor-overlay').classList.add('hidden');
+  editorAgentId = null;
+};
+
+function updateEditorSprite() {
+  const result = SpriteGenerator.generate({
+    name: document.getElementById('editor-name').value || 'Companion',
+    element: document.getElementById('editor-element').value,
+    body: document.getElementById('editor-body').value,
+    ears: document.getElementById('editor-ears').value,
+    tail: document.getElementById('editor-tail').value,
+    accessory: document.getElementById('editor-accessory').value,
+    eyeStyle: document.getElementById('editor-eyes').value,
+    mouthStyle: document.getElementById('editor-mouth').value,
+  });
+  editorSprite = result;
+  const container = document.getElementById('editor-sprite-container');
+  container.innerHTML = '';
+  container.appendChild(result.canvas);
+}
+
+window.randomizeSprite = function() {
+  const name = document.getElementById('editor-name').value || 'Companion' + Date.now();
+  const result = SpriteGenerator.generate({ name, seed: name + Math.random() });
+  editorSprite = result;
+
+  // Update selects to match
+  document.getElementById('editor-element').value = result.attributes.element;
+  document.getElementById('editor-body').value = result.attributes.body;
+  document.getElementById('editor-ears').value = result.attributes.ears;
+  document.getElementById('editor-tail').value = result.attributes.tail;
+  document.getElementById('editor-accessory').value = result.attributes.accessory;
+  document.getElementById('editor-eyes').value = result.attributes.eyes;
+  document.getElementById('editor-mouth').value = result.attributes.mouth;
+
+  const container = document.getElementById('editor-sprite-container');
+  container.innerHTML = '';
+  container.appendChild(result.canvas);
+};
+
+window.saveCompanion = async function() {
+  if (!editorAgentId || !editorSprite) return;
+  const agent = agents[editorAgentId];
+
+  // Gather skill focus
+  const checkboxes = document.querySelectorAll('#editor-skill-checkboxes input[type="checkbox"]');
+  const focusSkills = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+  // Gather quest assignment
+  const questId = document.getElementById('editor-quest').value || null;
+
+  // Save sprite config + avatar
+  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+    ...editorSprite.attributes,
+    focusSkills,
+    assignedQuest: questId,
+  });
+
+  // Save sprite as PNG avatar
+  await cyberclaw.agents.saveAvatar(editorAgentId, editorSprite.dataUrl);
+
+  // Update in-memory agent
+  agent.focusSkills = focusSkills;
+  agent.assignedQuest = questId;
+  agent.avatar = editorSprite.dataUrl;
+
+  // Refresh UI
+  buildCarousel();
+  closeCompanionEditor();
+};
+
+function populateSelect(id, options) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = options.map(o =>
+    `<option value="${o}">${o.charAt(0).toUpperCase() + o.slice(1).replace(/_/g, ' ')}</option>`
+  ).join('');
+}

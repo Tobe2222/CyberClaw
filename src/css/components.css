@@ -627,3 +627,175 @@
   color: var(--cyan-dim); display: inline-flex; align-items: center; gap: 3px;
 }
 .quest-companion-icon { font-size: 9px; }
+
+/* ─── Companion Editor Modal ─── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.hidden { display: none; }
+
+.modal-panel.companion-editor {
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  width: 620px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 0 40px rgba(255,107,53,0.3), 0 0 80px rgba(255,107,53,0.1);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'MedievalSharp', serif;
+  font-size: 16px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+.modal-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text-primary); }
+
+.editor-content {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+
+.editor-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.sprite-preview-box {
+  width: 128px;
+  height: 128px;
+  background: var(--bg-dark);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  image-rendering: pixelated;
+}
+.sprite-preview-box canvas {
+  width: 120px;
+  height: 120px;
+  image-rendering: pixelated;
+}
+
+.editor-controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.editor-field label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.editor-field input,
+.editor-field select {
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.editor-field input:focus,
+.editor-field select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.editor-row {
+  display: flex;
+  gap: 8px;
+}
+.editor-row .editor-field { flex: 1; }
+
+.skill-checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.skill-checkbox-grid label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-dark);
+  border: 1px solid transparent;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.skill-checkbox-grid label:hover { border-color: var(--accent); }
+.skill-checkbox-grid input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-xs {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+}
+.btn-sm {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+.btn-accent { background: var(--accent); color: #000; border-color: var(--accent); }
+.btn-accent:hover { filter: brightness(1.2); }
+.btn-primary { background: var(--accent); color: #000; font-weight: bold; }
+.btn-primary:hover { filter: brightness(1.2); }
+.btn-muted { background: var(--bg-dark); color: var(--text-muted); border: 1px solid var(--border); }
+.btn-muted:hover { border-color: var(--text-muted); }
