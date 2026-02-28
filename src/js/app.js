@@ -223,9 +223,46 @@ function updateCarousel() {
   });
 
   // Update focused agent strip + right panel
-  updateFocused(agentOrder[focusIndex]);
-  updateInspect(agentOrder[focusIndex]);
+  const focusedId = agentOrder[focusIndex];
+  updateFocused(focusedId);
+  updateInspect(focusedId);
   updateChatTarget();
+
+  // Show 3D model in arena for focused companion
+  updateArena3D(focusedId);
+}
+
+async function updateArena3D(agentId) {
+  if (!agentId) return;
+  const agent = agents[agentId];
+  if (!agent) return;
+
+  // Get sprite config to find cybermonId
+  try {
+    const config = await cyberclaw.agents.getSpriteConfig(agentId);
+    const cybermonId = config?.cybermonId;
+
+    if (cybermonId) {
+      // Initialize arena viewer if needed
+      if (!arenaViewer) {
+        arenaViewer = new CybermonViewer('arena-3d-viewer');
+      }
+      // Load the 3D model
+      const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
+      const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+      arenaViewer.show(cybermonId, { rimColor });
+
+      // Hide the focused carousel item's avatar (3D replaces it)
+      const focusedEl = document.querySelector('.carousel-agent.focused');
+      if (focusedEl) focusedEl.style.opacity = '0.15';
+    } else {
+      // No cybermon — clear 3D, show default carousel
+      if (arenaViewer) arenaViewer.clear();
+    }
+  } catch (e) {
+    // No config — just show normal carousel
+    if (arenaViewer) arenaViewer.clear();
+  }
 }
 
 window.carouselNext = function() {
@@ -1035,6 +1072,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('No companions found');
   }
 
+  // Pre-load Cybermon catalog for 3D arena
+  await loadCybermonCatalog();
+
   buildCarousel();
   updateSystemInfo();
 
@@ -1131,11 +1171,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Companion Editor (Cybermon Gallery + Sprite Generator + Skill Assignment)
 // ---------------------------------------------------------------------------
 let editorAgentId = null;
-let editorSprite = null;
-let editorMode = 'cybermon'; // 'cybermon' or 'sprite'
 let selectedCybermon = null;
 let cybermonCatalog = null;
 let activeFilters = { animal: null, element: null, mood: null };
+let arenaViewer = null; // Three.js viewer for the arena
+let editorViewer = null; // Three.js viewer for the editor preview
+
+// Initialize Three.js viewer
+const { CybermonViewer } = require('./js/cybermon-viewer.js');
 
 const ELEMENT_COLORS = {
   fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
@@ -1217,22 +1260,14 @@ window.selectCybermon = function(id) {
   selectedCybermon = id;
   // Update gallery selection
   document.querySelectorAll('.cybermon-card').forEach(card => {
-    card.classList.toggle('selected', card.querySelector('img').alt === cybermonCatalog.cybermons.find(m => m.id === id)?.name);
+    card.classList.toggle('selected', card.querySelector('img')?.alt === cybermonCatalog?.cybermons.find(m => m.id === id)?.name);
   });
-  // Show preview
-  const path = require('path');
-  const imgPath = path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
-  const preview = document.getElementById('editor-cybermon-preview');
-  preview.innerHTML = `<img src="file://${imgPath}" alt="${id}" />`;
-};
-
-window.switchEditorMode = function(mode) {
-  editorMode = mode;
-  document.querySelectorAll('.editor-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.mode === mode);
-  });
-  document.getElementById('editor-cybermon-mode').classList.toggle('hidden', mode !== 'cybermon');
-  document.getElementById('editor-sprite-mode').classList.toggle('hidden', mode !== 'sprite');
+  // Show 3D preview in editor
+  if (editorViewer) {
+    const mon = cybermonCatalog?.cybermons.find(m => m.id === id);
+    const rimColor = mon?.elements[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+    editorViewer.show(id, { rimColor });
+  }
 };
 
 window.openCompanionEditor = function() {
@@ -1241,18 +1276,12 @@ window.openCompanionEditor = function() {
   editorAgentId = agentId;
   const agent = agents[agentId];
 
-  // Populate selects
-  const opts = SpriteGenerator.getOptions();
-  populateSelect('editor-element', opts.elements);
-  populateSelect('editor-body', opts.bodies);
-  populateSelect('editor-ears', opts.ears);
-  populateSelect('editor-tail', opts.tails);
-  populateSelect('editor-accessory', opts.accessories);
-  populateSelect('editor-eyes', opts.eyes);
-  populateSelect('editor-mouth', opts.mouths);
-
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
+
+  // Initialize editor 3D preview
+  if (editorViewer) editorViewer.dispose();
+  editorViewer = new CybermonViewer('editor-3d-viewer');
 
   // Initialize Cybermon gallery
   loadCybermonCatalog().then(catalog => {
@@ -1264,29 +1293,12 @@ window.openCompanionEditor = function() {
     renderCybermonGallery();
   });
 
-  // Default to cybermon mode
-  switchEditorMode('cybermon');
-
-  // Load saved sprite attributes if any
+  // Load saved config — restore selected cybermon
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
-    if (config) {
-      // If they had a cybermon selected, restore it
-      if (config.cybermonId) {
-        selectedCybermon = config.cybermonId;
-        switchEditorMode('cybermon');
-        selectCybermon(config.cybermonId);
-      } else if (config.element) {
-        switchEditorMode('sprite');
-      }
-      if (config.element) document.getElementById('editor-element').value = config.element;
-      if (config.body) document.getElementById('editor-body').value = config.body;
-      if (config.ears) document.getElementById('editor-ears').value = config.ears;
-      if (config.tail) document.getElementById('editor-tail').value = config.tail;
-      if (config.accessory) document.getElementById('editor-accessory').value = config.accessory;
-      if (config.eyes) document.getElementById('editor-eyes').value = config.eyes;
-      if (config.mouth) document.getElementById('editor-mouth').value = config.mouth;
+    if (config && config.cybermonId) {
+      selectedCybermon = config.cybermonId;
+      selectCybermon(config.cybermonId);
     }
-    updateEditorSprite();
   });
 
   // Populate skill checkboxes
@@ -1305,55 +1317,14 @@ window.openCompanionEditor = function() {
       quests.map(q => `<option value="${q.id}" ${agent.assignedQuest === q.id ? 'selected' : ''}>${q.name}</option>`).join('');
   });
 
-  // Attach live preview listeners
-  ['editor-element','editor-body','editor-ears','editor-tail','editor-accessory','editor-eyes','editor-mouth'].forEach(id => {
-    document.getElementById(id).onchange = updateEditorSprite;
-  });
-  document.getElementById('editor-name').oninput = updateEditorSprite;
-
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
 };
 
 window.closeCompanionEditor = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('companion-editor-overlay').classList.add('hidden');
+  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
   editorAgentId = null;
-};
-
-function updateEditorSprite() {
-  const result = SpriteGenerator.generate({
-    name: document.getElementById('editor-name').value || 'Companion',
-    element: document.getElementById('editor-element').value,
-    body: document.getElementById('editor-body').value,
-    ears: document.getElementById('editor-ears').value,
-    tail: document.getElementById('editor-tail').value,
-    accessory: document.getElementById('editor-accessory').value,
-    eyeStyle: document.getElementById('editor-eyes').value,
-    mouthStyle: document.getElementById('editor-mouth').value,
-  });
-  editorSprite = result;
-  const container = document.getElementById('editor-sprite-container');
-  container.innerHTML = '';
-  container.appendChild(result.canvas);
-}
-
-window.randomizeSprite = function() {
-  const name = document.getElementById('editor-name').value || 'Companion' + Date.now();
-  const result = SpriteGenerator.generate({ name, seed: name + Math.random() });
-  editorSprite = result;
-
-  // Update selects to match
-  document.getElementById('editor-element').value = result.attributes.element;
-  document.getElementById('editor-body').value = result.attributes.body;
-  document.getElementById('editor-ears').value = result.attributes.ears;
-  document.getElementById('editor-tail').value = result.attributes.tail;
-  document.getElementById('editor-accessory').value = result.attributes.accessory;
-  document.getElementById('editor-eyes').value = result.attributes.eyes;
-  document.getElementById('editor-mouth').value = result.attributes.mouth;
-
-  const container = document.getElementById('editor-sprite-container');
-  container.innerHTML = '';
-  container.appendChild(result.canvas);
 };
 
 window.saveCompanion = async function() {
@@ -1367,35 +1338,22 @@ window.saveCompanion = async function() {
   // Gather quest assignment
   const questId = document.getElementById('editor-quest').value || null;
 
-  if (editorMode === 'cybermon' && selectedCybermon) {
-    // Save Cybermon selection
-    const path = require('path');
-    const fs = require('fs');
-    const imgPath = path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
-    const imgData = fs.readFileSync(imgPath);
-    const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
+  if (!selectedCybermon) return; // Must select a Cybermon
 
-    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-      cybermonId: selectedCybermon,
-      focusSkills,
-      assignedQuest: questId,
-    });
-    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
-    agent.avatar = dataUrl;
-  } else if (editorMode === 'sprite' && editorSprite) {
-    // Save pixel sprite
-    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-      ...editorSprite.attributes,
-      cybermonId: null,
-      focusSkills,
-      assignedQuest: questId,
-    });
-    await cyberclaw.agents.saveAvatar(editorAgentId, editorSprite.dataUrl);
-    agent.avatar = editorSprite.dataUrl;
-  } else {
-    // Nothing selected
-    return;
-  }
+  // Save Cybermon selection
+  const path = require('path');
+  const fs = require('fs');
+  const imgPath = path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
+  const imgData = fs.readFileSync(imgPath);
+  const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
+
+  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+    cybermonId: selectedCybermon,
+    focusSkills,
+    assignedQuest: questId,
+  });
+  await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+  agent.avatar = dataUrl;
 
   // Update in-memory agent
   agent.focusSkills = focusSkills;
@@ -1406,12 +1364,7 @@ window.saveCompanion = async function() {
   closeCompanionEditor();
 };
 
-function populateSelect(id, options) {
-  const sel = document.getElementById(id);
-  sel.innerHTML = options.map(o =>
-    `<option value="${o}">${o.charAt(0).toUpperCase() + o.slice(1).replace(/_/g, ' ')}</option>`
-  ).join('');
-}
+// (populateSelect removed — pixel sprites replaced by Cybermon gallery)
 
 // ---------------------------------------------------------------------------
 // Equipment / Skills System

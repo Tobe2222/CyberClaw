@@ -645,8 +645,8 @@
   background: var(--bg-panel);
   border: 2px solid var(--accent);
   border-radius: 12px;
-  width: 620px;
-  max-height: 85vh;
+  width: 750px;
+  max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 0 40px rgba(255,107,53,0.3), 0 0 80px rgba(255,107,53,0.1);
 }
@@ -1253,3 +1253,40 @@
 }
 .cybermon-grid::-webkit-scrollbar { width: 4px; }
 .cybermon-grid::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
+
+/* 3D Preview in editor */
+.editor-preview-3d {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.cybermon-3d-preview {
+  width: 280px;
+  height: 220px;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at center, rgba(20,20,30,0.9) 0%, rgba(8,8,12,0.95) 100%);
+  border: 1px solid rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.cybermon-3d-preview canvas {
+  border-radius: 10px;
+}
+
+/* Arena 3D viewer overlay */
+#arena-3d-viewer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  pointer-events: auto;
+}
+#arena-3d-viewer canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+/* When no 3D model loaded, hide the overlay to show carousel */
+#arena-3d-viewer:empty {
+  pointer-events: none;
+}

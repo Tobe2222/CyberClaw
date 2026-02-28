@@ -1037,8 +1037,28 @@ if bg:
     bg.inputs["Color"].default_value = (0.02, 0.02, 0.03, 1)
     bg.inputs["Strength"].default_value = 0.2
 
-# Render
+# Render PNG
 os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
 scene.render.filepath = os.path.abspath(args.output)
 bpy.ops.render.render(write_still=True)
-print(f"✓ Rendered: {args.output} ({args.animal} + {'+'.join(args.elements)}, {args.mood}/{args.size})")
+print(f"✓ Rendered PNG: {args.output}")
+
+# Export GLB (3D model) alongside the PNG
+glb_output = os.path.splitext(os.path.abspath(args.output))[0] + '.glb'
+# Deselect camera, lights, focus empty — only export mesh objects
+bpy.ops.object.select_all(action='DESELECT')
+for obj in bpy.data.objects:
+    if obj.type == 'MESH':
+        obj.select_set(True)
+try:
+    bpy.ops.export_scene.gltf(
+        filepath=glb_output,
+        use_selection=True,
+        export_format='GLB',
+        export_apply=True,
+    )
+    print(f"✓ Exported GLB: {glb_output}")
+except Exception as e:
+    print(f"⚠ GLB export failed: {e}")
+
+print(f"✓ Done: {args.animal} + {'+'.join(args.elements)}, {args.mood}/{args.size}")
