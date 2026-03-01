@@ -1285,7 +1285,8 @@ const ELEMENT_EMOJI = {
 const ANIMAL_EMOJI = {
   fox: '🦊', cat: '🐱', dog: '🐕', bird: '🐦', fish: '🐟', snake: '🐍',
   turtle: '🐢', rabbit: '🐰', dragon: '🐉', wolf: '🐺', frog: '🐸',
-  owl: '🦉', bat: '🦇', bear: '🐻', shark: '🦈'
+  owl: '🦉', bat: '🦇', bear: '🐻', shark: '🦈',
+  horse: '🐴', capybara: '🦫', badger: '🦡', deer: '🦌', penguin: '🐧', raccoon: '🦝'
 };
 const MOOD_EMOJI = { cute: '🥰', fierce: '😤', chill: '😎', angry: '😠', playful: '😜' };
 
