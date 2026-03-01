@@ -162,6 +162,11 @@ function discoverAgents() {
   const bindings = config.bindings || [];
   const defaults = config.agents?.defaults || {};
 
+  // Model info from config
+  const modelConfig = defaults.model || {};
+  const primaryModel = modelConfig.primary || config.agents?.defaults?.model?.primary || 'anthropic/claude-opus-4-6';
+  const fallbackModels = modelConfig.fallbacks || [];
+
   const agents = agentList.map(a => {
     const id = a.id;
     const sessions = readSessionsForAgent(id);
@@ -244,6 +249,10 @@ function discoverAgents() {
       }
     }
 
+    // Per-agent model override or global
+    const agentModel = a.model?.primary || primaryModel;
+    const agentFallbacks = a.model?.fallbacks || fallbackModels;
+
     return {
       id,
       name: agentName,
@@ -256,8 +265,10 @@ function discoverAgents() {
       emoji,
       avatar: avatarPath,
       status: hasRecentSession ? 'online' : 'idle',
-      isMain: binding?.match?.channel === 'discord' && !binding?.match?.peer, // default Discord binding (no specific channel)
+      isMain: binding?.match?.channel === 'discord' && !binding?.match?.peer,
       sessionCount: sessionKeys.length,
+      primaryModel: agentModel,
+      fallbackModels: agentFallbacks,
     };
   });
 

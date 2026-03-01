@@ -11,6 +11,27 @@ const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
 // ---------------------------------------------------------------------------
+// Model name formatting
+// ---------------------------------------------------------------------------
+function formatModelName(modelId) {
+  if (!modelId) return 'Unknown';
+  const parts = modelId.split('/');
+  const name = parts[parts.length - 1];
+  // Pretty-print common models
+  const pretty = {
+    'claude-opus-4-6': 'Claude Opus 4',
+    'claude-sonnet-4-6': 'Claude Sonnet 4',
+    'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
+    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+    'qwen2.5:7b': 'Qwen 2.5 7B',
+    'qwen2.5:14b': 'Qwen 2.5 14B',
+    'llama3.3': 'Llama 3.3',
+    'deepseek-r1': 'DeepSeek R1',
+  };
+  return pretty[name] || name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ---------------------------------------------------------------------------
 // Agent data — populated from OpenClaw at runtime
 // ---------------------------------------------------------------------------
 let agentOrder = [];
@@ -86,6 +107,12 @@ async function loadAgents() {
         .replace(/^Companion$/i, '')
         .trim();
 
+      // Parse model info from config
+      const primaryModel = a.primaryModel || 'anthropic/claude-opus-4-6';
+      const fallbacks = a.fallbackModels || [];
+      const modelDisplay = formatModelName(primaryModel);
+      const providerDisplay = primaryModel.split('/')[0] || 'Anthropic';
+
       agents[a.id] = {
         name: a.name,
         class: cleanClass,
@@ -93,8 +120,11 @@ async function loadAgents() {
         avatar: a.avatar,
         emoji: a.emoji || '🤖',
         rarity,
-        model: 'Claude Opus 4',
-        provider: 'Anthropic',
+        model: modelDisplay,
+        provider: providerDisplay.charAt(0).toUpperCase() + providerDisplay.slice(1),
+        primaryModel,
+        fallbackModels: fallbacks,
+        activeModel: primaryModel, // will be updated dynamically
         workspace: a.workspace,
         channel: a.channel,
         channelBadge: a.channelBadge,
@@ -123,8 +153,11 @@ async function loadAgents() {
             avatar: null,
             emoji: '⚡',
             rarity: 'uncommon',
-            model: run.model || 'Claude Opus 4',
-            provider: 'Anthropic',
+            model: run.model ? formatModelName(run.model) : 'Claude Opus 4',
+            provider: run.model ? run.model.split('/')[0]?.charAt(0).toUpperCase() + run.model.split('/')[0]?.slice(1) : 'Anthropic',
+            primaryModel: run.model || 'anthropic/claude-opus-4-6',
+            fallbackModels: [],
+            activeModel: run.model || 'anthropic/claude-opus-4-6',
             workspace: run.workspace || '—',
             channel: 'Internal',
             channelBadge: 'none',
@@ -315,7 +348,14 @@ function updateFocused(agentId) {
   setBar('focused-mp', agent.mp);
   setBar('focused-xp', agent.xp);
 
-  document.getElementById('focused-model').textContent = agent.model;
+  const focusedModelEl = document.getElementById('focused-model');
+  if (agent.activeModel && agent.activeModel !== agent.primaryModel) {
+    focusedModelEl.textContent = formatModelName(agent.activeModel);
+    focusedModelEl.classList.add('model-fallback');
+  } else {
+    focusedModelEl.textContent = agent.model;
+    focusedModelEl.classList.remove('model-fallback');
+  }
   document.getElementById('focused-provider').textContent = agent.provider;
 
   // Skills
@@ -395,6 +435,28 @@ function updateInspect(agentId) {
       }
     }
 
+    // Detect if fallback model is likely active (rate limit exhausted)
+    if (!isLocal && hpCur === 0 && agent.fallbackModels?.length) {
+      agent.activeModel = agent.fallbackModels[0];
+    } else {
+      agent.activeModel = agent.primaryModel;
+    }
+    // Update model display after rate limit check
+    const modelEl = document.getElementById('inspect-model');
+    const providerEl = document.getElementById('inspect-provider');
+    if (agent.activeModel !== agent.primaryModel) {
+      modelEl.textContent = formatModelName(agent.activeModel) + ' ⚡';
+      modelEl.title = `Fallback active (primary: ${formatModelName(agent.primaryModel)})`;
+      modelEl.classList.add('model-fallback');
+      const fb = agent.activeModel.split('/')[0] || '?';
+      providerEl.textContent = fb.charAt(0).toUpperCase() + fb.slice(1);
+    } else {
+      modelEl.textContent = agent.model;
+      modelEl.title = agent.fallbackModels?.length ? `Fallback: ${agent.fallbackModels.map(formatModelName).join(', ')}` : '';
+      modelEl.classList.remove('model-fallback');
+      providerEl.textContent = agent.provider;
+    }
+
     setBar('inspect-mp', agent.mp);
     setBar('inspect-xp', [stats.xp, xpNeeded]);
 
@@ -429,8 +491,20 @@ function updateInspect(agentId) {
     }).join('');
   });
 
-  document.getElementById('inspect-model').textContent = agent.model;
-  document.getElementById('inspect-provider').textContent = agent.provider;
+  // Model display — show active model with fallback indicator
+  const modelEl = document.getElementById('inspect-model');
+  const providerEl = document.getElementById('inspect-provider');
+  if (agent.activeModel && agent.activeModel !== agent.primaryModel) {
+    modelEl.textContent = formatModelName(agent.activeModel);
+    modelEl.title = `Fallback active (primary: ${formatModelName(agent.primaryModel)})`;
+    modelEl.classList.add('model-fallback');
+    providerEl.textContent = agent.activeModel.split('/')[0]?.charAt(0).toUpperCase() + agent.activeModel.split('/')[0]?.slice(1) || '?';
+  } else {
+    modelEl.textContent = agent.model;
+    modelEl.title = agent.fallbackModels?.length ? `Fallback: ${agent.fallbackModels.map(formatModelName).join(', ')}` : '';
+    modelEl.classList.remove('model-fallback');
+    providerEl.textContent = agent.provider;
+  }
   loadEquipment(agentId);
   document.getElementById('inspect-channel').textContent = agent.channel;
   document.getElementById('inspect-workspace').textContent = agent.workspace;

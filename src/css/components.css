@@ -337,6 +337,12 @@
   margin-left: auto;
 }
 
+/* Fallback model indicator */
+.model-fallback {
+  color: #ffaa00 !important;
+  text-shadow: 0 0 6px rgba(255,170,0,0.4);
+}
+
 .legendary-badge { background: rgba(251,191,36,0.15); color: var(--legendary); border: 1px solid rgba(251,191,36,0.3); }
 .rare-badge      { background: rgba(59,130,246,0.15); color: var(--rare); border: 1px solid rgba(59,130,246,0.3); }
 .uncommon-badge  { background: rgba(74,222,128,0.15); color: var(--uncommon); border: 1px solid rgba(74,222,128,0.3); }
