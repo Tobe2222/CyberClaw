@@ -1606,8 +1606,9 @@ window.toggleEquipSearch = function() {
   panel.classList.toggle('hidden');
   if (!panel.classList.contains('hidden')) {
     document.getElementById('equip-search-input').focus();
+    // Show built-in items immediately while skills load
+    searchEquipment();
     if (!allSkillsCache) {
-      document.getElementById('equip-search-results').innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:8px">Loading skills...</div>';
       cyberclaw.agents.listSkills().then(skills => {
         allSkillsCache = skills;
         searchEquipment();
@@ -1646,24 +1647,138 @@ window.equipSkill = async function(skillName) {
     || allSkillsCache?.find(s => s.name === skillName);
   if (!skill) return;
 
-  // Prompt for custom equipment name
-  const customName = prompt(`Name this equipment (${skillName}):`, skillName);
-  if (!customName) return;
-
+  // Check if already equipped
   const config = await cyberclaw.agents.getSpriteConfig(agentId) || {};
   const equipment = config.equipment || [];
-  // Don't duplicate
-  if (equipment.find(e => e.skill === skillName)) return;
+  if (equipment.find(e => e.skill === skillName)) {
+    // Already equipped — offer to unequip
+    if (confirm(`"${skillName}" is already equipped. Unequip it?`)) {
+      config.equipment = equipment.filter(e => e.skill !== skillName);
+      await cyberclaw.agents.saveSpriteConfig(agentId, config);
+      loadEquipment(agentId);
+      searchEquipment();
+    }
+    return;
+  }
 
+  // Show requirements modal
+  showEquipModal(skill, agentId);
+};
+
+function showEquipModal(skill, agentId) {
+  // Build requirements info
+  const reqs = getSkillRequirements(skill.name);
+
+  let overlay = document.getElementById('equip-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'equip-modal-overlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = `
+    <div class="equip-modal">
+      <div class="equip-modal-header">
+        <span class="equip-modal-icon">${skill.icon || '⚔️'}</span>
+        <span class="equip-modal-title">${escapeHtml(skill.name)}</span>
+      </div>
+      <div class="equip-modal-desc">${escapeHtml(skill.description)}</div>
+      ${reqs.length > 0 ? `
+        <div class="equip-modal-reqs-title">Requirements:</div>
+        <div class="equip-modal-reqs">
+          ${reqs.map(r => `<div class="equip-req ${r.installed ? 'installed' : 'missing'}">
+            <span>${r.installed ? '✅' : '⬇️'}</span>
+            <span>${escapeHtml(r.name)}</span>
+            <span class="equip-req-note">${escapeHtml(r.note)}</span>
+          </div>`).join('')}
+        </div>
+      ` : '<div class="equip-modal-reqs-title" style="color:var(--green)">✅ No additional requirements</div>'}
+      <div class="equip-modal-actions">
+        <button class="equip-modal-cancel" onclick="closeEquipModal()">Cancel</button>
+        <button class="equip-modal-install" onclick="confirmEquip('${escapeHtml(skill.name)}', '${agentId}')">
+          ${reqs.some(r => !r.installed) ? '⬇️ Install & Equip' : '⚔️ Equip'}
+        </button>
+      </div>
+    </div>
+  `;
+  overlay.classList.remove('hidden');
+  overlay.style.display = 'flex';
+}
+
+function getSkillRequirements(skillName) {
+  const REQUIREMENTS = {
+    'Blender Hat': [
+      { name: 'Blender 5.0+', check: '/snap/bin/blender', note: '3D modeling engine (snap install blender)' },
+    ],
+    'Web Surfer': [],
+    'Code Hammer': [],
+    'Memory Scroll': [],
+    'Messenger Orb': [],
+  };
+
+  const reqs = REQUIREMENTS[skillName] || [];
+  const fs = require('fs');
+  return reqs.map(r => ({
+    ...r,
+    installed: r.check ? fs.existsSync(r.check) : true,
+  }));
+}
+
+window.closeEquipModal = function() {
+  const overlay = document.getElementById('equip-modal-overlay');
+  if (overlay) { overlay.style.display = 'none'; }
+};
+
+window.confirmEquip = async function(skillName, agentId) {
+  const skill = BUILTIN_EQUIPMENT.find(s => s.name === skillName)
+    || allSkillsCache?.find(s => s.name === skillName);
+  if (!skill) return;
+
+  const reqs = getSkillRequirements(skillName);
+  const missing = reqs.filter(r => !r.installed);
+
+  // Auto-install missing requirements
+  if (missing.length > 0) {
+    const installBtn = document.querySelector('.equip-modal-install');
+    if (installBtn) {
+      installBtn.textContent = '⏳ Installing...';
+      installBtn.disabled = true;
+    }
+
+    for (const req of missing) {
+      try {
+        if (skillName === 'Blender Hat') {
+          await new Promise((resolve, reject) => {
+            require('child_process').exec('snap install blender 2>&1 || sudo snap install blender 2>&1',
+              { timeout: 120000 }, (err, stdout) => {
+                if (err) reject(new Error(stdout || err.message));
+                else resolve(stdout);
+              });
+          });
+        }
+      } catch (e) {
+        alert(`Failed to install ${req.name}: ${e.message}\nPlease install manually.`);
+        closeEquipModal();
+        return;
+      }
+    }
+  }
+
+  // Save equipment
+  const config = await cyberclaw.agents.getSpriteConfig(agentId) || {};
+  const equipment = config.equipment || [];
   equipment.push({
     skill: skillName,
-    name: customName,
-    icon: skill.icon || (skill.ready ? '⚔️' : '📦'),
+    name: skill.name,
+    icon: skill.icon || '⚔️',
     description: skill.description,
-    ready: skill.ready,
+    ready: true,
   });
-
   config.equipment = equipment;
   await cyberclaw.agents.saveSpriteConfig(agentId, config);
+
+  closeEquipModal();
   loadEquipment(agentId);
+  searchEquipment();
 };
