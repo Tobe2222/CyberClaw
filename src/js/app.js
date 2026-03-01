@@ -213,11 +213,9 @@ function buildCarousel() {
     const crownHtml = agent.isMain ? '<div class="carousel-crown">👑</div>' : '';
 
     el.innerHTML = `
-      <div class="carousel-avatar ${agent.rarity}-aura" style="position:relative">
-        ${crownHtml}
-        <div class="card-3d" id="card-3d-${i}"></div>
-        <div class="carousel-status ${agent.status}"></div>
-      </div>
+      ${crownHtml}
+      <div class="card-3d" id="card-3d-${i}"></div>
+      <div class="carousel-status ${agent.status}"></div>
       <div class="carousel-label">
         <span class="carousel-label-name ${agent.rarity}-text">${agent.name}</span>
       </div>
