@@ -164,20 +164,20 @@
 
 /* Per-card 3D viewer — no container, raw 3D model */
 .card-3d {
-  width: 180px;
-  height: 180px;
+  width: 400px;
+  height: 400px;
 }
 .focused .card-3d {
-  width: 220px;
-  height: 220px;
+  width: 500px;
+  height: 500px;
 }
 .side .card-3d {
-  width: 140px;
-  height: 140px;
+  width: 350px;
+  height: 350px;
 }
 .far-side .card-3d {
-  width: 100px;
-  height: 100px;
+  width: 250px;
+  height: 250px;
 }
 
 .carousel-avatar .carousel-emoji {

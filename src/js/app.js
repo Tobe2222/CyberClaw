@@ -252,12 +252,11 @@ function updateCarousel() {
     const y = centerY + Math.cos(angle) * ry * 0.5;
     const depth = Math.cos(angle);
 
-    const scale = 0.5 + (depth + 1) * 0.25;
     const z = Math.round((depth + 1) * 100);
 
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
-    el.style.transform = `translate(-50%, -50%) scale(${scale.toFixed(2)})`;
+    el.style.transform = `translate(-50%, -50%)`;
     el.style.zIndex = z;
     // All companions visible — further back = more faded
     const opacity = Math.max(0.15, (depth + 1) / 2);
