@@ -858,18 +858,13 @@
 .btn-muted:hover { border-color: var(--text-muted); }
 
 /* ─── Generate Companion Button (top right of arena) ─── */
-/* ─── Bottom Buttons (Edit + Create side by side) ─── */
-#arena-bottom-buttons {
+/* ─── Bottom Buttons ─── */
+.carousel-edit-btn-bottom {
   position: absolute;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
-  display: flex;
-  gap: 8px;
-}
-
-.carousel-edit-btn-bottom {
   font-size: 12px;
   padding: 5px 16px;
   border-radius: 12px;
@@ -886,6 +881,10 @@
 }
 
 .btn-generate-inline {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 100;
   font-size: 12px;
   padding: 5px 16px;
   border-radius: 12px;
@@ -956,8 +955,7 @@
   filter: drop-shadow(0 0 4px rgba(255,215,0,0.8));
   animation: crown-bob 2s ease-in-out infinite;
   margin-bottom: -60px;
-  text-align: center;
-  width: 100%;
+  align-self: center;
 }
 @keyframes crown-bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }

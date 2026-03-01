@@ -258,11 +258,10 @@ function updateCarousel() {
     el.style.top = `${y}px`;
     el.style.transform = `translate(-50%, -100%)`; // anchor bottom — models "stand" on the line
     el.style.zIndex = z;
-    // All companions visible — further back = more faded
-    const opacity = Math.max(0.15, (depth + 1) / 2);
-    el.style.opacity = opacity;
-    el.style.filter = `brightness(${Math.max(0.2, 0.4 + depth * 0.3 + 0.3).toFixed(2)})`;
-    el.style.pointerEvents = opacity < 0.2 ? 'none' : 'all';
+    // All companions fully visible — no fade
+    el.style.opacity = 1;
+    el.style.filter = 'none';
+    el.style.pointerEvents = 'all';
 
     el.classList.remove('focused', 'side', 'far-side', 'hidden-back');
     if (offset === 0) el.classList.add('focused');
