@@ -1101,8 +1101,18 @@ window.sendChat = async function() {
   addChatMsg('user', message, agent.name);
   input.value = '';
 
-  // Build message with quest context if active
+  // Build message with context
   let fullMessage = message;
+
+  // If chatting with a non-main companion, route through main agent with delegation context
+  const mainAgent = agentOrder.find(id => agents[id]?.isMain);
+  const isMainAgent = agent.isMain;
+  if (!isMainAgent && mainAgent) {
+    const focuses = agent.focusSkills?.length ? ` (specializes in: ${agent.focusSkills.join(', ')})` : '';
+    fullMessage = `[Delegated to companion "${agent.name}"${focuses}] ${message}`;
+  }
+
+  // Add quest context if active
   if (activeQuestId) {
     const quests = await cyberclaw.quests.list();
     const q = quests.find(q => q.id === activeQuestId);
@@ -1111,7 +1121,7 @@ window.sendChat = async function() {
       if (q.description) ctx += ` — ${q.description}`;
       if (q.directory) ctx += ` | Project dir: ${q.directory}`;
       ctx += `] `;
-      fullMessage = ctx + message;
+      fullMessage = ctx + fullMessage;
     }
   }
 
@@ -1121,7 +1131,9 @@ window.sendChat = async function() {
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
   try {
-    const result = await cyberclaw.chat.sendMessage(agent.id, fullMessage);
+    // Always route through main agent — it delegates to companions as needed
+    const chatAgentId = (mainAgent && !isMainAgent) ? mainAgent : agent.id;
+    const result = await cyberclaw.chat.sendMessage(chatAgentId, fullMessage);
     removeChatMsg(typingId);
 
     if (result.ok) {
@@ -1560,6 +1572,15 @@ window.saveCompanion = async function() {
 // ---------------------------------------------------------------------------
 let allSkillsCache = null;
 
+// Built-in special equipment (not from openclaw skills list)
+const BUILTIN_EQUIPMENT = [
+  { name: 'Blender Hat', description: '3D modeling via Blender — create and render 3D models, Cybermons, scenes', icon: '🎩', ready: true, builtin: true },
+  { name: 'Web Surfer', description: 'Search the web and fetch content from URLs', icon: '🌐', ready: true, builtin: true },
+  { name: 'Code Hammer', description: 'Write, edit, and execute code across languages', icon: '🔨', ready: true, builtin: true },
+  { name: 'Memory Scroll', description: 'Remember and recall information across sessions', icon: '📜', ready: true, builtin: true },
+  { name: 'Messenger Orb', description: 'Send messages across Discord, Telegram, and other channels', icon: '🔮', ready: true, builtin: true },
+];
+
 async function loadEquipment(agentId) {
   const gear = document.getElementById('inspect-gear');
   if (!gear) return;
@@ -1598,11 +1619,12 @@ window.toggleEquipSearch = function() {
 window.searchEquipment = function() {
   const query = (document.getElementById('equip-search-input').value || '').toLowerCase();
   const results = document.getElementById('equip-search-results');
-  if (!allSkillsCache) return;
 
-  const filtered = allSkillsCache.filter(s =>
+  // Combine built-in equipment + OpenClaw skills
+  const allItems = [...BUILTIN_EQUIPMENT, ...(allSkillsCache || [])];
+  const filtered = allItems.filter(s =>
     s.name.toLowerCase().includes(query) || s.description.toLowerCase().includes(query)
-  ).slice(0, 8);
+  ).slice(0, 10);
 
   if (filtered.length === 0) {
     results.innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:4px">No skills found</div>';
@@ -1620,7 +1642,8 @@ window.searchEquipment = function() {
 window.equipSkill = async function(skillName) {
   if (!agentOrder[focusIndex]) return;
   const agentId = agentOrder[focusIndex];
-  const skill = allSkillsCache?.find(s => s.name === skillName);
+  const skill = BUILTIN_EQUIPMENT.find(s => s.name === skillName)
+    || allSkillsCache?.find(s => s.name === skillName);
   if (!skill) return;
 
   // Prompt for custom equipment name
@@ -1635,7 +1658,7 @@ window.equipSkill = async function(skillName) {
   equipment.push({
     skill: skillName,
     name: customName,
-    icon: skill.ready ? '⚔️' : '📦',
+    icon: skill.icon || (skill.ready ? '⚔️' : '📦'),
     description: skill.description,
     ready: skill.ready,
   });
