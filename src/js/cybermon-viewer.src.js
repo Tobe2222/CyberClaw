@@ -181,17 +181,25 @@ class CybermonViewer {
       // Clone the scene so we can reuse the cache
       this.model = gltf.scene.clone();
 
-      // Boost material saturation for toon look
+      // Fix materials — Blender toon shader exports color as emissive, not baseColor
       this.model.traverse(child => {
         if (child.isMesh && child.material) {
           const mat = child.material.clone();
-          if (mat.color) {
-            mat.color.r = Math.min(1, mat.color.r * 1.3);
-            mat.color.g = Math.min(1, mat.color.g * 1.3);
-            mat.color.b = Math.min(1, mat.color.b * 1.3);
+          // If base color is black but emissive has color, swap them
+          if (mat.color && mat.emissive &&
+              mat.color.r + mat.color.g + mat.color.b < 0.1 &&
+              mat.emissive.r + mat.emissive.g + mat.emissive.b > 0.1) {
+            mat.color.copy(mat.emissive);
+            mat.emissive.set(0, 0, 0);
           }
-          mat.roughness = 0.8;
-          mat.metalness = 0.1;
+          // Boost saturation slightly for vibrant toon look
+          if (mat.color) {
+            mat.color.r = Math.min(1, mat.color.r * 1.2);
+            mat.color.g = Math.min(1, mat.color.g * 1.2);
+            mat.color.b = Math.min(1, mat.color.b * 1.2);
+          }
+          mat.roughness = 0.7;
+          mat.metalness = 0.05;
           child.material = mat;
         }
       });

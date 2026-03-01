@@ -1272,7 +1272,21 @@
   border-radius: 10px;
 }
 
-/* Companion buttons z-index */
+/* Arena 3D viewer — single renderer for focused companion */
+#arena-3d-viewer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+#arena-3d-viewer canvas {
+  pointer-events: auto;
+}
+
+/* Buttons above 3D viewer */
 .carousel-edit-btn-bottom,
 .btn-generate,
 .carousel-arrow {

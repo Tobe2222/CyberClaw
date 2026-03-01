@@ -152,10 +152,6 @@ function buildCarousel() {
   const ring = document.getElementById('carousel-ring');
   ring.innerHTML = '';
 
-  // Dispose old 3D viewers
-  Object.values(cardViewers).forEach(v => v.dispose());
-  Object.keys(cardViewers).forEach(k => delete cardViewers[k]);
-
   agentOrder.forEach((id, i) => {
     const agent = agents[id];
     const el = document.createElement('div');
@@ -165,17 +161,15 @@ function buildCarousel() {
     el.onclick = () => { focusIndex = i; updateCarousel(); };
 
     const avatarContent = agent.avatar
-      ? `<img src="${agent.avatar}" alt="${agent.name}" class="carousel-avatar-img">`
+      ? `<img src="${agent.avatar}" alt="${agent.name}">`
       : `<div class="carousel-emoji">${agent.emoji}</div>`;
 
     const crownHtml = agent.isMain ? '<div class="carousel-crown">👑</div>' : '';
 
-    // 3D container overlays the avatar — hidden until model loads
     el.innerHTML = `
       <div class="carousel-avatar ${agent.rarity}-aura" style="position:relative">
         ${crownHtml}
         ${avatarContent}
-        <div class="carousel-3d" id="card3d-${id}" style="position:absolute;inset:0;z-index:2;pointer-events:none;display:none"></div>
         <div class="carousel-status ${agent.status}"></div>
       </div>
       <div class="carousel-label">
@@ -187,35 +181,6 @@ function buildCarousel() {
   });
 
   updateCarousel();
-
-  // Load 3D models for companions that have one assigned
-  if (CybermonViewer) {
-    agentOrder.forEach(async (id) => {
-      try {
-        const config = await cyberclaw.agents.getSpriteConfig(id);
-        const cybermonId = config?.cybermonId;
-        if (!cybermonId) return;
-
-        const containerId = `card3d-${id}`;
-        const container = document.getElementById(containerId);
-        if (!container) return;
-
-        const viewer = new CybermonViewer(containerId);
-        cardViewers[id] = viewer;
-
-        const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
-        const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-        await viewer.show(cybermonId, { rimColor });
-
-        // Show 3D, hide flat image
-        container.style.display = 'block';
-        const img = container.parentElement.querySelector('.carousel-avatar-img');
-        if (img) img.style.display = 'none';
-      } catch (e) {
-        // No companion assigned or load failed — show default avatar
-      }
-    });
-  }
 }
 
 function updateCarousel() {
@@ -267,10 +232,42 @@ function updateCarousel() {
   updateInspect(focusedId);
   updateChatTarget();
 
-  // Companions render directly on carousel cards — no separate arena overlay
+  // Show focused companion's 3D model in the arena
+  updateArena3D(focusedId);
 }
 
-// Arena 3D overlay removed — companions render directly on carousel cards
+// Show focused companion as large 3D model in the arena
+async function updateArena3D(agentId) {
+  if (!CybermonViewer || !agentId) return;
+
+  try {
+    const config = await cyberclaw.agents.getSpriteConfig(agentId);
+    const cybermonId = config?.cybermonId;
+
+    if (cybermonId) {
+      // Create arena viewer if needed (single instance, reused)
+      if (!arenaViewer) {
+        arenaViewer = new CybermonViewer('arena-3d-viewer');
+      }
+
+      const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
+      const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+      await arenaViewer.show(cybermonId, { rimColor });
+
+      // Fade the focused card's avatar so 3D model is prominent
+      const focusedEl = document.querySelector('.carousel-agent.focused .carousel-avatar img');
+      if (focusedEl) focusedEl.style.opacity = '0.15';
+    } else {
+      // No companion model — clear 3D, show normal avatar
+      if (arenaViewer) arenaViewer.clear();
+      const focusedEl = document.querySelector('.carousel-agent.focused .carousel-avatar img');
+      if (focusedEl) focusedEl.style.opacity = '1';
+    }
+  } catch (e) {
+    // No sprite config — just show normal carousel
+    if (arenaViewer) arenaViewer.clear();
+  }
+}
 
 window.carouselNext = function() {
   focusIndex = (focusIndex + 1) % agentOrder.length;
@@ -1181,8 +1178,8 @@ let editorAgentId = null;
 let selectedCybermon = null;
 let cybermonCatalog = null;
 let activeFilters = { animal: null, element: null, mood: null };
-// Per-card 3D viewers: { agentId: CybermonViewer }
-const cardViewers = {};
+// Single arena 3D viewer for focused companion
+let arenaViewer = null;
 let editorViewer = null;
 
 // CybermonViewer loaded via bundle script tag → window.CybermonViewer
