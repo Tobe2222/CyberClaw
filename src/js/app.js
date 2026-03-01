@@ -239,8 +239,8 @@ function updateCarousel() {
   const centerX = aW / 2;
   const centerY = aH / 2 - 20;
 
-  const rx = Math.min(aW * 0.40, 380);
-  const ry = 70;
+  const rx = Math.min(aW * 0.45, 440);
+  const ry = 20;
 
   items.forEach((el, i) => {
     let offset = i - focusIndex;

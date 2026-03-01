@@ -196,17 +196,18 @@
 
 /* Status dot on carousel avatar */
 .carousel-status {
-  width: 10px; height: 10px; border-radius: 50%;
-  position: absolute; top: 2px; right: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  margin-top: -30px;
+  align-self: center;
   border: 2px solid var(--bg-darkest);
   z-index: 5;
 }
 .carousel-status.online { background: var(--green); box-shadow: 0 0 6px rgba(74,222,128,0.5); }
 .carousel-status.idle   { background: var(--gold); }
 
-/* Carousel name label under focused */
+/* Carousel name label under model */
 .carousel-label {
-  margin-top: 8px; text-align: center;
+  margin-top: -20px; text-align: center;
   transition: opacity 0.4s;
 }
 .focused .carousel-label { opacity: 1; }
