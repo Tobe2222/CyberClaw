@@ -24,8 +24,6 @@ class CybermonViewer {
     this.dragStartX = 0;
     this.modelRotationY = 0;
     this.momentum = 0;
-    this.idleSpin = 0;
-    this.bobPhase = 0;
     this.loader = new GLTFLoader();
     this.modelCache = {};
 
@@ -133,11 +131,9 @@ class CybermonViewer {
   _animate() {
     this.animId = requestAnimationFrame(() => this._animate());
 
-    const dt = this.clock.getDelta();
-    this.bobPhase += dt * 1.5;
+    this.clock.getDelta();
 
     if (this.model) {
-      // Only rotate on drag, no idle spin or bobbing
       if (!this.isDragging) {
         this.momentum *= 0.95;
         this.modelRotationY += this.momentum;
