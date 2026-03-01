@@ -553,6 +553,19 @@
 }
 .quest-delete:hover { color: #f44; }
 
+/* Focus tags */
+.focus-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  margin: 2px 3px;
+  border-radius: 8px;
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  font-family: var(--font-mono);
+}
+
 /* Quest goals list */
 .quest-goals-list {
   margin: 4px 0 2px;

@@ -151,6 +151,18 @@ async function loadAgents() {
       agentOrder.push(a.id);
     });
 
+    // Load saved sprite configs (custom names, focus skills, quest assignments)
+    for (const id of agentOrder) {
+      try {
+        const cfg = await cyberclaw.agents.getSpriteConfig(id);
+        if (cfg) {
+          if (cfg.customName) agents[id].name = cfg.customName;
+          if (cfg.focusSkills) agents[id].focusSkills = cfg.focusSkills;
+          if (cfg.assignedQuest) agents[id].assignedQuest = cfg.assignedQuest;
+        }
+      } catch {}
+    }
+
     // Add subagent runs as temporary entries
     if (result.subagents && Array.isArray(result.subagents)) {
       result.subagents.forEach((run, i) => {
@@ -415,6 +427,21 @@ function updateInspect(agentId) {
   if (platformEl) platformEl.innerHTML = `<span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channelDetail}</span>`;
   const wsRight = document.getElementById('inspect-workspace-right');
   if (wsRight) { wsRight.textContent = agent.workspace; wsRight.title = agent.workspace; }
+
+  // Focuses section
+  const focusesEl = document.getElementById('inspect-focuses');
+  const focusSection = document.getElementById('inspect-focuses-section');
+  if (focusesEl && focusSection) {
+    const focuses = agent.focusSkills || [];
+    if (focuses.length > 0) {
+      focusSection.style.display = '';
+      focusesEl.innerHTML = focuses.map(f =>
+        `<span class="focus-tag">${f}</span>`
+      ).join('');
+    } else {
+      focusSection.style.display = 'none';
+    }
+  }
 
   // Load earned stats + rate limit HP
   cyberclaw.agents.getStats(agentId).then(async (stats) => {
@@ -1476,6 +1503,9 @@ window.saveCompanion = async function() {
   if (!editorAgentId) return;
   const agent = agents[editorAgentId];
 
+  // Gather name
+  const newName = document.getElementById('editor-name').value.trim();
+
   // Gather skill focus
   const checkboxes = document.querySelectorAll('#editor-skill-checkboxes input[type="checkbox"]');
   const focusSkills = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
@@ -1485,7 +1515,7 @@ window.saveCompanion = async function() {
 
   if (!selectedCybermon) return; // Must select a Cybermon
 
-  // Save Cybermon selection
+  // Save Cybermon selection + name + focuses
   const path = require('path');
   const fs = require('fs');
   const imgPath = path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
@@ -1494,6 +1524,7 @@ window.saveCompanion = async function() {
 
   await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
     cybermonId: selectedCybermon,
+    customName: newName || undefined,
     focusSkills,
     assignedQuest: questId,
   });
@@ -1501,6 +1532,7 @@ window.saveCompanion = async function() {
   agent.avatar = dataUrl;
 
   // Update in-memory agent
+  if (newName) agent.name = newName;
   agent.focusSkills = focusSkills;
   agent.assignedQuest = questId;
 

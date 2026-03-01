@@ -46,10 +46,27 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: CyberClaw-Windows
-          path: dist/*.exe
+          path: dist/*Setup*.exe
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build:viewer
+      - run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CyberClaw-macOS
+          path: dist/*.dmg
 
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-mac]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -63,7 +80,8 @@ jobs:
         with:
           files: |
             artifacts/*.AppImage
-            artifacts/*.exe
+            artifacts/*Setup*.exe
+            artifacts/*.dmg
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,7 +9,8 @@
     "build": "electron-builder",
     "build:linux": "electron-builder --linux",
     "build:win": "electron-builder --win",
-    "dist": "electron-builder --linux --win",
+    "build:mac": "electron-builder --mac",
+    "dist": "electron-builder --linux --win --mac",
     "build:viewer": "esbuild src/js/cybermon-viewer.src.js --bundle --format=iife --platform=browser --outfile=src/js/cybermon-viewer.bundle.js --external:path --external:fs --minify"
   },
   "repository": {
@@ -50,8 +51,7 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "src/assets/icons/cyberclaw.ico"
     },
