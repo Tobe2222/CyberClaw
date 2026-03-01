@@ -18,8 +18,8 @@ class CybermonViewer {
     this.dragStartX = 0;
     this.modelRotationY = 0;
     this.momentum = 0;
-    this.idleSpin = 0.003;
-    this.bobPhase = Math.random() * Math.PI * 2;
+    this.idleSpin = 0;
+    this.bobPhase = 0;
     this.loader = new GLTFLoader();
     this.modelCache = {};
 
@@ -129,15 +129,12 @@ class CybermonViewer {
     this.bobPhase += dt * 1.5;
 
     if (this.model) {
-      // Idle spin + momentum
+      // Only rotate on drag, no idle spin or bobbing
       if (!this.isDragging) {
-        this.momentum *= 0.95; // damping
-        this.modelRotationY += this.idleSpin + this.momentum;
+        this.momentum *= 0.95;
+        this.modelRotationY += this.momentum;
       }
       this.model.rotation.y = this.modelRotationY;
-
-      // Gentle bobbing
-      this.model.position.y = Math.sin(this.bobPhase) * 0.05;
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -208,14 +205,14 @@ class CybermonViewer {
       const box = new THREE.Box3().setFromObject(this.model);
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      const scale = 2.0 / maxDim;
+      const scale = 1.3 / maxDim; // ~33% smaller
       this.model.scale.setScalar(scale);
 
-      // Center
+      // Center horizontally, sit lower
       box.setFromObject(this.model);
       const center = box.getCenter(new THREE.Vector3());
       this.model.position.sub(center);
-      this.model.position.y = 0;
+      this.model.position.y = -0.4; // move down
 
       this.modelRotationY = 0;
       this.scene.add(this.model);

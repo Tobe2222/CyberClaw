@@ -1045,6 +1045,40 @@ print(f"✓ Rendered PNG: {args.output}")
 
 # Export GLB (3D model) alongside the PNG
 glb_output = os.path.splitext(os.path.abspath(args.output))[0] + '.glb'
+
+# Convert toon/emission materials to simple Principled BSDF for proper GLTF export
+# (Shader-to-RGB + Emission don't export correctly)
+for mat in bpy.data.materials:
+    if not mat.use_nodes:
+        continue
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    # Find emission node to extract color
+    emission_node = None
+    diffuse_node = None
+    for n in nodes:
+        if n.type == 'EMISSION':
+            emission_node = n
+        elif n.type == 'BSDF_DIFFUSE':
+            diffuse_node = n
+    # Get the base color: prefer diffuse input, fallback to emission input
+    base_color = (0.5, 0.5, 0.5, 1)
+    if diffuse_node:
+        base_color = tuple(diffuse_node.inputs['Color'].default_value)
+    elif emission_node:
+        ec = tuple(emission_node.inputs['Color'].default_value)
+        base_color = (*ec[:3], 1) if len(ec) == 3 else ec
+    # Replace with Principled BSDF
+    nodes.clear()
+    output = nodes.new('ShaderNodeOutputMaterial')
+    output.location = (200, 0)
+    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+    bsdf.location = (0, 0)
+    bsdf.inputs['Base Color'].default_value = base_color
+    bsdf.inputs['Roughness'].default_value = 0.8
+    bsdf.inputs['Metallic'].default_value = 0.0
+    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
 # Deselect camera, lights, focus empty — only export mesh objects
 bpy.ops.object.select_all(action='DESELECT')
 for obj in bpy.data.objects:

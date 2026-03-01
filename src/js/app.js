@@ -238,6 +238,9 @@ function updateCarousel() {
 
 // Show focused companion as large 3D model in the arena
 async function updateArena3D(agentId) {
+  // Restore all card visibilities first
+  document.querySelectorAll('.carousel-avatar').forEach(el => el.style.visibility = 'visible');
+
   if (!CybermonViewer || !agentId) return;
 
   try {
@@ -254,14 +257,14 @@ async function updateArena3D(agentId) {
       const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
       await arenaViewer.show(cybermonId, { rimColor });
 
-      // Fade the focused card's avatar so 3D model is prominent
-      const focusedEl = document.querySelector('.carousel-agent.focused .carousel-avatar img');
-      if (focusedEl) focusedEl.style.opacity = '0.15';
+      // Hide the focused card's avatar entirely — 3D replaces it
+      const focusedCard = document.querySelector('.carousel-agent.focused .carousel-avatar');
+      if (focusedCard) focusedCard.style.visibility = 'hidden';
     } else {
       // No companion model — clear 3D, show normal avatar
       if (arenaViewer) arenaViewer.clear();
-      const focusedEl = document.querySelector('.carousel-agent.focused .carousel-avatar img');
-      if (focusedEl) focusedEl.style.opacity = '1';
+      const focusedCard = document.querySelector('.carousel-agent.focused .carousel-avatar');
+      if (focusedCard) focusedCard.style.visibility = 'visible';
     }
   } catch (e) {
     // No sprite config — just show normal carousel
