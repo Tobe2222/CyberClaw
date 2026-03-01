@@ -182,8 +182,32 @@ class CybermonViewer {
       // Clone the scene so we can reuse the cache
       this.model = gltf.scene.clone();
 
-      // Fix materials — Blender toon shader exports color as emissive, not baseColor
+      // Fix materials + remove ground planes/shadow discs
+      const meshesToHide = [];
       this.model.traverse(child => {
+        if (child.isMesh) {
+          const name = (child.name || '').toLowerCase();
+          // Hide known ground/platform objects
+          if (name.includes('plane') || name.includes('ground') || name.includes('shadow') ||
+              name.includes('circle') || name.includes('disc') || name.includes('platform')) {
+            meshesToHide.push(child);
+            return;
+          }
+          // Also hide very flat meshes (ground planes without names)
+          if (child.geometry) {
+            child.geometry.computeBoundingBox();
+            const bb = child.geometry.boundingBox;
+            if (bb) {
+              const sy = bb.max.y - bb.min.y;
+              const sx = bb.max.x - bb.min.x;
+              const sz = bb.max.z - bb.min.z;
+              if (sy < 0.01 && sx > 0.3 && sz > 0.3) {
+                meshesToHide.push(child);
+                return;
+              }
+            }
+          }
+        }
         if (child.isMesh && child.material) {
           const mat = child.material.clone();
           // If base color is black but emissive has color, swap them
@@ -204,6 +228,9 @@ class CybermonViewer {
           child.material = mat;
         }
       });
+
+      // Remove ground planes/platforms
+      meshesToHide.forEach(m => { m.visible = false; });
 
       // Auto-scale to fit
       const box = new THREE.Box3().setFromObject(this.model);
