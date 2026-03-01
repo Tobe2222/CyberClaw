@@ -240,7 +240,7 @@ function updateCarousel() {
   const centerY = aH / 2 - 20;
 
   const rx = Math.min(aW * 0.45, 440);
-  const ry = 0; // flat — no vertical movement
+  const ry = 40; // slight depth angle
 
   items.forEach((el, i) => {
     let offset = i - focusIndex;
@@ -249,7 +249,7 @@ function updateCarousel() {
 
     const angle = (offset / n) * Math.PI * 2;
     const x = centerX + Math.sin(angle) * rx;
-    const y = centerY; // flat — all same vertical position
+    const y = centerY + Math.cos(angle) * ry * 0.5;
     const depth = Math.cos(angle);
 
     const z = Math.round((depth + 1) * 100);
@@ -390,11 +390,18 @@ function updateInspect(agentId) {
 
   document.getElementById('right-header-text').textContent = agent.isMain ? 'PARTY LEADER' : agent.name?.toUpperCase() || 'COMPANION';
 
-  // Portrait
+  // Portrait — use cybermon 2D render if available
   const img = document.getElementById('inspect-avatar-img');
   const emoji = document.getElementById('inspect-emoji');
-  if (agent.avatar) { img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none'; }
-  else { img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖'; }
+  const cybermonId = agent._cybermonId || getDefaultCybermon(agentId);
+  const cybermonPng = cybermonId ? require('path').join(window.__cyberclawAssetsPath || '', `${cybermonId}.png`) : null;
+  if (cybermonPng && require('fs').existsSync(cybermonPng)) {
+    img.src = cybermonPng; img.style.display = 'block'; emoji.style.display = 'none';
+  } else if (agent.avatar) {
+    img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
+  } else {
+    img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖';
+  }
 
   document.getElementById('inspect-border').className = `inspect-avatar-border ${agent.rarity}`;
   document.getElementById('inspect-name').textContent = agent.name;
