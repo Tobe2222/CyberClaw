@@ -5,10 +5,16 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+// Shared GLTF cache across all viewers
+const _gltfCache = {};
+
 class CybermonViewer {
-  constructor(containerId) {
-    this.container = document.getElementById(containerId);
+  constructor(containerId, opts = {}) {
+    this.container = typeof containerId === 'string'
+      ? document.getElementById(containerId)
+      : containerId; // accept DOM element directly
     if (!this.container) return;
+    this.interactive = opts.interactive !== false; // drag to rotate (default true)
 
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
@@ -82,6 +88,8 @@ class CybermonViewer {
   }
 
   _initEvents() {
+    if (!this.interactive) return; // no drag on non-interactive viewers
+
     const canvas = this.renderer.domElement;
 
     canvas.addEventListener('mousedown', (e) => {
@@ -172,8 +180,8 @@ class CybermonViewer {
     }
 
     try {
-      const gltf = this.modelCache[cybermonId] || await this.loadGLTF(glbPath);
-      this.modelCache[cybermonId] = gltf;
+      const gltf = _gltfCache[cybermonId] || await this.loadGLTF(glbPath);
+      _gltfCache[cybermonId] = gltf;
 
       // Clone the scene so we can reuse the cache
       this.model = gltf.scene.clone();
