@@ -223,8 +223,8 @@ function buildCarousel() {
     ring.appendChild(el);
   });
 
-  // Init 3D viewers on each card after DOM is ready
-  requestAnimationFrame(() => initCardViewers());
+  // Init 3D viewers on each card after DOM is laid out
+  setTimeout(() => initCardViewers(), 100);
   updateCarousel();
 }
 
@@ -291,12 +291,14 @@ function getDefaultCybermon(agentId) {
 
 // Initialize 3D viewers on each carousel card
 async function initCardViewers() {
-  if (!CybermonViewer) return;
+  console.log('[3D] initCardViewers called, CybermonViewer:', !!CybermonViewer, 'agents:', agentOrder.length, 'catalog:', !!cybermonCatalog);
+  if (!CybermonViewer) { console.warn('[3D] CybermonViewer not available'); return; }
 
   for (let i = 0; i < agentOrder.length; i++) {
     const id = agentOrder[i];
     const container = document.getElementById(`card-3d-${i}`);
-    if (!container) continue;
+    if (!container) { console.warn(`[3D] No container card-3d-${i}`); continue; }
+    console.log(`[3D] Card ${i} (${id}): container ${container.clientWidth}x${container.clientHeight}`);
 
     // Get assigned cybermon or use deterministic default
     let cybermonId;
@@ -305,20 +307,24 @@ async function initCardViewers() {
       cybermonId = config?.cybermonId;
     } catch {}
     if (!cybermonId) cybermonId = getDefaultCybermon(id);
-    if (!cybermonId) continue;
+    if (!cybermonId) { console.warn(`[3D] No cybermon for ${id}`); continue; }
 
     // Store the assignment on agent data for later use
     agents[id]._cybermonId = cybermonId;
+    console.log(`[3D] Loading ${cybermonId} for ${id}`);
 
-    // Create a small non-interactive viewer
+    // Create viewer for this card
     const isFocused = (i === focusIndex);
-    const viewer = new CybermonViewer(container, { interactive: isFocused });
-
-    const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
-    const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-    await viewer.show(cybermonId, { rimColor });
-
-    window._cardViewers[id] = viewer;
+    try {
+      const viewer = new CybermonViewer(container, { interactive: isFocused });
+      const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
+      const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+      await viewer.show(cybermonId, { rimColor });
+      window._cardViewers[id] = viewer;
+      console.log(`[3D] ✅ ${cybermonId} loaded for ${id}`);
+    } catch (e) {
+      console.error(`[3D] ❌ Failed for ${id}:`, e);
+    }
   }
 }
 
