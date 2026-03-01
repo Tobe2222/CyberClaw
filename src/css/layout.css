@@ -61,12 +61,14 @@
 /* ---- CENTER ---- */
 #panel-center { display: flex; flex-direction: column; background: var(--bg-darkest); overflow: hidden; position: relative; }
 
+/* Logo as overlay on arena */
 #cyberhive-logo-link {
-  display: block; text-align: center; padding: 8px 0 2px;
-  flex-shrink: 0; z-index: 10;
+  position: absolute; top: 8px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
 }
 #cyberhive-logo {
-  height: 52px; opacity: 0.7; transition: opacity 0.2s;
+  height: 44px; opacity: 0.6; transition: opacity 0.2s;
   filter: drop-shadow(0 0 8px rgba(251,191,36,0.2));
 }
 #cyberhive-logo:hover { opacity: 1; }
@@ -75,6 +77,15 @@
 #party-arena {
   flex: 1.5; position: relative; overflow: hidden; min-height: 180px;
   display: flex; align-items: center; justify-content: center;
+  /* Sky gradient background */
+  background: linear-gradient(to bottom,
+    #0a1628 0%,
+    #0f2240 15%,
+    #163058 30%,
+    #1a3d6e 45%,
+    #1e4a7a 60%,
+    #1a5a3a 75%,
+    transparent 80%);
 }
 
 #arena-bg { position: absolute; inset: 0; overflow: hidden; }

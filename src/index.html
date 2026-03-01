@@ -87,12 +87,12 @@
 
     <!-- ========== CENTER: ARENA CAROUSEL + TERMINAL ========== -->
     <main id="panel-center">
-      <!-- CyberHive logo -->
-      <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
-        <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
-      </a>
       <!-- Arena with rotating carousel -->
       <div id="party-arena">
+        <!-- Logo overlay (top center of arena) -->
+        <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
+          <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
+        </a>
         <div id="arena-bg">
           <div class="arena-grid"></div>
           <div class="arena-glow"></div>
@@ -119,11 +119,11 @@
           <div id="carousel-channel"></div>
         </div>
 
-        <!-- Edit companion button (bottom center of arena) -->
-        <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit Companion">🎨 Edit</button>
-
-        <!-- Generate new companion button -->
-        <button id="btn-generate-companion" class="btn-generate" onclick="openCompanionEditor(true)" title="Generate New Companion">＋ Create</button>
+        <!-- Bottom buttons -->
+        <div id="arena-bottom-buttons">
+          <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit Companion">🎨 Edit</button>
+          <button id="btn-generate-companion" class="btn-generate-inline" onclick="openCompanionEditor(true)" title="Create New Companion">＋ Create</button>
+        </div>
       </div>
 
       <!-- Focused companion info strip (below carousel) -->
