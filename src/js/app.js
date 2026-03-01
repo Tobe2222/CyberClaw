@@ -240,7 +240,7 @@ function updateCarousel() {
   const centerY = aH / 2 - 20;
 
   const rx = Math.min(aW * 0.45, 440);
-  const ry = 40; // slight depth angle
+  const ry = 80; // depth angle for tilted wheel look
 
   items.forEach((el, i) => {
     let offset = i - focusIndex;
