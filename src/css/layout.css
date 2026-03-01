@@ -78,16 +78,44 @@
 }
 
 #arena-bg { position: absolute; inset: 0; overflow: hidden; }
+
+/* Grass field ground */
 .arena-grid {
-  position: absolute; inset: 0;
-  background: linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
-  transform: perspective(500px) rotateX(50deg); transform-origin: center 85%;
+  position: absolute;
+  left: -10%; right: -10%;
+  bottom: 0; height: 55%;
+  background:
+    /* Grass texture - layered gradients */
+    repeating-linear-gradient(85deg, transparent, transparent 3px, rgba(40,120,40,0.08) 3px, rgba(40,120,40,0.08) 4px),
+    repeating-linear-gradient(95deg, transparent, transparent 5px, rgba(50,140,50,0.06) 5px, rgba(50,140,50,0.06) 6px),
+    repeating-linear-gradient(88deg, transparent, transparent 7px, rgba(30,100,30,0.05) 7px, rgba(30,100,30,0.05) 8px),
+    /* Base grass gradient - darker at bottom, lighter at horizon */
+    linear-gradient(to top, #1a3a1a 0%, #1e4a1e 20%, #245a24 40%, #2a6a2a 60%, #306830 80%, transparent 100%);
+  transform: perspective(600px) rotateX(45deg);
+  transform-origin: center bottom;
+  border-top: 1px solid rgba(60,140,60,0.15);
 }
+
+/* Grass blade overlay for texture */
+.arena-grid::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(92deg, transparent 0px, transparent 2px, rgba(80,180,80,0.04) 2px, rgba(80,180,80,0.04) 3px),
+    repeating-linear-gradient(178deg, transparent 0px, transparent 8px, rgba(60,150,60,0.06) 8px, transparent 12px);
+  animation: grass-sway 8s ease-in-out infinite alternate;
+}
+
+@keyframes grass-sway {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(2px); }
+}
+
+/* Ambient glow on grass */
 .arena-glow {
-  position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);
-  width: 500px; height: 250px;
-  background: radial-gradient(ellipse, rgba(255,107,53,0.08), transparent 70%);
+  position: absolute; bottom: 15%; left: 50%; transform: translateX(-50%);
+  width: 600px; height: 200px;
+  background: radial-gradient(ellipse, rgba(60,160,60,0.1), transparent 70%);
   pointer-events: none;
 }
 
