@@ -31,6 +31,16 @@ function formatModelName(modelId) {
   return pretty[name] || name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function updateModelArrow(agent) {
+  const primaryRow = document.getElementById('inspect-model-primary');
+  const fallbackRow = document.getElementById('inspect-model-fallback');
+  if (!primaryRow) return;
+
+  const isFallback = agent.activeModel && agent.activeModel !== agent.primaryModel;
+  primaryRow.classList.toggle('model-active', !isFallback);
+  if (fallbackRow) fallbackRow.classList.toggle('model-active', !!isFallback);
+}
+
 // ---------------------------------------------------------------------------
 // Agent data — populated from OpenClaw at runtime
 // ---------------------------------------------------------------------------
@@ -348,14 +358,7 @@ function updateFocused(agentId) {
   setBar('focused-mp', agent.mp);
   setBar('focused-xp', agent.xp);
 
-  const focusedModelEl = document.getElementById('focused-model');
-  if (agent.activeModel && agent.activeModel !== agent.primaryModel) {
-    focusedModelEl.textContent = formatModelName(agent.activeModel);
-    focusedModelEl.classList.add('model-fallback');
-  } else {
-    focusedModelEl.textContent = agent.model;
-    focusedModelEl.classList.remove('model-fallback');
-  }
+  document.getElementById('focused-model').textContent = agent.model;
   document.getElementById('focused-provider').textContent = agent.provider;
 
   // Skills
@@ -441,21 +444,8 @@ function updateInspect(agentId) {
     } else {
       agent.activeModel = agent.primaryModel;
     }
-    // Update model display after rate limit check
-    const modelEl = document.getElementById('inspect-model');
-    const providerEl = document.getElementById('inspect-provider');
-    if (agent.activeModel !== agent.primaryModel) {
-      modelEl.textContent = formatModelName(agent.activeModel) + ' ⚡';
-      modelEl.title = `Fallback active (primary: ${formatModelName(agent.primaryModel)})`;
-      modelEl.classList.add('model-fallback');
-      const fb = agent.activeModel.split('/')[0] || '?';
-      providerEl.textContent = fb.charAt(0).toUpperCase() + fb.slice(1);
-    } else {
-      modelEl.textContent = agent.model;
-      modelEl.title = agent.fallbackModels?.length ? `Fallback: ${agent.fallbackModels.map(formatModelName).join(', ')}` : '';
-      modelEl.classList.remove('model-fallback');
-      providerEl.textContent = agent.provider;
-    }
+    // Update arrow indicator after rate limit check
+    updateModelArrow(agent);
 
     setBar('inspect-mp', agent.mp);
     setBar('inspect-xp', [stats.xp, xpNeeded]);
@@ -491,20 +481,25 @@ function updateInspect(agentId) {
     }).join('');
   });
 
-  // Model display — show active model with fallback indicator
-  const modelEl = document.getElementById('inspect-model');
-  const providerEl = document.getElementById('inspect-provider');
-  if (agent.activeModel && agent.activeModel !== agent.primaryModel) {
-    modelEl.textContent = formatModelName(agent.activeModel);
-    modelEl.title = `Fallback active (primary: ${formatModelName(agent.primaryModel)})`;
-    modelEl.classList.add('model-fallback');
-    providerEl.textContent = agent.activeModel.split('/')[0]?.charAt(0).toUpperCase() + agent.activeModel.split('/')[0]?.slice(1) || '?';
+  // Model stack — primary + fallback rows
+  const primaryRow = document.getElementById('inspect-model-primary');
+  const fallbackRow = document.getElementById('inspect-model-fallback');
+  document.getElementById('inspect-model-name').textContent = agent.model;
+  document.getElementById('inspect-provider').textContent = agent.provider;
+
+  if (agent.fallbackModels?.length) {
+    const fb = agent.fallbackModels[0];
+    const fbProvider = fb.split('/')[0] || '?';
+    document.getElementById('inspect-fallback-name').textContent = formatModelName(fb);
+    document.getElementById('inspect-fallback-provider').textContent = fbProvider.charAt(0).toUpperCase() + fbProvider.slice(1);
+    fallbackRow.style.display = '';
   } else {
-    modelEl.textContent = agent.model;
-    modelEl.title = agent.fallbackModels?.length ? `Fallback: ${agent.fallbackModels.map(formatModelName).join(', ')}` : '';
-    modelEl.classList.remove('model-fallback');
-    providerEl.textContent = agent.provider;
+    fallbackRow.style.display = 'none';
   }
+
+  // Arrow shows which is active (updated after rate limit check below)
+  updateModelArrow(agent);
+
   loadEquipment(agentId);
   document.getElementById('inspect-channel').textContent = agent.channel;
   document.getElementById('inspect-workspace').textContent = agent.workspace;

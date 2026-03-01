@@ -266,11 +266,16 @@
         <!-- Model (bottom) -->
         <div class="inspect-section">
           <div class="section-title">Model</div>
-          <div class="model-card active-model">
-            <div class="model-indicator pulse-green"></div>
-            <div class="model-info">
-              <div class="model-name" id="inspect-model">Claude Opus 4</div>
-              <div class="model-provider" id="inspect-provider">Anthropic</div>
+          <div class="model-stack" id="inspect-model-stack">
+            <div class="model-row" id="inspect-model-primary">
+              <span class="model-arrow" id="inspect-arrow-primary">▶</span>
+              <span class="model-row-name" id="inspect-model-name">Claude Opus 4</span>
+              <span class="model-row-provider" id="inspect-provider">Anthropic</span>
+            </div>
+            <div class="model-row model-row-fallback" id="inspect-model-fallback" style="display:none">
+              <span class="model-arrow" id="inspect-arrow-fallback">▶</span>
+              <span class="model-row-name" id="inspect-fallback-name">—</span>
+              <span class="model-row-provider" id="inspect-fallback-provider">—</span>
             </div>
           </div>
         </div>

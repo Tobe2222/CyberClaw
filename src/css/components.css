@@ -337,7 +337,58 @@
   margin-left: auto;
 }
 
-/* Fallback model indicator */
+/* Model stack — primary + fallback rows */
+.model-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  font-size: 11px;
+}
+.model-row.model-active {
+  background: rgba(0,212,255,0.08);
+  border: 1px solid rgba(0,212,255,0.2);
+}
+.model-row-fallback {
+  opacity: 0.5;
+}
+.model-row-fallback.model-active {
+  opacity: 1;
+  background: rgba(255,170,0,0.1);
+  border: 1px solid rgba(255,170,0,0.3);
+}
+.model-arrow {
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.model-active .model-arrow {
+  opacity: 1;
+  color: #00d4ff;
+}
+.model-row-fallback.model-active .model-arrow {
+  color: #ffaa00;
+}
+.model-row-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+.model-row-provider {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+/* Fallback model indicator (legacy) */
 .model-fallback {
   color: #ffaa00 !important;
   text-shadow: 0 0 6px rgba(255,170,0,0.4);
