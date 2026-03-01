@@ -240,7 +240,7 @@ function updateCarousel() {
   const centerY = aH / 2 - 20;
 
   const rx = Math.min(aW * 0.45, 440);
-  const ry = 20;
+  const ry = 0; // flat — no vertical movement
 
   items.forEach((el, i) => {
     let offset = i - focusIndex;
@@ -249,7 +249,7 @@ function updateCarousel() {
 
     const angle = (offset / n) * Math.PI * 2;
     const x = centerX + Math.sin(angle) * rx;
-    const y = centerY + Math.cos(angle) * ry * 0.5;
+    const y = centerY; // flat — all same vertical position
     const depth = Math.cos(angle);
 
     const z = Math.round((depth + 1) * 100);

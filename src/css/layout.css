@@ -106,14 +106,14 @@
 
 .carousel-agent {
   position: absolute;
-  left: 50%; top: 50%;
+  left: 0; top: 0;
   display: flex; flex-direction: column; align-items: center;
   cursor: pointer;
-  transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-              top 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-              filter 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: left 0.4s ease-out,
+              top 0.4s ease-out,
+              opacity 0.4s ease,
+              filter 0.4s ease;
+  will-change: left, top, opacity;
   transform-origin: center center;
 }
 
@@ -197,7 +197,8 @@
 /* Status dot on carousel avatar */
 .carousel-status {
   width: 12px; height: 12px; border-radius: 50%;
-  margin-top: -30px;
+  order: -1; /* move above card-3d in flex column */
+  margin-bottom: 4px;
   align-self: center;
   border: 2px solid var(--bg-darkest);
   z-index: 5;
@@ -207,7 +208,7 @@
 
 /* Carousel name label under model */
 .carousel-label {
-  margin-top: -20px; text-align: center;
+  margin-top: -10px; text-align: center;
   transition: opacity 0.4s;
 }
 .focused .carousel-label { opacity: 1; }

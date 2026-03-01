@@ -955,14 +955,12 @@
 
 /* ─── Party Leader Crown ─── */
 .carousel-crown {
-  position: absolute;
-  top: -24px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px;
+  order: -2; /* above status dot and model */
+  font-size: 18px;
   z-index: 10;
   filter: drop-shadow(0 0 4px rgba(255,215,0,0.8));
   animation: crown-bob 2s ease-in-out infinite;
+  margin-bottom: -4px;
 }
 @keyframes crown-bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }
