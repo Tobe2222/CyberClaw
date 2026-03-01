@@ -30,14 +30,15 @@ class CybermonViewer {
     this._initRenderer();
     this._initCamera();
     this._initLighting();
+    this._initEnvironment();
     this._initEvents();
     this._animate();
   }
 
   _initRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ alpha: false, antialias: true });
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setClearColor(0x87CEEB, 1); // sky blue fallback
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
@@ -83,6 +84,171 @@ class CybermonViewer {
     this.rimLight = new THREE.PointLight(0x00aaff, 1.0, 10);
     this.rimLight.position.set(0, 2, -2);
     this.scene.add(this.rimLight);
+  }
+
+  _initEnvironment() {
+    // === SKY DOME with gradient ===
+    const skyGeo = new THREE.SphereGeometry(50, 32, 32);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        topColor:    { value: new THREE.Color(0x4a90d9) },   // deeper blue
+        bottomColor: { value: new THREE.Color(0xc8e6ff) },   // pale horizon
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        varying vec3 vWorldPos;
+        void main() {
+          float h = normalize(vWorldPos).y;
+          float t = clamp(h * 0.5 + 0.5, 0.0, 1.0);
+          gl_FragColor = vec4(mix(bottomColor, topColor, t), 1.0);
+        }
+      `,
+      depthWrite: false,
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    this.scene.add(sky);
+
+    // === CLOUDS (billboard sprites) ===
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = 256;
+    cloudCanvas.height = 128;
+    const cctx = cloudCanvas.getContext('2d');
+    cctx.fillStyle = 'rgba(0,0,0,0)';
+    cctx.fillRect(0, 0, 256, 128);
+    // Soft cloud shape
+    const drawBlob = (x, y, rx, ry) => {
+      cctx.beginPath();
+      cctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      cctx.fill();
+    };
+    cctx.fillStyle = 'rgba(255,255,255,0.85)';
+    drawBlob(128, 70, 80, 35);
+    drawBlob(90, 60, 50, 30);
+    drawBlob(170, 65, 55, 28);
+    drawBlob(120, 50, 40, 22);
+    drawBlob(150, 55, 45, 25);
+    const cloudTex = new THREE.CanvasTexture(cloudCanvas);
+    cloudTex.colorSpace = THREE.SRGBColorSpace;
+
+    const cloudPositions = [
+      { x: -8, y: 8, z: -15, s: 6 },
+      { x: 5, y: 9, z: -18, s: 8 },
+      { x: 15, y: 7.5, z: -12, s: 5 },
+      { x: -15, y: 10, z: -20, s: 7 },
+      { x: 0, y: 11, z: -22, s: 9 },
+      { x: 10, y: 8.5, z: -16, s: 5.5 },
+      { x: -5, y: 9.5, z: -25, s: 7.5 },
+    ];
+    cloudPositions.forEach(cp => {
+      const spMat = new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.9, depthWrite: false });
+      const sp = new THREE.Sprite(spMat);
+      sp.position.set(cp.x, cp.y, cp.z);
+      sp.scale.set(cp.s, cp.s * 0.5, 1);
+      this.scene.add(sp);
+    });
+
+    // === GROUND (grass field) ===
+    const groundCanvas = document.createElement('canvas');
+    groundCanvas.width = 512;
+    groundCanvas.height = 512;
+    const gctx = groundCanvas.getContext('2d');
+    // Base green
+    gctx.fillStyle = '#4a8c3f';
+    gctx.fillRect(0, 0, 512, 512);
+    // Grass texture noise
+    for (let i = 0; i < 8000; i++) {
+      const gx = Math.random() * 512;
+      const gy = Math.random() * 512;
+      const shade = 60 + Math.random() * 50;
+      gctx.fillStyle = `rgb(${shade * 0.6}, ${shade + 40}, ${shade * 0.4})`;
+      gctx.fillRect(gx, gy, 1 + Math.random() * 2, 2 + Math.random() * 4);
+    }
+    const grassTex = new THREE.CanvasTexture(groundCanvas);
+    grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
+    grassTex.repeat.set(8, 8);
+    grassTex.colorSpace = THREE.SRGBColorSpace;
+
+    const groundGeo = new THREE.PlaneGeometry(60, 60);
+    const groundMat = new THREE.MeshLambertMaterial({ map: grassTex });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.4;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    // === STONES ===
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0x8a8a7a });
+    const stonePositions = [
+      { x: -2.5, z: -2, s: 0.25 },
+      { x: 3, z: -3, s: 0.35 },
+      { x: -1, z: -4, s: 0.2 },
+      { x: 4.5, z: -1.5, s: 0.15 },
+      { x: -3.5, z: -3.5, s: 0.3 },
+      { x: 1.5, z: -1, s: 0.12 },
+      { x: -0.5, z: -2.5, s: 0.18 },
+    ];
+    stonePositions.forEach(sp => {
+      const geo = new THREE.DodecahedronGeometry(sp.s, 1);
+      // Roughen vertices a bit
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setX(i, pos.getX(i) + (Math.random() - 0.5) * sp.s * 0.3);
+        pos.setY(i, pos.getY(i) + (Math.random() - 0.5) * sp.s * 0.3);
+        pos.setZ(i, pos.getZ(i) + (Math.random() - 0.5) * sp.s * 0.3);
+      }
+      geo.computeVertexNormals();
+      const mat = stoneMat.clone();
+      const shade = 0.7 + Math.random() * 0.3;
+      mat.color.setRGB(0.54 * shade, 0.54 * shade, 0.48 * shade);
+      const stone = new THREE.Mesh(geo, mat);
+      stone.position.set(sp.x, -0.4 + sp.s * 0.4, sp.z);
+      stone.rotation.set(Math.random(), Math.random(), Math.random());
+      this.scene.add(stone);
+    });
+
+    // === TREES ===
+    const treePositions = [
+      { x: -6, z: -8, trunkH: 1.8, crownR: 1.5 },
+      { x: 7, z: -10, trunkH: 2.2, crownR: 1.8 },
+      { x: -4, z: -12, trunkH: 2.0, crownR: 1.6 },
+      { x: 10, z: -7, trunkH: 1.5, crownR: 1.2 },
+      { x: -9, z: -6, trunkH: 1.6, crownR: 1.3 },
+      { x: 3, z: -14, trunkH: 2.5, crownR: 2.0 },
+      { x: -2, z: -16, trunkH: 2.0, crownR: 1.7 },
+      { x: 12, z: -12, trunkH: 1.8, crownR: 1.4 },
+    ];
+    treePositions.forEach(tp => {
+      const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, tp.trunkH, 6);
+      const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b4226 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.set(tp.x, -0.4 + tp.trunkH / 2, tp.z);
+      this.scene.add(trunk);
+
+      // Layered crown for a fuller look
+      const crownShades = [0x2d7a2d, 0x3a8f3a, 0x267326];
+      for (let i = 0; i < 3; i++) {
+        const crownGeo = new THREE.SphereGeometry(tp.crownR * (1 - i * 0.15), 8, 6);
+        const crownMat = new THREE.MeshLambertMaterial({ color: crownShades[i] });
+        const crown = new THREE.Mesh(crownGeo, crownMat);
+        const offsetX = (Math.random() - 0.5) * tp.crownR * 0.4;
+        const offsetZ = (Math.random() - 0.5) * tp.crownR * 0.4;
+        crown.position.set(tp.x + offsetX, -0.4 + tp.trunkH + tp.crownR * 0.5 + i * 0.2, tp.z + offsetZ);
+        this.scene.add(crown);
+      }
+    });
+
+    // === Fog for depth ===
+    this.scene.fog = new THREE.FogExp2(0xc8e6ff, 0.02);
   }
 
   _initEvents() {

@@ -1083,9 +1083,11 @@ function updateChatTarget() {
     el.textContent = '🤖 —';
     return;
   }
-  const agent = agents[agentOrder[focusIndex]];
-  if (agent) {
-    el.textContent = `${agent.emoji || '🤖'} ${agent.name}`;
+  // Always show party leader as chat target
+  const mainId = agentOrder.find(id => agents[id]?.isMain);
+  const leader = mainId ? agents[mainId] : agents[agentOrder[0]];
+  if (leader) {
+    el.textContent = `${leader.emoji || '🤖'} ${leader.name}`;
   }
 }
 
@@ -1101,16 +1103,12 @@ window.sendChat = async function() {
   addChatMsg('user', message, agent.name);
   input.value = '';
 
+  // Always chat through the party leader
+  const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
+  if (!mainAgentId) { addChatMsg('error', 'No party leader found'); return; }
+
   // Build message with context
   let fullMessage = message;
-
-  // If chatting with a non-main companion, route through main agent with delegation context
-  const mainAgent = agentOrder.find(id => agents[id]?.isMain);
-  const isMainAgent = agent.isMain;
-  if (!isMainAgent && mainAgent) {
-    const focuses = agent.focusSkills?.length ? ` (specializes in: ${agent.focusSkills.join(', ')})` : '';
-    fullMessage = `[Delegated to companion "${agent.name}"${focuses}] ${message}`;
-  }
 
   // Add quest context if active
   if (activeQuestId) {
@@ -1131,13 +1129,30 @@ window.sendChat = async function() {
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
   try {
-    // Always route through main agent — it delegates to companions as needed
-    const chatAgentId = (mainAgent && !isMainAgent) ? mainAgent : agent.id;
-    const result = await cyberclaw.chat.sendMessage(chatAgentId, fullMessage);
+    const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
     removeChatMsg(typingId);
 
     if (result.ok) {
-      addChatMsg('agent', result.reply, agent.name, agent.emoji);
+      // Show response from party leader
+      const leader = agents[mainAgentId];
+      addChatMsg('agent', result.reply, leader?.name || 'Party Leader', leader?.emoji);
+
+      // Award XP to the best-matching companion based on task type
+      const taskSkill = result.taskSkill;
+      if (taskSkill) {
+        const xpAmount = 10 + Math.floor(Math.random() * 10);
+        // Find companion with this focus, or fall back to party leader
+        const specialist = agentOrder.find(id => {
+          const a = agents[id];
+          return a?.focusSkills?.includes(taskSkill);
+        });
+        const xpTarget = specialist || mainAgentId;
+        await cyberclaw.agents.addXP(xpTarget, taskSkill, xpAmount);
+        const xpAgent = agents[xpTarget];
+        if (xpAgent) {
+          addChatMsg('system', `⚔️ ${xpAgent.name} gained +${xpAmount} ${taskSkill} XP`);
+        }
+      }
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }

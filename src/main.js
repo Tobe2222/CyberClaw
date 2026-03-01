@@ -444,10 +444,9 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
         }
       );
     });
-    // Award skill XP based on message content
+    // Classify task for XP (awarded by frontend to the right companion)
     if (result.ok) {
-      const skill = classifyTask(message);
-      if (skill) addSkillXP(agentId, skill, 10 + Math.floor(Math.random() * 10));
+      result.taskSkill = classifyTask(message);
     }
 
     return result;
@@ -589,6 +588,11 @@ ipcMain.handle('quests:update', (event, id, updates) => {
 ipcMain.handle('companion:stats', (event, agentId) => {
   const stats = loadStats();
   return stats[agentId] || { level: 1, xp: 0, xpTotal: 0, skills: {} };
+});
+
+ipcMain.handle('companion:add-xp', (event, agentId, skill, amount) => {
+  addSkillXP(agentId, skill, amount);
+  return true;
 });
 
 // ─── Companion Sprite Config ───
