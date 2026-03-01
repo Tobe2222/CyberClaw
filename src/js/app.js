@@ -237,7 +237,7 @@ function updateCarousel() {
   const aW = arena.offsetWidth;
   const aH = arena.offsetHeight;
   const centerX = aW / 2;
-  const centerY = aH * 0.72;
+  const centerY = aH * 0.78;
 
   const rx = Math.min(aW * 0.45, 440);
   const ry = 140; // strong tilt angle
