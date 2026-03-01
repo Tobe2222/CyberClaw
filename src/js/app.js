@@ -158,7 +158,9 @@ async function loadAgents() {
         if (cfg) {
           if (cfg.customName) agents[id].name = cfg.customName;
           if (cfg.focusSkills) agents[id].focusSkills = cfg.focusSkills;
-          if (cfg.assignedQuest) agents[id].assignedQuest = cfg.assignedQuest;
+          // Support both legacy single assignedQuest and new assignedQuests array
+          if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
+          else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
         }
       } catch {}
     }
@@ -737,7 +739,7 @@ async function renderQuests() {
     // Find companions assigned to this quest
     const assignedCompanions = agentOrder
       .map(id => agents[id])
-      .filter(a => a && a.assignedQuest === q.id);
+      .filter(a => a && (a.assignedQuests || []).includes(q.id));
     const companionAvatars = assignedCompanions.length > 0
       ? `<div class="quest-companions">${assignedCompanions.map(a =>
           a.avatar
@@ -822,7 +824,7 @@ window.openQuestEditor = async function(event, questId) {
   const companionChecks = agentOrder.map(id => {
     const a = agents[id];
     if (!a) return '';
-    const checked = a.assignedQuest === questId ? 'checked' : '';
+    const checked = (a.assignedQuests || []).includes(questId) ? 'checked' : '';
     const avatar = a.avatar
       ? `<img src="${a.avatar}" class="qe-companion-img" />`
       : `<span class="qe-companion-emoji">${a.emoji || '🤖'}</span>`;
@@ -916,21 +918,26 @@ window.saveQuestEdit = async function() {
   // Update quest
   await cyberclaw.quests.update(editingQuestId, { name, description, goals, skills, directory: directory || undefined });
 
-  // Update companion assignments
+  // Update companion assignments (multi-quest support)
   for (const id of assignedIds) {
     if (agents[id]) {
-      agents[id].assignedQuest = editingQuestId;
-      await cyberclaw.agents.saveSpriteConfig(id, {
-        ...(await cyberclaw.agents.getSpriteConfig(id) || {}),
-        assignedQuest: editingQuestId,
-      });
+      const quests = new Set(agents[id].assignedQuests || []);
+      quests.add(editingQuestId);
+      agents[id].assignedQuests = [...quests];
+      const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
+      cfg.assignedQuests = agents[id].assignedQuests;
+      delete cfg.assignedQuest; // migrate away from legacy
+      await cyberclaw.agents.saveSpriteConfig(id, cfg);
     }
   }
   for (const id of unassignedIds) {
-    if (agents[id] && agents[id].assignedQuest === editingQuestId) {
-      agents[id].assignedQuest = null;
+    if (agents[id]) {
+      const quests = new Set(agents[id].assignedQuests || []);
+      quests.delete(editingQuestId);
+      agents[id].assignedQuests = [...quests];
       const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
-      cfg.assignedQuest = null;
+      cfg.assignedQuests = agents[id].assignedQuests;
+      delete cfg.assignedQuest;
       await cyberclaw.agents.saveSpriteConfig(id, cfg);
     }
   }
@@ -1486,7 +1493,7 @@ window.openCompanionEditor = function() {
   cyberclaw.quests.list().then(quests => {
     const select = document.getElementById('editor-quest');
     select.innerHTML = '<option value="">— None —</option>' +
-      quests.map(q => `<option value="${q.id}" ${agent.assignedQuest === q.id ? 'selected' : ''}>${q.name}</option>`).join('');
+      quests.map(q => `<option value="${q.id}" ${(agent.assignedQuests || []).includes(q.id) ? 'selected' : ''}>${q.name}</option>`).join('');
   });
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
@@ -1522,11 +1529,16 @@ window.saveCompanion = async function() {
   const imgData = fs.readFileSync(imgPath);
   const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
 
+  // Build quest assignments — keep existing, toggle the selected one
+  const existingQuests = new Set(agents[editorAgentId]?.assignedQuests || []);
+  if (questId) existingQuests.add(questId);
+  const assignedQuests = [...existingQuests];
+
   await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
     cybermonId: selectedCybermon,
     customName: newName || undefined,
     focusSkills,
-    assignedQuest: questId,
+    assignedQuests,
   });
   await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
   agent.avatar = dataUrl;
@@ -1534,7 +1546,7 @@ window.saveCompanion = async function() {
   // Update in-memory agent
   if (newName) agent.name = newName;
   agent.focusSkills = focusSkills;
-  agent.assignedQuest = questId;
+  agent.assignedQuests = assignedQuests;
 
   // Refresh UI
   buildCarousel();
