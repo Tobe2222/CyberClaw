@@ -110,10 +110,9 @@
   display: flex; flex-direction: column; align-items: center;
   cursor: pointer;
   transition: left 0.4s ease-out,
-              top 0.4s ease-out,
               opacity 0.4s ease,
               filter 0.4s ease;
-  will-change: left, top, opacity;
+  will-change: left, opacity;
   transform-origin: center center;
 }
 
@@ -162,22 +161,10 @@
   width: 100%; height: 100%; object-fit: cover; border-radius: 12px;
 }
 
-/* Per-card 3D viewer — no container, raw 3D model */
+/* Per-card 3D viewer — same size for all, no resizing = no vertical shift */
 .card-3d {
   width: 400px;
   height: 400px;
-}
-.focused .card-3d {
-  width: 500px;
-  height: 500px;
-}
-.side .card-3d {
-  width: 350px;
-  height: 350px;
-}
-.far-side .card-3d {
-  width: 250px;
-  height: 250px;
 }
 
 .carousel-avatar .carousel-emoji {
@@ -196,12 +183,7 @@
 
 /* Status dot on carousel avatar */
 .carousel-status {
-  width: 12px; height: 12px; border-radius: 50%;
-  order: -1; /* move above card-3d in flex column */
-  margin-bottom: 4px;
-  align-self: center;
-  border: 2px solid var(--bg-darkest);
-  z-index: 5;
+  display: none; /* shown inline in label instead */
 }
 .carousel-status.online { background: var(--green); box-shadow: 0 0 6px rgba(74,222,128,0.5); }
 .carousel-status.idle   { background: var(--gold); }

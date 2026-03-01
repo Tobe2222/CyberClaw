@@ -215,8 +215,8 @@ function buildCarousel() {
     el.innerHTML = `
       ${crownHtml}
       <div class="card-3d" id="card-3d-${i}"></div>
-      <div class="carousel-status ${agent.status}"></div>
       <div class="carousel-label">
+        <span class="carousel-label-dot ${agent.status}"></span>
         <span class="carousel-label-name ${agent.rarity}-text">${agent.name}</span>
       </div>
     `;
@@ -256,7 +256,7 @@ function updateCarousel() {
 
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
-    el.style.transform = `translate(-50%, -50%)`;
+    el.style.transform = `translate(-50%, -100%)`; // anchor bottom — models "stand" on the line
     el.style.zIndex = z;
     // All companions visible — further back = more faded
     const opacity = Math.max(0.15, (depth + 1) / 2);
