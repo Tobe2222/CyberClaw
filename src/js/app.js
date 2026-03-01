@@ -598,18 +598,48 @@ window.selectQuest = function(el, questId) {
   }
 };
 
-// Estimate progress to next full version based on semver
-function getVersionProgress(version) {
-  if (!version) return 0;
-  const parts = version.split('.');
-  if (parts.length < 2) return 0;
-  const minor = parseInt(parts[1]) || 0;
-  const patch = parseInt(parts[2]) || 0;
-  // Assume 10 minor versions = 1 major, each minor = 10%
-  // Patch adds fractional progress within the minor
-  const progress = Math.min(95, (minor * 10) + Math.min(9, patch));
-  return progress;
+// Normalize goals: accept string[] (legacy) or {text,completed}[]
+function normalizeGoals(goals) {
+  if (!Array.isArray(goals)) return [];
+  return goals.map(g => typeof g === 'string' ? { text: g, completed: false } : g).filter(g => g.text && g.text.trim());
 }
+
+function getGoalProgress(q) {
+  const goals = normalizeGoals(q.goals);
+  if (goals.length === 0) return 0;
+  const done = goals.filter(g => g.completed).length;
+  return Math.round((done / goals.length) * 100);
+}
+
+function getGoalProgressText(q) {
+  const goals = normalizeGoals(q.goals);
+  if (goals.length === 0) return '0%';
+  const done = goals.filter(g => g.completed).length;
+  return `${done}/${goals.length}`;
+}
+
+function renderQuestGoals(q) {
+  const goals = normalizeGoals(q.goals);
+  if (goals.length === 0) return '';
+  return `<div class="quest-goals-list">${goals.map((g, i) =>
+    `<div class="quest-goal-item ${g.completed ? 'completed' : ''}" onclick="toggleGoal(event,'${q.id}',${i})">
+      <span class="quest-goal-check">${g.completed ? '☑' : '☐'}</span>
+      <span class="quest-goal-text">${escapeHtml(g.text)}</span>
+    </div>`
+  ).join('')}</div>`;
+}
+
+window.toggleGoal = async function(event, questId, goalIndex) {
+  event.stopPropagation();
+  const quests = await cyberclaw.quests.list();
+  const quest = quests.find(q => q.id === questId);
+  if (!quest) return;
+  const goals = normalizeGoals(quest.goals);
+  if (goalIndex >= goals.length) return;
+  goals[goalIndex].completed = !goals[goalIndex].completed;
+  await cyberclaw.quests.update(questId, { goals });
+  renderQuests();
+};
 
 window.setQuestVersion = async function(e, id) {
   e.stopPropagation();
@@ -698,11 +728,12 @@ async function renderQuests() {
         </div>
       </div>
       ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
+      ${renderQuestGoals(q)}
       ${companionAvatars}
       ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : ''}
       <div class="quest-progress">
-        <div class="quest-bar"><div class="quest-fill" style="width:${getVersionProgress(q.version)}%"></div></div>
-        <span class="quest-pct">${getVersionProgress(q.version)}%</span>
+        <div class="quest-bar"><div class="quest-fill" style="width:${getGoalProgress(q)}%;background:${getGoalProgress(q) >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--green), var(--cyan))'}"></div></div>
+        <span class="quest-pct">${getGoalProgressText(q)}</span>
       </div>
       <div class="quest-actions-row">
         <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
@@ -727,14 +758,12 @@ renderQuests();
 let editingQuestId = null;
 
 function buildGoalInputs(goals) {
-  // Ensure at least one empty input
-  const items = Array.isArray(goals) ? [...goals] : [];
-  if (items.length === 0 || items[items.length - 1].trim() !== '') items.push('');
+  const items = normalizeGoals(goals);
+  if (items.length === 0 || items[items.length - 1].text.trim() !== '') items.push({ text: '', completed: false });
   return items.map((g, i) =>
     `<div class="qe-goal-row">
       <span class="qe-goal-num">${i + 1}.</span>
-      <input type="text" class="qe-goal-input" value="${escapeHtml(g)}" placeholder="Goal ${i + 1}..." oninput="onGoalInput()" />
-      ${i > 0 && g.trim() === '' ? '' : ''}
+      <input type="text" class="qe-goal-input" value="${escapeHtml(g.text)}" placeholder="Goal ${i + 1}..." oninput="onGoalInput()" />
     </div>`
   ).join('');
 }
@@ -839,7 +868,13 @@ window.saveQuestEdit = async function() {
   const name = document.getElementById('qe-name').value.trim();
   const description = document.getElementById('qe-desc').value.trim();
   const goalInputs = document.querySelectorAll('#qe-goals-list .qe-goal-input');
-  const goals = Array.from(goalInputs).map(i => i.value.trim()).filter(g => g !== '');
+  // Preserve completed state from existing goals
+  const existingGoals = normalizeGoals((await cyberclaw.quests.list()).find(q => q.id === editingQuestId)?.goals);
+  const goals = Array.from(goalInputs).map((inp, i) => {
+    const text = inp.value.trim();
+    if (!text) return null;
+    return { text, completed: existingGoals[i]?.text === text ? (existingGoals[i]?.completed || false) : false };
+  }).filter(Boolean);
   const directory = document.getElementById('qe-dir').value.trim();
 
   // Gather skills

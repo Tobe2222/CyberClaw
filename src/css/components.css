@@ -553,6 +553,33 @@
 }
 .quest-delete:hover { color: #f44; }
 
+/* Quest goals list */
+.quest-goals-list {
+  margin: 4px 0 2px;
+  padding: 0 2px;
+}
+.quest-goal-item {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 10px; color: var(--text-secondary);
+  padding: 1px 0; cursor: pointer;
+  transition: color 0.2s;
+}
+.quest-goal-item:hover { color: var(--text-primary); }
+.quest-goal-item.completed .quest-goal-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.quest-goal-check {
+  font-size: 11px; flex-shrink: 0;
+  color: var(--cyan-dim);
+}
+.quest-goal-item.completed .quest-goal-check {
+  color: var(--green);
+}
+.quest-goal-text {
+  line-height: 1.3;
+}
+
 .quest-dir {
   font-size: 9px; color: var(--text-muted); margin-top: 3px;
   font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
