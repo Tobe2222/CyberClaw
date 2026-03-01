@@ -291,29 +291,23 @@ function getDefaultCybermon(agentId) {
 
 // Initialize 3D viewers on each carousel card
 async function initCardViewers() {
-  console.log('[3D] initCardViewers called, CybermonViewer:', !!CybermonViewer, 'agents:', agentOrder.length, 'catalog:', !!cybermonCatalog);
-  if (!CybermonViewer) { console.warn('[3D] CybermonViewer not available'); return; }
+  if (!CybermonViewer) return;
 
   for (let i = 0; i < agentOrder.length; i++) {
     const id = agentOrder[i];
     const container = document.getElementById(`card-3d-${i}`);
-    if (!container) { console.warn(`[3D] No container card-3d-${i}`); continue; }
-    console.log(`[3D] Card ${i} (${id}): container ${container.clientWidth}x${container.clientHeight}`);
+    if (!container) continue;
 
-    // Get assigned cybermon or use deterministic default
     let cybermonId;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
       cybermonId = config?.cybermonId;
     } catch {}
     if (!cybermonId) cybermonId = getDefaultCybermon(id);
-    if (!cybermonId) { console.warn(`[3D] No cybermon for ${id}`); continue; }
+    if (!cybermonId) continue;
 
-    // Store the assignment on agent data for later use
     agents[id]._cybermonId = cybermonId;
-    console.log(`[3D] Loading ${cybermonId} for ${id}`);
 
-    // Create viewer for this card
     const isFocused = (i === focusIndex);
     try {
       const viewer = new CybermonViewer(container, { interactive: isFocused });
@@ -321,9 +315,8 @@ async function initCardViewers() {
       const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
       await viewer.show(cybermonId, { rimColor });
       window._cardViewers[id] = viewer;
-      console.log(`[3D] ✅ ${cybermonId} loaded for ${id}`);
     } catch (e) {
-      console.error(`[3D] ❌ Failed for ${id}:`, e);
+      console.error('Failed to load 3D for', id, e);
     }
   }
 }
