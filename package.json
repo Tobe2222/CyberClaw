@@ -9,7 +9,8 @@
     "build": "electron-builder",
     "build:linux": "electron-builder --linux",
     "build:win": "electron-builder --win",
-    "dist": "electron-builder --linux --win"
+    "dist": "electron-builder --linux --win",
+    "build:viewer": "esbuild src/js/cybermon-viewer.src.js --bundle --format=iife --platform=browser --outfile=src/js/cybermon-viewer.bundle.js --external:path --external:fs --minify"
   },
   "repository": {
     "type": "git",
@@ -68,7 +69,8 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.27.3"
   },
   "dependencies": {
     "node-pty": "^1.0.0",

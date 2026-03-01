@@ -3,6 +3,10 @@
    ============================================================ */
 
 const { Terminal } = require('xterm');
+const path = require('path');
+
+// Set global asset path for CybermonViewer bundle
+window.__cyberclawAssetsPath = path.join(__dirname, 'assets', 'cybermons');
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
@@ -148,6 +152,10 @@ function buildCarousel() {
   const ring = document.getElementById('carousel-ring');
   ring.innerHTML = '';
 
+  // Dispose old 3D viewers
+  Object.values(cardViewers).forEach(v => v.dispose());
+  Object.keys(cardViewers).forEach(k => delete cardViewers[k]);
+
   agentOrder.forEach((id, i) => {
     const agent = agents[id];
     const el = document.createElement('div');
@@ -157,15 +165,17 @@ function buildCarousel() {
     el.onclick = () => { focusIndex = i; updateCarousel(); };
 
     const avatarContent = agent.avatar
-      ? `<img src="${agent.avatar}" alt="${agent.name}">`
+      ? `<img src="${agent.avatar}" alt="${agent.name}" class="carousel-avatar-img">`
       : `<div class="carousel-emoji">${agent.emoji}</div>`;
 
     const crownHtml = agent.isMain ? '<div class="carousel-crown">👑</div>' : '';
 
+    // 3D container overlays the avatar — hidden until model loads
     el.innerHTML = `
       <div class="carousel-avatar ${agent.rarity}-aura" style="position:relative">
         ${crownHtml}
         ${avatarContent}
+        <div class="carousel-3d" id="card3d-${id}" style="position:absolute;inset:0;z-index:2;pointer-events:none;display:none"></div>
         <div class="carousel-status ${agent.status}"></div>
       </div>
       <div class="carousel-label">
@@ -177,6 +187,35 @@ function buildCarousel() {
   });
 
   updateCarousel();
+
+  // Load 3D models for companions that have one assigned
+  if (CybermonViewer) {
+    agentOrder.forEach(async (id) => {
+      try {
+        const config = await cyberclaw.agents.getSpriteConfig(id);
+        const cybermonId = config?.cybermonId;
+        if (!cybermonId) return;
+
+        const containerId = `card3d-${id}`;
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const viewer = new CybermonViewer(containerId);
+        cardViewers[id] = viewer;
+
+        const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
+        const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+        await viewer.show(cybermonId, { rimColor });
+
+        // Show 3D, hide flat image
+        container.style.display = 'block';
+        const img = container.parentElement.querySelector('.carousel-avatar-img');
+        if (img) img.style.display = 'none';
+      } catch (e) {
+        // No companion assigned or load failed — show default avatar
+      }
+    });
+  }
 }
 
 function updateCarousel() {
@@ -1142,10 +1181,12 @@ let editorAgentId = null;
 let selectedCybermon = null;
 let cybermonCatalog = null;
 let activeFilters = { animal: null, element: null, mood: null };
-// 3D viewers planned — using PNG for now
+// Per-card 3D viewers: { agentId: CybermonViewer }
+const cardViewers = {};
+let editorViewer = null;
 
-// 3D viewer disabled for now — using PNG images until Three.js ESM issues resolved
-let CybermonViewer = null;
+// CybermonViewer loaded via bundle script tag → window.CybermonViewer
+const CybermonViewer = window.CybermonViewer || null;
 
 const ELEMENT_COLORS = {
   fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
@@ -1232,11 +1273,19 @@ window.selectCybermon = function(id) {
   document.querySelectorAll('.cybermon-card').forEach(card => {
     card.classList.toggle('selected', card.querySelector('img')?.alt === cybermonCatalog?.cybermons.find(m => m.id === id)?.name);
   });
-  // Show PNG preview
-  const _path = require('path');
-  const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
+  // Show 3D preview in editor
   const preview = document.getElementById('editor-3d-viewer');
-  if (preview) {
+  if (preview && CybermonViewer) {
+    preview.innerHTML = ''; // Clear for new viewer
+    if (editorViewer) editorViewer.dispose();
+    editorViewer = new CybermonViewer('editor-3d-viewer');
+    const mon = cybermonCatalog?.cybermons?.find(m => m.id === id);
+    const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+    editorViewer.show(id, { rimColor });
+  } else if (preview) {
+    // Fallback to PNG
+    const _path = require('path');
+    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
     preview.innerHTML = `<img src="file://${imgPath}" alt="${id}" style="width:100%;height:100%;object-fit:contain" />`;
   }
 };
@@ -1252,7 +1301,8 @@ window.openCompanionEditor = function() {
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
 
-  // Clear editor preview
+  // Initialize editor 3D preview
+  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
   const previewEl = document.getElementById('editor-3d-viewer');
   if (previewEl) previewEl.innerHTML = '<div class="cybermon-empty">Select a companion below</div>';
 
@@ -1296,6 +1346,7 @@ window.openCompanionEditor = function() {
 window.closeCompanionEditor = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('companion-editor-overlay').classList.add('hidden');
+  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
   editorAgentId = null;
 };
 
