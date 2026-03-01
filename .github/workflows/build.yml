@@ -18,15 +18,14 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run build:viewer
       - run: npm run build:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: CyberClaw-Linux
-          path: |
-            dist/*.AppImage
-            dist/*.deb
+          path: dist/*.AppImage
 
   build-windows:
     runs-on: windows-latest
@@ -40,14 +39,14 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run build:viewer
       - run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: CyberClaw-Windows
-          path: |
-            dist/*.exe
+          path: dist/*.exe
 
   release:
     needs: [build-linux, build-windows]
@@ -58,9 +57,13 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: List release files
+        run: find artifacts -type f | head -20
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/*.AppImage
+            artifacts/*.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
