@@ -83,7 +83,7 @@
 .arena-grid {
   position: absolute;
   left: -50%; right: -50%;
-  bottom: 0; height: 100%;
+  bottom: 0; height: 115%;
   background:
     /* Grass texture - layered gradients */
     repeating-linear-gradient(85deg, transparent, transparent 3px, rgba(40,120,40,0.08) 3px, rgba(40,120,40,0.08) 4px),
