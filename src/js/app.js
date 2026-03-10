@@ -237,8 +237,8 @@ function buildCarousel() {
     ring.appendChild(el);
   });
 
-  // Init 3D viewers on each card after DOM is laid out
-  setTimeout(() => initCardViewers(), 100);
+  // Init viewers on each card after DOM is laid out (supports pixel + 3D)
+  setTimeout(() => initCardViewersWithPixel(), 100);
   updateCarousel();
 }
 
@@ -402,17 +402,26 @@ function updateInspect(agentId) {
 
   document.getElementById('right-header-text').textContent = agent.isMain ? 'PARTY LEADER' : agent.name?.toUpperCase() || 'COMPANION';
 
-  // Portrait — use cybermon 2D render if available
+  // Portrait — use pixel companion, cybermon 2D render, or avatar
   const img = document.getElementById('inspect-avatar-img');
   const emoji = document.getElementById('inspect-emoji');
-  const cybermonId = agent._cybermonId || getDefaultCybermon(agentId);
-  const cybermonPng = cybermonId ? require('path').join(window.__cyberclawAssetsPath || '', `${cybermonId}.png`) : null;
-  if (cybermonPng && require('fs').existsSync(cybermonPng)) {
-    img.src = cybermonPng; img.style.display = 'block'; emoji.style.display = 'none';
-  } else if (agent.avatar) {
-    img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
+  if (agent._pixelCompanionId) {
+    // Use first frame of idle animation as portrait
+    if (agent.avatar) {
+      img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
+      img.style.imageRendering = 'pixelated';
+    }
   } else {
-    img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖';
+    img.style.imageRendering = '';
+    const cybermonId = agent._cybermonId || getDefaultCybermon(agentId);
+    const cybermonPng = cybermonId ? require('path').join(window.__cyberclawAssetsPath || '', `${cybermonId}.png`) : null;
+    if (cybermonPng && require('fs').existsSync(cybermonPng)) {
+      img.src = cybermonPng; img.style.display = 'block'; emoji.style.display = 'none';
+    } else if (agent.avatar) {
+      img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
+    } else {
+      img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖';
+    }
   }
 
   document.getElementById('inspect-border').className = `inspect-avatar-border ${agent.rarity}`;
@@ -1290,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Boot messages in chat
   const msgs = document.getElementById('chat-messages');
   const bootMsgs = [
-    { d: 400,  t: '> CyberClaw v0.1.0 initializing...' },
+    { d: 400,  t: `> CyberClaw v${APP_VERSION} initializing...` },
   ];
 
   if (agentOrder.length > 0) {
@@ -1355,6 +1364,229 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initial rate limit check
   updateRateLimit();
 });
+
+// ---------------------------------------------------------------------------
+// Update Check
+// ---------------------------------------------------------------------------
+const APP_VERSION = require('../package.json').version;
+
+// Set version label on load
+document.addEventListener('DOMContentLoaded', () => {
+  const label = document.getElementById('update-label');
+  if (label) label.textContent = `v${APP_VERSION}`;
+});
+
+window.checkForUpdate = async function() {
+  const btn = document.getElementById('update-check-btn');
+  const icon = document.getElementById('update-icon');
+  const label = document.getElementById('update-label');
+  if (!btn) return;
+
+  icon.textContent = '⏳';
+  label.textContent = 'Checking...';
+
+  try {
+    const resp = await fetch('https://cyberhive.no/api/software/version/cyberclaw', {
+      signal: AbortSignal.timeout(8000)
+    });
+    const data = await resp.json();
+
+    if (data.latest && data.latest !== APP_VERSION) {
+      icon.textContent = '🆕';
+      label.textContent = `v${data.latest} available!`;
+      btn.classList.add('update-available');
+      btn.classList.remove('up-to-date');
+      btn.onclick = () => {
+        cyberclaw.window.openExternal(data.download || 'https://cyberhive.no/en/Software/CyberClaw');
+      };
+    } else {
+      icon.textContent = '✅';
+      label.textContent = `v${APP_VERSION} (latest)`;
+      btn.classList.add('up-to-date');
+      btn.classList.remove('update-available');
+      setTimeout(() => {
+        icon.textContent = '🔄';
+        label.textContent = `v${APP_VERSION}`;
+        btn.classList.remove('up-to-date');
+        btn.onclick = () => checkForUpdate();
+      }, 5000);
+    }
+  } catch (e) {
+    console.error('[Update] Check failed:', e);
+    icon.textContent = '⚠️';
+    label.textContent = `v${APP_VERSION}`;
+    setTimeout(() => {
+      icon.textContent = '🔄';
+      btn.onclick = () => checkForUpdate();
+    }, 3000);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Pixel Companion Integration
+// ---------------------------------------------------------------------------
+let selectedPixelCompanion = null;
+let editorPixelSprite = null;
+let cardPixelSprites = {};  // { agentId: PixelSprite }
+let editorTab = 'cybermon'; // 'cybermon' or 'pixel'
+
+window.switchEditorTab = function(tab) {
+  editorTab = tab;
+  document.querySelectorAll('.editor-type-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.type === tab);
+  });
+
+  const cybermonSection = document.getElementById('editor-cybermon-section');
+  const pixelSection = document.getElementById('editor-pixel-section');
+  const viewer3d = document.getElementById('editor-3d-viewer');
+  const viewerPixel = document.getElementById('editor-pixel-viewer');
+
+  if (tab === 'cybermon') {
+    cybermonSection.style.display = '';
+    pixelSection.style.display = 'none';
+    viewer3d.style.display = '';
+    viewerPixel.style.display = 'none';
+  } else {
+    cybermonSection.style.display = 'none';
+    pixelSection.style.display = '';
+    viewer3d.style.display = 'none';
+    viewerPixel.style.display = 'flex';
+    renderPixelGallery();
+  }
+};
+
+function renderPixelGallery() {
+  const catalog = loadPixelCatalog();
+  const grid = document.getElementById('pixel-gallery');
+  if (!grid || !catalog.companions.length) {
+    if (grid) grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">No pixel companions found</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+
+  catalog.companions.forEach(comp => {
+    const card = document.createElement('div');
+    card.className = `pixel-companion-card ${selectedPixelCompanion === comp.id ? 'selected' : ''}`;
+    card.onclick = () => selectPixelCompanion(comp.id);
+
+    // Create a mini sprite preview
+    const previewContainer = document.createElement('div');
+    previewContainer.style.cssText = 'width:96px;height:96px;margin:0 auto;';
+
+    const label = document.createElement('div');
+    label.className = 'pixel-label';
+    label.textContent = comp.name;
+
+    card.appendChild(previewContainer);
+    card.appendChild(label);
+    grid.appendChild(card);
+
+    // Init a small PixelSprite for preview
+    const sprite = new PixelSprite(previewContainer, { scale: 3, direction: 0, animation: 'idle' });
+    sprite.show(comp.id);
+  });
+}
+
+window.selectPixelCompanion = function(id) {
+  selectedPixelCompanion = id;
+  selectedCybermon = null; // clear 3D selection
+
+  // Update gallery selection
+  document.querySelectorAll('.pixel-companion-card').forEach(card => {
+    const label = card.querySelector('.pixel-label');
+    card.classList.toggle('selected', label && label.textContent === loadPixelCatalog().companions.find(c => c.id === id)?.name);
+  });
+
+  // Show large preview
+  const previewEl = document.getElementById('editor-pixel-viewer');
+  if (previewEl) {
+    if (editorPixelSprite) editorPixelSprite.dispose();
+    editorPixelSprite = new PixelSprite(previewEl, { scale: 6, direction: 0, animation: 'idle' });
+    editorPixelSprite.show(id);
+
+    // Cycle through animations for preview
+    let animIndex = 0;
+    const anims = Object.keys(loadPixelCatalog().companions.find(c => c.id === id)?.animations || {});
+    if (previewEl._animInterval) clearInterval(previewEl._animInterval);
+    previewEl._animInterval = setInterval(() => {
+      if (editorPixelSprite && anims.length) {
+        animIndex = (animIndex + 1) % anims.length;
+        editorPixelSprite.setAnimation(anims[animIndex]);
+      }
+    }, 2000);
+  }
+};
+
+// Override initCardViewers to support pixel companions
+const _origInitCardViewers = typeof initCardViewers === 'function' ? initCardViewers : null;
+
+async function initCardViewersWithPixel() {
+  // Dispose old viewers
+  if (window._cardViewers) {
+    Object.values(window._cardViewers).forEach(v => { if (v.dispose) v.dispose(); });
+  }
+  window._cardViewers = {};
+
+  for (const [id, sprite] of Object.entries(cardPixelSprites)) {
+    sprite.dispose();
+  }
+  cardPixelSprites = {};
+
+  for (let i = 0; i < agentOrder.length; i++) {
+    const id = agentOrder[i];
+    const container = document.getElementById(`card-3d-${i}`);
+    if (!container) continue;
+
+    let config = null;
+    try {
+      config = await cyberclaw.agents.getSpriteConfig(id);
+    } catch {}
+
+    // Check if this companion uses a pixel sprite
+    if (config?.pixelCompanionId) {
+      agents[id]._pixelCompanionId = config.pixelCompanionId;
+      agents[id]._cybermonId = null;
+      const sprite = new PixelSprite(container, { scale: 3, direction: 0, animation: 'idle' });
+      await sprite.show(config.pixelCompanionId);
+      cardPixelSprites[id] = sprite;
+
+      // Randomly cycle idle/walk for life-like feel
+      setInterval(() => {
+        const anims = ['idle', 'walk', 'idle', 'idle', 'run', 'idle'];
+        const pick = anims[Math.floor(Math.random() * anims.length)];
+        const catalog = loadPixelCatalog();
+        const comp = catalog.companions.find(c => c.id === config.pixelCompanionId);
+        if (comp?.animations[pick]) sprite.setAnimation(pick);
+        // Also randomly change direction
+        sprite.setDirection(Math.floor(Math.random() * 4));
+      }, 3000 + Math.random() * 4000);
+
+      continue;
+    }
+
+    // Fall through to 3D cybermon
+    let cybermonId = config?.cybermonId;
+    if (!cybermonId) cybermonId = getDefaultCybermon(id);
+    if (!cybermonId) continue;
+
+    agents[id]._cybermonId = cybermonId;
+    agents[id]._pixelCompanionId = null;
+
+    const isFocused = (i === focusIndex);
+    try {
+      if (CybermonViewer) {
+        const viewer = new CybermonViewer(container, { interactive: isFocused });
+        const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
+        const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
+        await viewer.show(cybermonId, { rimColor });
+        window._cardViewers[id] = viewer;
+      }
+    } catch (e) {
+      console.error('Failed to load 3D for', id, e);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Companion Editor (Cybermon Gallery + Sprite Generator + Skill Assignment)
@@ -1499,9 +1731,18 @@ window.openCompanionEditor = function() {
     renderCybermonGallery();
   });
 
-  // Load saved config — restore selected cybermon
+  // Reset selections
+  selectedCybermon = null;
+  selectedPixelCompanion = null;
+
+  // Load saved config — restore selected cybermon or pixel companion
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
-    if (config && config.cybermonId) {
+    if (config && config.pixelCompanionId) {
+      // Switch to pixel tab and select
+      switchEditorTab('pixel');
+      selectPixelCompanion(config.pixelCompanionId);
+    } else if (config && config.cybermonId) {
+      switchEditorTab('cybermon');
       selectedCybermon = config.cybermonId;
       selectCybermon(config.cybermonId);
     }
@@ -1547,28 +1788,63 @@ window.saveCompanion = async function() {
   // Gather quest assignment
   const questId = document.getElementById('editor-quest').value || null;
 
-  if (!selectedCybermon) return; // Must select a Cybermon
+  // Must select either a Cybermon or a Pixel Companion
+  if (!selectedCybermon && !selectedPixelCompanion) return;
 
-  // Save Cybermon selection + name + focuses
-  const path = require('path');
-  const fs = require('fs');
-  const imgPath = path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
-  const imgData = fs.readFileSync(imgPath);
-  const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
+  const _path = require('path');
+  const _fs = require('fs');
 
   // Build quest assignments — keep existing, toggle the selected one
   const existingQuests = new Set(agents[editorAgentId]?.assignedQuests || []);
   if (questId) existingQuests.add(questId);
   const assignedQuests = [...existingQuests];
 
-  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-    cybermonId: selectedCybermon,
-    customName: newName || undefined,
-    focusSkills,
-    assignedQuests,
-  });
-  await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
-  agent.avatar = dataUrl;
+  if (selectedPixelCompanion) {
+    // Save Pixel Companion
+    const catalog = loadPixelCatalog();
+    const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
+    const idlePath = _path.join(__dirname, '..', 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
+
+    // Extract first frame as avatar
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const [fw, fh] = comp.frameSize;
+    canvas.width = fw;
+    canvas.height = fh;
+    const img = new Image();
+    await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
+    ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+    const dataUrl = canvas.toDataURL('image/png');
+
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      pixelCompanionId: selectedPixelCompanion,
+      cybermonId: null,
+      customName: newName || undefined,
+      focusSkills,
+      assignedQuests,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+    agent.avatar = dataUrl;
+    agent._pixelCompanionId = selectedPixelCompanion;
+    agent._cybermonId = null;
+  } else {
+    // Save Cybermon (3D) selection
+    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
+    const imgData = _fs.readFileSync(imgPath);
+    const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
+
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      cybermonId: selectedCybermon,
+      pixelCompanionId: null,
+      customName: newName || undefined,
+      focusSkills,
+      assignedQuests,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+    agent.avatar = dataUrl;
+    agent._cybermonId = selectedCybermon;
+    agent._pixelCompanionId = null;
+  }
 
   // Update in-memory agent
   if (newName) agent.name = newName;

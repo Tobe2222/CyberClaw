@@ -63,8 +63,6 @@
 
 /* Logo as overlay on arena */
 #cyberhive-logo-link {
-  position: absolute; top: 8px; left: 50%;
-  transform: translateX(-50%);
   z-index: 50;
 }
 #cyberhive-logo {

@@ -16,7 +16,7 @@
     <div class="titlebar-drag">
       <span class="titlebar-icon">⚔️</span>
       <span class="titlebar-title">CyberClaw</span>
-      <span class="titlebar-version">v0.1.0</span>
+      <span class="titlebar-version" id="titlebar-version">v1.0.3</span>
     </div>
     <div class="titlebar-controls">
       <button class="tb-btn tb-min" onclick="cyberclaw.window.minimize()">─</button>
@@ -90,9 +90,15 @@
       <!-- Arena with rotating carousel -->
       <div id="party-arena">
         <!-- Logo overlay (top center of arena) -->
-        <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
-          <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
-        </a>
+        <div id="cyberhive-logo-area">
+          <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
+            <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
+          </a>
+          <button id="update-check-btn" class="update-btn" onclick="checkForUpdate()" title="Check for updates">
+            <span id="update-icon">🔄</span>
+            <span id="update-label">v1.0.3</span>
+          </button>
+        </div>
         <div id="arena-bg">
           <div class="arena-grid"></div>
           <div class="arena-glow"></div>
@@ -299,12 +305,20 @@
         <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
       </div>
       <div class="editor-content">
-        <!-- 3D Preview -->
-        <div class="editor-preview-3d">
-          <div id="editor-3d-viewer" class="cybermon-3d-preview"></div>
+        <!-- Companion Type Tabs -->
+        <div class="editor-type-tabs">
+          <button class="editor-type-tab active" data-type="cybermon" onclick="switchEditorTab('cybermon')">🎮 Cybermons (3D)</button>
+          <button class="editor-type-tab" data-type="pixel" onclick="switchEditorTab('pixel')">🐾 Pixel Animals (2D)</button>
         </div>
 
-        <!-- Filters -->
+        <!-- 3D/2D Preview -->
+        <div class="editor-preview-3d">
+          <div id="editor-3d-viewer" class="cybermon-3d-preview"></div>
+          <div id="editor-pixel-viewer" class="pixel-preview" style="display:none"></div>
+        </div>
+
+        <!-- Cybermon Filters (3D tab) -->
+        <div id="editor-cybermon-section">
         <div class="cybermon-filters">
           <div class="filter-group">
             <label>Animal</label>
@@ -322,6 +336,12 @@
 
         <!-- Cybermon Grid -->
         <div id="cybermon-gallery" class="cybermon-grid"></div>
+        </div><!-- /editor-cybermon-section -->
+
+        <!-- Pixel Companions (2D tab) -->
+        <div id="editor-pixel-section" style="display:none">
+          <div id="pixel-gallery" class="pixel-companion-grid"></div>
+        </div>
 
         <!-- Shared Controls -->
         <div class="editor-controls">
@@ -351,6 +371,7 @@
   </div>
 
   <script src="js/cybermon-viewer.bundle.js"></script>
+  <script src="js/pixel-sprite.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

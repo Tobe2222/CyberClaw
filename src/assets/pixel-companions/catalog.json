@@ -1,0 +1,75 @@
+{
+  "companions": [
+    {
+      "id": "fox",
+      "name": "Fox",
+      "folder": "Fox",
+      "frameSize": [32, 32],
+      "animations": {
+        "idle": { "file": "Fox_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
+        "walk": { "file": "Fox_walk.png", "cols": 6, "rows": 4, "frames": 6, "speed": 8 },
+        "run": { "file": "Fox_Run.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10 },
+        "hurt": { "file": "Fox_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
+        "death": { "file": "Fox_Death.png", "cols": 6, "rows": 4, "frames": 6, "speed": 6 }
+      },
+      "shadow": "Fox_Shadow.png"
+    },
+    {
+      "id": "boar",
+      "name": "Boar",
+      "folder": "Boar",
+      "frameSize": [32, 32],
+      "animations": {
+        "idle": { "file": "Boar_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
+        "walk": { "file": "Boar_Walk.png", "cols": 6, "rows": 4, "frames": 6, "speed": 8 },
+        "run": { "file": "Boar_Run.png", "cols": 5, "rows": 4, "frames": 5, "speed": 10 },
+        "attack": { "file": "Boar_Attack.png", "cols": 5, "rows": 4, "frames": 5, "speed": 8 },
+        "hurt": { "file": "Boar_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
+        "death": { "file": "Boar_Death.png", "cols": 6, "rows": 4, "frames": 6, "speed": 6 }
+      },
+      "shadow": "Boar_shadow.png"
+    },
+    {
+      "id": "deer",
+      "name": "Deer",
+      "folder": "Deer",
+      "frameSize": [32, 32],
+      "animations": {
+        "idle": { "file": "Deer_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
+        "walk": { "file": "Deer_Walk.png", "cols": 6, "rows": 4, "frames": 6, "speed": 8 },
+        "run": { "file": "Deer_Run.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10 },
+        "hurt": { "file": "Deer_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
+        "death": { "file": "Deer_Death.png", "cols": 7, "rows": 4, "frames": 7, "speed": 6 }
+      },
+      "shadow": "Deer_Shadow.png"
+    },
+    {
+      "id": "hare",
+      "name": "Hare",
+      "folder": "Hare",
+      "frameSize": [32, 32],
+      "animations": {
+        "idle": { "file": "Hare_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
+        "walk": { "file": "Hare_Walk.png", "cols": 5, "rows": 4, "frames": 5, "speed": 8 },
+        "run": { "file": "Hare_Run.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10 },
+        "hurt": { "file": "Hare_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
+        "death": { "file": "Hare_Death.png", "cols": 6, "rows": 4, "frames": 6, "speed": 6 }
+      },
+      "shadow": "Hare_Shadow.png"
+    },
+    {
+      "id": "black_grouse",
+      "name": "Black Grouse",
+      "folder": "Black_grouse",
+      "frameSize": [32, 32],
+      "animations": {
+        "idle": { "file": "Black_grouse_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
+        "walk": { "file": "Black_grouse_Walk.png", "cols": 6, "rows": 4, "frames": 6, "speed": 8 },
+        "flight": { "file": "Black_grouse_Flight.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10 },
+        "hurt": { "file": "Black_grouse_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
+        "death": { "file": "Black_grouse_Death.png", "cols": 6, "rows": 4, "frames": 6, "speed": 6 }
+      },
+      "shadow": "Black_grouse_Shadow.png"
+    }
+  ]
+}
