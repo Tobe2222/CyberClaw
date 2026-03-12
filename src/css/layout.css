@@ -164,7 +164,18 @@
   pointer-events: none;
 }
 
-/* === CAROUSEL === */
+/* === SHARED 2D PIXEL ARENA === */
+#pixel-arena-container {
+  position: absolute; inset: 0; z-index: 5;
+}
+
+.pixel-arena-canvas {
+  width: 100%; height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* === CAROUSEL (legacy, kept for compatibility) === */
 #carousel {
   position: relative; width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;

@@ -5,8 +5,8 @@
 const { Terminal } = require('xterm');
 const path = require('path');
 
-// Set global asset path for CybermonViewer bundle
-window.__cyberclawAssetsPath = path.join(__dirname, 'assets', 'cybermons');
+// Pixel arena instance (shared 2D scene)
+let pixelArena = null;
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
@@ -203,85 +203,62 @@ async function loadAgents() {
 }
 
 // ---------------------------------------------------------------------------
-// Carousel — 3D rotating platform
+// Shared 2D Pixel Arena
 // ---------------------------------------------------------------------------
 function buildCarousel() {
-  const ring = document.getElementById('carousel-ring');
+  // Dispose old arena
+  if (pixelArena) { pixelArena.dispose(); pixelArena = null; }
 
-  // Dispose old per-card 3D viewers
-  if (window._cardViewers) {
-    Object.values(window._cardViewers).forEach(v => v.dispose());
-  }
-  window._cardViewers = {};
+  const container = document.getElementById('pixel-arena-container');
+  if (!container) return;
+  container.innerHTML = '';
 
-  ring.innerHTML = '';
+  // Create shared pixel arena
+  pixelArena = new PixelArena(container);
 
-  agentOrder.forEach((id, i) => {
-    const agent = agents[id];
-    const el = document.createElement('div');
-    el.className = 'carousel-agent';
-    el.setAttribute('data-index', i);
-    el.setAttribute('data-id', id);
-    el.onclick = () => { focusIndex = i; updateCarousel(); };
-
-    const crownHtml = agent.isMain ? '<div class="carousel-crown">👑</div>' : '';
-
-    el.innerHTML = `
-      ${crownHtml}
-      <div class="card-3d" id="card-3d-${i}"></div>
-      <div class="carousel-label">
-        <span class="carousel-label-dot ${agent.status}"></span>
-        <span class="carousel-label-name ${agent.rarity}-text">${agent.name}</span>
-      </div>
-    `;
-    ring.appendChild(el);
-  });
-
-  // Init viewers on each card after DOM is laid out (supports pixel + 3D)
-  setTimeout(() => initCardViewersWithPixel(), 100);
+  // Add all companions to the arena
+  initArenaCompanions();
   updateCarousel();
 }
 
+async function initArenaCompanions() {
+  if (!pixelArena) return;
+
+  const catalog = loadPixelCatalog();
+  const defaultCompanions = catalog.companions || [];
+
+  for (let i = 0; i < agentOrder.length; i++) {
+    const id = agentOrder[i];
+    const agent = agents[id];
+
+    let pixelId = null;
+    try {
+      const config = await cyberclaw.agents.getSpriteConfig(id);
+      pixelId = config?.pixelCompanionId;
+    } catch {}
+
+    // If no pixel companion assigned, pick a default based on index
+    if (!pixelId && defaultCompanions.length > 0) {
+      pixelId = defaultCompanions[i % defaultCompanions.length].id;
+    }
+
+    if (pixelId) {
+      agent._pixelCompanionId = pixelId;
+      await pixelArena.addCompanion(id, pixelId);
+      // Set name on the arena companion
+      const arenaComp = pixelArena.companions.find(c => c.id === id);
+      if (arenaComp) arenaComp._name = agent.name;
+    }
+  }
+
+  // Focus the first companion
+  if (agentOrder.length > 0) {
+    pixelArena.setFocused(agentOrder[focusIndex]);
+  }
+}
+
 function updateCarousel() {
-  const items = document.querySelectorAll('.carousel-agent');
-  const n = items.length;
-  if (n === 0) return;
-
-  const arena = document.getElementById('party-arena');
-  const aW = arena.offsetWidth;
-  const aH = arena.offsetHeight;
-  const centerX = aW / 2;
-  const centerY = aH * 0.78;
-
-  const rx = Math.min(aW * 0.45, 440);
-  const ry = 140; // strong tilt angle
-
-  items.forEach((el, i) => {
-    let offset = i - focusIndex;
-    if (offset > n / 2) offset -= n;
-    if (offset < -n / 2) offset += n;
-
-    const angle = (offset / n) * Math.PI * 2;
-    const x = centerX + Math.sin(angle) * rx;
-    const y = centerY + Math.cos(angle) * ry * 0.5;
-    const depth = Math.cos(angle);
-
-    const z = Math.round((depth + 1) * 100);
-
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.transform = `translate(-50%, -100%)`; // anchor bottom — models "stand" on the line
-    el.style.zIndex = z;
-    // All companions fully visible — no fade
-    el.style.opacity = 1;
-    el.style.filter = 'none';
-    el.style.pointerEvents = 'all';
-
-    el.classList.remove('focused', 'side', 'far-side', 'hidden-back');
-    if (offset === 0) el.classList.add('focused');
-    else if (Math.abs(offset) === 1) el.classList.add('side');
-    else el.classList.add('far-side');
-  });
+  if (agentOrder.length === 0) return;
 
   // Update focused agent strip + right panel
   const focusedId = agentOrder[focusIndex];
@@ -289,54 +266,10 @@ function updateCarousel() {
   updateInspect(focusedId);
   updateChatTarget();
 
-  // Show focused companion's 3D model in the arena
-  updateArena3D(focusedId);
-}
-
-// Deterministic default cybermon for a companion (based on name hash)
-function getDefaultCybermon(agentId) {
-  if (!cybermonCatalog?.cybermons?.length) return null;
-  let hash = 0;
-  for (let i = 0; i < agentId.length; i++) hash = ((hash << 5) - hash) + agentId.charCodeAt(i);
-  const idx = Math.abs(hash) % cybermonCatalog.cybermons.length;
-  return cybermonCatalog.cybermons[idx].id;
-}
-
-// Initialize 3D viewers on each carousel card
-async function initCardViewers() {
-  if (!CybermonViewer) return;
-
-  for (let i = 0; i < agentOrder.length; i++) {
-    const id = agentOrder[i];
-    const container = document.getElementById(`card-3d-${i}`);
-    if (!container) continue;
-
-    let cybermonId;
-    try {
-      const config = await cyberclaw.agents.getSpriteConfig(id);
-      cybermonId = config?.cybermonId;
-    } catch {}
-    if (!cybermonId) cybermonId = getDefaultCybermon(id);
-    if (!cybermonId) continue;
-
-    agents[id]._cybermonId = cybermonId;
-
-    const isFocused = (i === focusIndex);
-    try {
-      const viewer = new CybermonViewer(container, { interactive: isFocused });
-      const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
-      const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-      await viewer.show(cybermonId, { rimColor });
-      window._cardViewers[id] = viewer;
-    } catch (e) {
-      console.error('Failed to load 3D for', id, e);
-    }
+  // Highlight focused companion in the pixel arena
+  if (pixelArena) {
+    pixelArena.setFocused(focusedId);
   }
-}
-
-// No longer using single arena viewer — all 3D is on cards
-function updateArena3D(agentId) {
-  // Nothing to do — 3D is on each card now
 }
 
 window.carouselNext = function() {
@@ -1428,32 +1361,7 @@ window.checkForUpdate = async function() {
 let selectedPixelCompanion = null;
 let editorPixelSprite = null;
 let cardPixelSprites = {};  // { agentId: PixelSprite }
-let editorTab = 'cybermon'; // 'cybermon' or 'pixel'
-
-window.switchEditorTab = function(tab) {
-  editorTab = tab;
-  document.querySelectorAll('.editor-type-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.type === tab);
-  });
-
-  const cybermonSection = document.getElementById('editor-cybermon-section');
-  const pixelSection = document.getElementById('editor-pixel-section');
-  const viewer3d = document.getElementById('editor-3d-viewer');
-  const viewerPixel = document.getElementById('editor-pixel-viewer');
-
-  if (tab === 'cybermon') {
-    cybermonSection.style.display = '';
-    pixelSection.style.display = 'none';
-    viewer3d.style.display = '';
-    viewerPixel.style.display = 'none';
-  } else {
-    cybermonSection.style.display = 'none';
-    pixelSection.style.display = '';
-    viewer3d.style.display = 'none';
-    viewerPixel.style.display = 'flex';
-    renderPixelGallery();
-  }
-};
+// switchEditorTab removed — pixel-only editor
 
 function renderPixelGallery() {
   const catalog = loadPixelCatalog();
@@ -1518,192 +1426,10 @@ window.selectPixelCompanion = function(id) {
   }
 };
 
-// Override initCardViewers to support pixel companions
-const _origInitCardViewers = typeof initCardViewers === 'function' ? initCardViewers : null;
-
-async function initCardViewersWithPixel() {
-  // Dispose old viewers
-  if (window._cardViewers) {
-    Object.values(window._cardViewers).forEach(v => { if (v.dispose) v.dispose(); });
-  }
-  window._cardViewers = {};
-
-  for (const [id, sprite] of Object.entries(cardPixelSprites)) {
-    sprite.dispose();
-  }
-  cardPixelSprites = {};
-
-  for (let i = 0; i < agentOrder.length; i++) {
-    const id = agentOrder[i];
-    const container = document.getElementById(`card-3d-${i}`);
-    if (!container) continue;
-
-    let config = null;
-    try {
-      config = await cyberclaw.agents.getSpriteConfig(id);
-    } catch {}
-
-    // Check if this companion uses a pixel sprite
-    if (config?.pixelCompanionId) {
-      agents[id]._pixelCompanionId = config.pixelCompanionId;
-      agents[id]._cybermonId = null;
-      const sprite = new PixelSprite(container, { scale: 3, direction: 0, animation: 'idle' });
-      await sprite.show(config.pixelCompanionId);
-      cardPixelSprites[id] = sprite;
-
-      // Randomly cycle idle/walk for life-like feel
-      setInterval(() => {
-        const anims = ['idle', 'walk', 'idle', 'idle', 'run', 'idle'];
-        const pick = anims[Math.floor(Math.random() * anims.length)];
-        const catalog = loadPixelCatalog();
-        const comp = catalog.companions.find(c => c.id === config.pixelCompanionId);
-        if (comp?.animations[pick]) sprite.setAnimation(pick);
-        // Also randomly change direction
-        sprite.setDirection(Math.floor(Math.random() * 4));
-      }, 3000 + Math.random() * 4000);
-
-      continue;
-    }
-
-    // Fall through to 3D cybermon
-    let cybermonId = config?.cybermonId;
-    if (!cybermonId) cybermonId = getDefaultCybermon(id);
-    if (!cybermonId) continue;
-
-    agents[id]._cybermonId = cybermonId;
-    agents[id]._pixelCompanionId = null;
-
-    const isFocused = (i === focusIndex);
-    try {
-      if (CybermonViewer) {
-        const viewer = new CybermonViewer(container, { interactive: isFocused });
-        const mon = cybermonCatalog?.cybermons?.find(m => m.id === cybermonId);
-        const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-        await viewer.show(cybermonId, { rimColor });
-        window._cardViewers[id] = viewer;
-      }
-    } catch (e) {
-      console.error('Failed to load 3D for', id, e);
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Companion Editor (Cybermon Gallery + Sprite Generator + Skill Assignment)
+// Companion Editor (Pixel-only)
 // ---------------------------------------------------------------------------
 let editorAgentId = null;
-let selectedCybermon = null;
-let cybermonCatalog = null;
-let activeFilters = { animal: null, element: null, mood: null };
-// Single arena 3D viewer for focused companion
-let arenaViewer = null;
-let editorViewer = null;
-
-// CybermonViewer loaded via bundle script tag → window.CybermonViewer
-const CybermonViewer = window.CybermonViewer || null;
-
-const ELEMENT_COLORS = {
-  fire: '#f24d05', water: '#1a73e8', electric: '#ffd900', nature: '#40b840',
-  shadow: '#6a1ab3', ice: '#99d9ff', steel: '#8c949e', toxic: '#73cc19', cyber: '#00a8d9'
-};
-const ELEMENT_EMOJI = {
-  fire: '🔥', water: '💧', electric: '⚡', nature: '🌿', shadow: '🌑',
-  ice: '❄️', steel: '⚙️', toxic: '☠️', cyber: '🤖'
-};
-const ANIMAL_EMOJI = {
-  fox: '🦊', cat: '🐱', dog: '🐕', bird: '🐦', fish: '🐟', snake: '🐍',
-  turtle: '🐢', rabbit: '🐰', dragon: '🐉', wolf: '🐺', frog: '🐸',
-  owl: '🦉', bat: '🦇', bear: '🐻', shark: '🦈',
-  horse: '🐴', capybara: '🦫', badger: '🦡', deer: '🦌', penguin: '🐧', raccoon: '🦝'
-};
-const MOOD_EMOJI = { cute: '🥰', fierce: '😤', chill: '😎', angry: '😠', playful: '😜' };
-
-async function loadCybermonCatalog() {
-  if (cybermonCatalog) return cybermonCatalog;
-  try {
-    const _path = require('path');
-    const _fs = require('fs');
-    const catalogPath = _path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
-    console.log('[Catalog] Loading from:', catalogPath);
-    const data = _fs.readFileSync(catalogPath, 'utf-8');
-    cybermonCatalog = JSON.parse(data);
-    console.log('[Catalog] Loaded', cybermonCatalog.cybermons.length, 'cybermons');
-    return cybermonCatalog;
-  } catch (e) {
-    console.error('[Catalog] Failed to load:', e);
-    cybermonCatalog = { cybermons: [], animals: [], elements: [], moods: [], sizes: [] };
-    return cybermonCatalog;
-  }
-}
-
-function buildFilterChips(containerId, items, emojiMap, filterKey) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = items.map(item =>
-    `<span class="filter-chip" data-filter="${filterKey}" data-value="${item}" onclick="toggleFilter('${filterKey}','${item}')">${emojiMap[item] || ''} ${item}</span>`
-  ).join('');
-}
-
-window.toggleFilter = function(key, value) {
-  activeFilters[key] = activeFilters[key] === value ? null : value;
-  // Update chip styles
-  document.querySelectorAll(`.filter-chip[data-filter="${key}"]`).forEach(chip => {
-    chip.classList.toggle('active', chip.dataset.value === activeFilters[key]);
-  });
-  renderCybermonGallery();
-};
-
-function renderCybermonGallery() {
-  if (!cybermonCatalog) return;
-  const grid = document.getElementById('cybermon-gallery');
-  const filtered = cybermonCatalog.cybermons.filter(mon => {
-    if (activeFilters.animal && mon.animal !== activeFilters.animal) return false;
-    if (activeFilters.element && !mon.elements.includes(activeFilters.element)) return false;
-    if (activeFilters.mood && mon.mood !== activeFilters.mood) return false;
-    return true;
-  });
-
-  if (filtered.length === 0) {
-    grid.innerHTML = '<div class="cybermon-empty">No matches — adjust filters</div>';
-    return;
-  }
-
-  const _path = require('path');
-  grid.innerHTML = filtered.map(mon => {
-    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${mon.id}.png`);
-    const selected = selectedCybermon === mon.id ? 'selected' : '';
-    const elementDots = mon.elements.map(e =>
-      `<span class="element-dot" style="background:${ELEMENT_COLORS[e] || '#666'}"></span>`
-    ).join('');
-    return `<div class="cybermon-card ${selected}" onclick="selectCybermon('${mon.id}')" title="${mon.name} (${mon.elements.join('/')})">
-      <div class="cybermon-elements">${elementDots}</div>
-      <img src="file://${imgPath}" alt="${mon.name}" />
-      <div class="cybermon-label">${mon.name}</div>
-    </div>`;
-  }).join('');
-}
-
-window.selectCybermon = function(id) {
-  selectedCybermon = id;
-  // Update gallery selection
-  document.querySelectorAll('.cybermon-card').forEach(card => {
-    card.classList.toggle('selected', card.querySelector('img')?.alt === cybermonCatalog?.cybermons.find(m => m.id === id)?.name);
-  });
-  // Show 3D preview in editor
-  const preview = document.getElementById('editor-3d-viewer');
-  if (preview && CybermonViewer) {
-    preview.innerHTML = ''; // Clear for new viewer
-    if (editorViewer) editorViewer.dispose();
-    editorViewer = new CybermonViewer('editor-3d-viewer');
-    const mon = cybermonCatalog?.cybermons?.find(m => m.id === id);
-    const rimColor = mon?.elements?.[0] ? ELEMENT_COLORS[mon.elements[0]] : '#00aaff';
-    editorViewer.show(id, { rimColor });
-  } else if (preview) {
-    // Fallback to PNG
-    const _path = require('path');
-    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${id}.png`);
-    preview.innerHTML = `<img src="file://${imgPath}" alt="${id}" style="width:100%;height:100%;object-fit:contain" />`;
-  }
-};
 
 window.openCompanionEditor = function() {
   console.log('[Editor] Opening companion editor...');
@@ -1716,35 +1442,16 @@ window.openCompanionEditor = function() {
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
 
-  // Initialize editor 3D preview
-  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
-  const previewEl = document.getElementById('editor-3d-viewer');
-  if (previewEl) previewEl.innerHTML = '<div class="cybermon-empty">Select a companion below</div>';
-
-  // Initialize Cybermon gallery
-  loadCybermonCatalog().then(catalog => {
-    buildFilterChips('filter-animals', catalog.animals, ANIMAL_EMOJI, 'animal');
-    buildFilterChips('filter-elements', catalog.elements, ELEMENT_EMOJI, 'element');
-    buildFilterChips('filter-moods', catalog.moods, MOOD_EMOJI, 'mood');
-    activeFilters = { animal: null, element: null, mood: null };
-    selectedCybermon = null;
-    renderCybermonGallery();
-  });
-
-  // Reset selections
-  selectedCybermon = null;
+  // Reset selection
   selectedPixelCompanion = null;
 
-  // Load saved config — restore selected cybermon or pixel companion
+  // Render pixel gallery
+  renderPixelGallery();
+
+  // Load saved config — restore selected pixel companion
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
     if (config && config.pixelCompanionId) {
-      // Switch to pixel tab and select
-      switchEditorTab('pixel');
       selectPixelCompanion(config.pixelCompanionId);
-    } else if (config && config.cybermonId) {
-      switchEditorTab('cybermon');
-      selectedCybermon = config.cybermonId;
-      selectCybermon(config.cybermonId);
     }
   });
 
@@ -1770,7 +1477,6 @@ window.openCompanionEditor = function() {
 window.closeCompanionEditor = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('companion-editor-overlay').classList.add('hidden');
-  if (editorViewer) { editorViewer.dispose(); editorViewer = null; }
   editorAgentId = null;
 };
 
@@ -1788,63 +1494,42 @@ window.saveCompanion = async function() {
   // Gather quest assignment
   const questId = document.getElementById('editor-quest').value || null;
 
-  // Must select either a Cybermon or a Pixel Companion
-  if (!selectedCybermon && !selectedPixelCompanion) return;
+  // Must select a Pixel Companion
+  if (!selectedPixelCompanion) return;
 
   const _path = require('path');
-  const _fs = require('fs');
 
   // Build quest assignments — keep existing, toggle the selected one
   const existingQuests = new Set(agents[editorAgentId]?.assignedQuests || []);
   if (questId) existingQuests.add(questId);
   const assignedQuests = [...existingQuests];
 
-  if (selectedPixelCompanion) {
-    // Save Pixel Companion
-    const catalog = loadPixelCatalog();
-    const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
-    const idlePath = _path.join(__dirname, '..', 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
+  // Save Pixel Companion
+  const catalog = loadPixelCatalog();
+  const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
+  const idlePath = _path.join(__dirname, 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
 
-    // Extract first frame as avatar
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const [fw, fh] = comp.frameSize;
-    canvas.width = fw;
-    canvas.height = fh;
-    const img = new Image();
-    await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
-    ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
-    const dataUrl = canvas.toDataURL('image/png');
+  // Extract first frame as avatar
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const [fw, fh] = comp.frameSize;
+  canvas.width = fw;
+  canvas.height = fh;
+  const img = new Image();
+  await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
+  ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+  const dataUrl = canvas.toDataURL('image/png');
 
-    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-      pixelCompanionId: selectedPixelCompanion,
-      cybermonId: null,
-      customName: newName || undefined,
-      focusSkills,
-      assignedQuests,
-    });
-    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
-    agent.avatar = dataUrl;
-    agent._pixelCompanionId = selectedPixelCompanion;
-    agent._cybermonId = null;
-  } else {
-    // Save Cybermon (3D) selection
-    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${selectedCybermon}.png`);
-    const imgData = _fs.readFileSync(imgPath);
-    const dataUrl = 'data:image/png;base64,' + imgData.toString('base64');
-
-    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-      cybermonId: selectedCybermon,
-      pixelCompanionId: null,
-      customName: newName || undefined,
-      focusSkills,
-      assignedQuests,
-    });
-    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
-    agent.avatar = dataUrl;
-    agent._cybermonId = selectedCybermon;
-    agent._pixelCompanionId = null;
-  }
+  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+    pixelCompanionId: selectedPixelCompanion,
+    cybermonId: null,
+    customName: newName || undefined,
+    focusSkills,
+    assignedQuests,
+  });
+  await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+  agent.avatar = dataUrl;
+  agent._pixelCompanionId = selectedPixelCompanion;
 
   // Update in-memory agent
   if (newName) agent.name = newName;
@@ -1865,7 +1550,6 @@ let allSkillsCache = null;
 
 // Built-in special equipment (not from openclaw skills list)
 const BUILTIN_EQUIPMENT = [
-  { name: 'Blender Hat', description: '3D modeling via Blender — create and render 3D models, Cybermons, scenes', icon: '🎩', ready: true, builtin: true },
   { name: 'Web Surfer', description: 'Search the web and fetch content from URLs', icon: '🌐', ready: true, builtin: true },
   { name: 'Code Hammer', description: 'Write, edit, and execute code across languages', icon: '🔨', ready: true, builtin: true },
   { name: 'Memory Scroll', description: 'Remember and recall information across sessions', icon: '📜', ready: true, builtin: true },
@@ -1999,9 +1683,6 @@ function showEquipModal(skill, agentId) {
 
 function getSkillRequirements(skillName) {
   const REQUIREMENTS = {
-    'Blender Hat': [
-      { name: 'Blender 5.0+', check: '/snap/bin/blender', note: '3D modeling engine (snap install blender)' },
-    ],
     'Web Surfer': [],
     'Code Hammer': [],
     'Memory Scroll': [],
@@ -2039,15 +1720,7 @@ window.confirmEquip = async function(skillName, agentId) {
 
     for (const req of missing) {
       try {
-        if (skillName === 'Blender Hat') {
-          await new Promise((resolve, reject) => {
-            require('child_process').exec('snap install blender 2>&1 || sudo snap install blender 2>&1',
-              { timeout: 120000 }, (err, stdout) => {
-                if (err) reject(new Error(stdout || err.message));
-                else resolve(stdout);
-              });
-          });
-        }
+        // No auto-install needed for current skills
       } catch (e) {
         alert(`Failed to install ${req.name}: ${e.message}\nPlease install manually.`);
         closeEquipModal();

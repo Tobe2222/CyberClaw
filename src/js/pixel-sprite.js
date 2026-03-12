@@ -10,7 +10,7 @@ let pixelCatalog = null;
 
 function loadPixelCatalog() {
   if (pixelCatalog) return pixelCatalog;
-  const catalogPath = _path.join(__dirname, '..', 'assets', 'pixel-companions', 'catalog.json');
+  const catalogPath = _path.join(__dirname, 'assets', 'pixel-companions', 'catalog.json');
   try {
     pixelCatalog = JSON.parse(_fs.readFileSync(catalogPath, 'utf-8'));
     return pixelCatalog;
@@ -70,7 +70,7 @@ class PixelSprite {
     this.tickCount = 0;
 
     // Preload all animation sprite sheets
-    const basePath = _path.join(__dirname, '..', 'assets', 'pixel-companions', data.folder);
+    const basePath = _path.join(__dirname, 'assets', 'pixel-companions', data.folder);
     const loadPromises = [];
 
     for (const [animName, animData] of Object.entries(data.animations)) {

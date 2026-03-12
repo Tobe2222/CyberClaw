@@ -1415,35 +1415,11 @@
 .cybermon-grid::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
 
 /* 3D Preview in editor */
-.editor-preview-3d {
+/* Pixel-only editor preview */
+.editor-preview-pixel {
   display: flex;
   justify-content: center;
   margin-bottom: 8px;
-}
-.cybermon-3d-preview {
-  width: 280px;
-  height: 220px;
-  border-radius: 10px;
-  background: radial-gradient(ellipse at center, rgba(20,20,30,0.9) 0%, rgba(8,8,12,0.95) 100%);
-  border: 1px solid rgba(255,255,255,0.08);
-  overflow: hidden;
-}
-.cybermon-3d-preview canvas {
-  border-radius: 10px;
-}
-
-/* Arena 3D viewer — single renderer for focused companion */
-#arena-3d-viewer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
-  pointer-events: none;
-}
-#arena-3d-viewer canvas {
-  pointer-events: auto;
 }
 
 /* Buttons above 3D viewer */
