@@ -784,17 +784,7 @@ async function renderQuests() {
     const div = document.createElement('div');
     div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${q.id === activeQuestId ? 'quest-selected' : ''}`;
     div.onclick = () => selectQuest(div, q.id);
-    // Find companions assigned to this quest
-    const assignedCompanions = agentOrder
-      .map(id => agents[id])
-      .filter(a => a && (a.assignedQuests || []).includes(q.id));
-    const companionAvatars = assignedCompanions.length > 0
-      ? `<div class="quest-companions">${assignedCompanions.map(a =>
-          a.avatar
-            ? `<img class="quest-companion-avatar" src="${a.avatar}" title="${a.name}" />`
-            : `<span class="quest-companion-emoji" title="${a.name}">${a.emoji || '🤖'}</span>`
-        ).join('')}</div>`
-      : '';
+    const companionAvatars = ''; // Companion auto-assigns spirits based on quest category
 
     div.innerHTML = `
       <div class="quest-top-row">
@@ -868,21 +858,6 @@ window.openQuestEditor = async function(event, questId) {
   editingQuestId = questId;
   const panel = document.getElementById('panel-left');
 
-  // Get all companions for assignment checkboxes
-  const companionChecks = agentOrder.map(id => {
-    const a = agents[id];
-    if (!a) return '';
-    const checked = (a.assignedQuests || []).includes(questId) ? 'checked' : '';
-    const avatar = a.avatar
-      ? `<img src="${a.avatar}" class="qe-companion-img" />`
-      : `<span class="qe-companion-emoji">${a.emoji || '🤖'}</span>`;
-    return `<label class="qe-companion-row">
-      <input type="checkbox" value="${id}" ${checked} />
-      ${avatar}
-      <span>${a.name}</span>
-    </label>`;
-  }).join('');
-
   // Skill categories for the quest
   const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'Game', 'General'];
   const questSkills = quest.skills || [];
@@ -922,10 +897,6 @@ window.openQuestEditor = async function(event, questId) {
         <label>Work Categories</label>
         <div class="skill-checkbox-grid">${skillChecks}</div>
       </div>
-      <div class="editor-field">
-        <label>Assigned Companions</label>
-        <div class="qe-companions-list">${companionChecks}</div>
-      </div>
       <div class="qe-actions">
         <button class="btn-sm btn-muted" onclick="closeQuestEditor()">Cancel</button>
         <button class="btn-sm btn-primary" onclick="saveQuestEdit()">⚔️ Save</button>
@@ -958,37 +929,8 @@ window.saveQuestEdit = async function() {
   const skillChecks = document.querySelectorAll('.qe-content .skill-checkbox-grid input[type="checkbox"]');
   const skills = Array.from(skillChecks).filter(cb => cb.checked).map(cb => cb.value);
 
-  // Gather assigned companions
-  const companionChecks = document.querySelectorAll('.qe-companions-list input[type="checkbox"]');
-  const assignedIds = Array.from(companionChecks).filter(cb => cb.checked).map(cb => cb.value);
-  const unassignedIds = Array.from(companionChecks).filter(cb => !cb.checked).map(cb => cb.value);
-
   // Update quest
   await cyberclaw.quests.update(editingQuestId, { name, description, goals, skills, directory: directory || undefined });
-
-  // Update companion assignments (multi-quest support)
-  for (const id of assignedIds) {
-    if (agents[id]) {
-      const quests = new Set(agents[id].assignedQuests || []);
-      quests.add(editingQuestId);
-      agents[id].assignedQuests = [...quests];
-      const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
-      cfg.assignedQuests = agents[id].assignedQuests;
-      delete cfg.assignedQuest; // migrate away from legacy
-      await cyberclaw.agents.saveSpriteConfig(id, cfg);
-    }
-  }
-  for (const id of unassignedIds) {
-    if (agents[id]) {
-      const quests = new Set(agents[id].assignedQuests || []);
-      quests.delete(editingQuestId);
-      agents[id].assignedQuests = [...quests];
-      const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
-      cfg.assignedQuests = agents[id].assignedQuests;
-      delete cfg.assignedQuest;
-      await cyberclaw.agents.saveSpriteConfig(id, cfg);
-    }
-  }
 
   closeQuestEditor();
 };

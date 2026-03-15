@@ -307,9 +307,10 @@ class PixelArena {
       const minOrbit = 80;
 
       if (dist > maxOrbit) {
-        // Pull back toward companion
-        spirit.vx -= (dx / dist) * 0.00015 * dt;
-        spirit.vy -= (dy / dist) * 0.00015 * dt;
+        // Pull back toward companion (gentle)
+        const pull = 0.00012;
+        spirit.vx -= (dx / dist) * pull * dt;
+        spirit.vy -= (dy / dist) * pull * dt;
       } else if (dist < minOrbit) {
         // Push away slightly
         spirit.vx += (dx / dist) * 0.0001 * dt;
@@ -317,12 +318,19 @@ class PixelArena {
       }
     }
 
+    // Clamp velocity to prevent teleporting
+    const maxSpeed = 0.08;
+    if (spirit.vx > maxSpeed) spirit.vx = maxSpeed;
+    if (spirit.vx < -maxSpeed) spirit.vx = -maxSpeed;
+    if (spirit.vy > maxSpeed) spirit.vy = maxSpeed;
+    if (spirit.vy < -maxSpeed) spirit.vy = -maxSpeed;
+
     // Hard bounds
     const margin = 10;
-    if (spirit.x < margin) { spirit.x = margin; spirit.vx = Math.abs(spirit.vx); }
-    if (spirit.x > this.width - spirit.size - margin) { spirit.x = this.width - spirit.size - margin; spirit.vx = -Math.abs(spirit.vx); }
-    if (spirit.y < margin) { spirit.y = margin; spirit.vy = Math.abs(spirit.vy); }
-    if (spirit.y > this.height - spirit.size - margin) { spirit.y = this.height - spirit.size - margin; spirit.vy = -Math.abs(spirit.vy); }
+    if (spirit.x < margin) { spirit.x = margin; spirit.vx = Math.abs(spirit.vx) * 0.5; }
+    if (spirit.x > this.width - spirit.size - margin) { spirit.x = this.width - spirit.size - margin; spirit.vx = -Math.abs(spirit.vx) * 0.5; }
+    if (spirit.y < margin) { spirit.y = margin; spirit.vy = Math.abs(spirit.vy) * 0.5; }
+    if (spirit.y > this.height - spirit.size - margin) { spirit.y = this.height - spirit.size - margin; spirit.vy = -Math.abs(spirit.vy) * 0.5; }
   }
 
   // ── DRAW ────────────────────────────────────────────────────
@@ -414,7 +422,7 @@ class PixelArena {
 
   _animate() {
     const now = performance.now();
-    const dt = now - this.lastTime;
+    const dt = Math.min(now - this.lastTime, 100); // Cap at 100ms to prevent teleporting on lag
     this.lastTime = now;
 
     // Update
