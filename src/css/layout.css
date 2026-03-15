@@ -237,9 +237,12 @@
   background: rgba(255,107,53,0.15); border-color: var(--cyan-dim);
 }
 
-/* Arena expanded mode — single column, main fills everything */
+/* Arena expanded mode — single column, arena fills everything */
 #app.arena-expanded {
   grid-template-columns: 1fr;
+}
+#app.arena-expanded #party-arena {
+  flex: 1;
 }
 
 /* === CAROUSEL (legacy, kept for compatibility) === */

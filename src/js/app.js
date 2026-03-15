@@ -391,15 +391,19 @@ window.toggleArenaExpand = function() {
   const right = document.getElementById('panel-right');
   const btn = document.getElementById('arena-expand-btn');
 
+  const terminal = document.getElementById('terminal-strip');
+
   if (arenaExpanded) {
     app.classList.add('arena-expanded');
     left.style.display = 'none';
     right.style.display = 'none';
+    terminal.style.display = 'none';
     btn.title = 'Collapse arena';
   } else {
     app.classList.remove('arena-expanded');
     left.style.display = '';
     right.style.display = '';
+    terminal.style.display = '';
     btn.title = 'Expand arena';
   }
 
