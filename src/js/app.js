@@ -203,7 +203,7 @@ async function loadAgents() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared 2D Pixel Arena
+// Shared 2D Pixel Arena — Companion + Spirits
 // ---------------------------------------------------------------------------
 function buildCarousel() {
   // Dispose old arena
@@ -216,7 +216,7 @@ function buildCarousel() {
   // Create shared pixel arena
   pixelArena = new PixelArena(container);
 
-  // Add all companions to the arena
+  // Populate companion + spirits
   initArenaCompanions();
   updateCarousel();
 }
@@ -227,35 +227,70 @@ async function initArenaCompanions() {
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
 
-  for (let i = 0; i < agentOrder.length; i++) {
-    const id = agentOrder[i];
-    const agent = agents[id];
+  // Load cybermon catalog for spirits
+  let cybermons = [];
+  try {
+    const cmPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    const fs = require('fs');
+    if (fs.existsSync(cmPath)) {
+      cybermons = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).cybermons || [];
+    }
+  } catch {}
 
+  // Find party leader (main agent) — becomes the Companion
+  const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
+  
+  if (leaderId) {
+    const leader = agents[leaderId];
     let pixelId = null;
     try {
-      const config = await cyberclaw.agents.getSpriteConfig(id);
+      const config = await cyberclaw.agents.getSpriteConfig(leaderId);
       pixelId = config?.pixelCompanionId;
     } catch {}
 
-    // If no pixel companion assigned, pick a default based on index
+    // Default to first pixel companion if none assigned
     if (!pixelId && defaultCompanions.length > 0) {
-      pixelId = defaultCompanions[i % defaultCompanions.length].id;
+      pixelId = defaultCompanions[0].id;
     }
 
     if (pixelId) {
-      agent._pixelCompanionId = pixelId;
-      await pixelArena.addCompanion(id, pixelId);
-      // Set name on the arena companion
-      const arenaComp = pixelArena.companions.find(c => c.id === id);
-      if (arenaComp) arenaComp._name = agent.name;
+      leader._pixelCompanionId = pixelId;
+      await pixelArena.setCompanion(leaderId, pixelId, leader.name);
     }
   }
 
-  // Focus the first companion
-  if (agentOrder.length > 0) {
-    pixelArena.setFocused(agentOrder[focusIndex]);
+  // All other agents become Spirits (use cybermon sprites)
+  let spiritIdx = 0;
+  for (const id of agentOrder) {
+    if (id === leaderId) continue; // skip the companion
+    const agent = agents[id];
+
+    // Check if spirit has a saved cybermon
+    let cybermonId = null;
+    try {
+      const config = await cyberclaw.agents.getSpriteConfig(id);
+      cybermonId = config?.cybermonId;
+    } catch {}
+
+    // Auto-assign a cybermon if none saved
+    if (!cybermonId && cybermons.length > 0) {
+      cybermonId = cybermons[spiritIdx % cybermons.length].id;
+    }
+
+    if (cybermonId) {
+      agent._cybermonId = cybermonId;
+      await pixelArena.addSpirit(id, cybermonId, agent.name);
+    }
+    spiritIdx++;
   }
 }
+
+// Pop-out companion window via Electron BrowserWindow
+window.popOutArena = function() {
+  if (!pixelArena) return;
+  const state = pixelArena.getState();
+  cyberclaw.arena.popout(state);
+};
 
 function updateCarousel() {
   if (agentOrder.length === 0) return;

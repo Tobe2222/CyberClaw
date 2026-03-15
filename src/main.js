@@ -280,6 +280,34 @@ function discoverAgents() {
 
 ipcMain.handle('openclaw:discover', () => discoverAgents());
 
+// Pop-out companion arena window
+let companionWindow = null;
+ipcMain.handle('arena:popout', (event, state) => {
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionWindow.focus();
+    return;
+  }
+  companionWindow = new BrowserWindow({
+    width: 500,
+    height: 400,
+    minWidth: 300,
+    minHeight: 200,
+    alwaysOnTop: true,
+    frame: false,
+    transparent: false,
+    resizable: true,
+    title: `🐾 ${state.companionName || 'Companion'} & Spirits`,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+  companionWindow.loadFile(path.join(__dirname, 'companion-window.html'), {
+    query: { state: JSON.stringify(state) },
+  });
+  companionWindow.on('closed', () => { companionWindow = null; });
+});
+
 ipcMain.handle('openclaw:system-info', () => {
   const config = readOpenClawConfig();
   return {

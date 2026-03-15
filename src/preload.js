@@ -32,6 +32,9 @@ window.cyberclaw = {
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),
   },
+  arena: {
+    popout: (state) => ipcRenderer.invoke('arena:popout', state),
+  },
   quests: {
     list: () => ipcRenderer.invoke('quests:list'),
     create: (quest) => ipcRenderer.invoke('quests:create', quest),

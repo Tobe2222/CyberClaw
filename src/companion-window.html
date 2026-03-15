@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>🐾 Companion Arena</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #0a0a0a; }
+    #arena { width: 100vw; height: 100vh; }
+    .pixel-arena-canvas {
+      width: 100%; height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    /* Draggable titlebar */
+    #mini-titlebar {
+      position: absolute; top: 0; left: 0; right: 0; height: 24px;
+      -webkit-app-region: drag;
+      background: rgba(10,10,20,0.6);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 8px; z-index: 10;
+    }
+    #mini-titlebar span {
+      font-family: 'Orbitron', monospace; font-size: 10px; color: rgba(255,153,0,0.7);
+    }
+    .mini-close {
+      -webkit-app-region: no-drag;
+      background: none; border: none; color: #888; font-size: 14px; cursor: pointer;
+      padding: 0 4px;
+    }
+    .mini-close:hover { color: #ff4444; }
+  </style>
+</head>
+<body>
+  <div id="mini-titlebar">
+    <span>🐾 Companion Arena</span>
+    <button class="mini-close" onclick="window.close()">✕</button>
+  </div>
+  <div id="arena"></div>
+
+  <script>
+    const path = require('path');
+    const srcDir = path.join(__dirname);
+
+    // Load pixel-sprite.js (provides loadPixelCatalog)
+    require(path.join(srcDir, 'js', 'pixel-sprite.js'));
+    // Load pixel-arena.js (provides PixelArena)
+    require(path.join(srcDir, 'js', 'pixel-arena.js'));
+
+    // Parse state from query string
+    const urlParams = new URLSearchParams(window.location.search);
+    const state = JSON.parse(decodeURIComponent(urlParams.get('state') || '{}'));
+
+    // Create arena
+    const arena = new PixelArena(document.getElementById('arena'));
+
+    // Build companion + spirits from state
+    (async () => {
+      if (state.companionId) {
+        await arena.setCompanion(state.companionAgentId, state.companionId, state.companionName);
+      }
+      for (const spirit of (state.spirits || [])) {
+        await arena.addSpirit(spirit.id, spirit.cybermonId, spirit.name);
+      }
+    })();
+  </script>
+</body>
+</html>
