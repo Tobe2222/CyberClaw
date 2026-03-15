@@ -105,7 +105,9 @@ function createWindow() {
   if (showWizard) {
     mainWindow.loadFile(path.join(__dirname, 'wizard.html'));
   } else {
-    mainWindow.loadFile(path.join(__dirname, 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, 'index.html'), {
+      query: { v: Date.now().toString() }
+    });
   }
 
   if (process.argv.includes('--dev')) {

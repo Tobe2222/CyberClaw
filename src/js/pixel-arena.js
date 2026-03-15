@@ -468,10 +468,19 @@ class PixelArena {
 
   // Render a cropped view of the arena centered on an entity
   renderCameraView(targetCanvas, agentId, zoom) {
+    if (!this.canvas) return;
     const bounds = this.getEntityBounds(agentId);
-    if (!bounds || !this.canvas) return;
 
     const ctx = targetCanvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+
+    if (!bounds) {
+      // Fallback: show whole arena
+      ctx.drawImage(this.canvas, 0, 0, targetCanvas.width, targetCanvas.height);
+      return;
+    }
+
     const z = zoom || 2;
     const srcW = targetCanvas.width / z;
     const srcH = targetCanvas.height / z;
@@ -482,8 +491,6 @@ class PixelArena {
     const sx = Math.max(0, Math.min(cx, this.width - srcW));
     const sy = Math.max(0, Math.min(cy, this.height - srcH));
 
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     ctx.drawImage(this.canvas, sx, sy, srcW, srcH, 0, 0, targetCanvas.width, targetCanvas.height);
   }
 

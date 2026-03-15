@@ -594,9 +594,10 @@ function updateInspect(agentId) {
   updateModelArrow(agent);
 
   loadEquipment(agentId);
-  document.getElementById('inspect-channel').textContent = agent.channel;
-  document.getElementById('inspect-workspace').textContent = agent.workspace;
-  document.getElementById('inspect-workspace').title = agent.workspace;
+  const chEl = document.getElementById('inspect-channel');
+  if (chEl) chEl.textContent = agent.channel;
+  const wsEl = document.getElementById('inspect-workspace');
+  if (wsEl) { wsEl.textContent = agent.workspace; wsEl.title = agent.workspace; }
 }
 
 function setBar(id, [cur, max]) {
