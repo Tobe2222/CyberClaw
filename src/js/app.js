@@ -1032,7 +1032,6 @@ function rebuildLeftPanel() {
       <span class="rune-icon">📡</span> SESSION
     </div>
     <div class="system-section">
-      <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
       <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
       <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
     </div>
