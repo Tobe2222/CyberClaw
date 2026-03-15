@@ -368,7 +368,7 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  document.getElementById('right-header-text').textContent = agent.isMain ? 'PARTY LEADER' : agent.name?.toUpperCase() || 'COMPANION';
+  document.getElementById('right-header-text').textContent = agent.isMain ? 'COMPANION' : 'SPIRIT';
 
   // Portrait — use pixel companion, cybermon 2D render, or avatar
   const img = document.getElementById('inspect-avatar-img');
@@ -381,8 +381,8 @@ function updateInspect(agentId) {
     }
   } else {
     img.style.imageRendering = '';
-    const cybermonId = agent._cybermonId || getDefaultCybermon(agentId);
-    const cybermonPng = cybermonId ? require('path').join(window.__cyberclawAssetsPath || '', `${cybermonId}.png`) : null;
+    const cybermonId = agent._cybermonId;
+    const cybermonPng = cybermonId ? require('path').join(__dirname, 'assets', 'cybermons', `${cybermonId}.png`) : null;
     if (cybermonPng && require('fs').existsSync(cybermonPng)) {
       img.src = cybermonPng; img.style.display = 'block'; emoji.style.display = 'none';
     } else if (agent.avatar) {
@@ -1082,7 +1082,7 @@ window.sendChat = async function() {
 
   // Always chat through the party leader
   const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
-  if (!mainAgentId) { addChatMsg('error', 'No party leader found'); return; }
+  if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
   // Build message with context
   let fullMessage = message;
@@ -1112,7 +1112,7 @@ window.sendChat = async function() {
     if (result.ok) {
       // Show response from party leader
       const leader = agents[mainAgentId];
-      addChatMsg('agent', result.reply, leader?.name || 'Party Leader', leader?.emoji);
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
 
       // Award XP to the best-matching companion based on task type
       const taskSkill = result.taskSkill;
@@ -1271,21 +1271,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   ];
 
   if (agentOrder.length > 0) {
-    bootMsgs.push({ d: 900, t: `> Discovered ${agentOrder.length} companion(s)...` });
-    agentOrder.forEach((id, i) => {
-      const a = agents[id];
-      const statusIcon = a.status === 'online' ? '⚔️' : '💤';
-      bootMsgs.push({
-        d: 1400 + i * 300,
-        t: `> ${statusIcon} ${a.name} (${a.class}) — ${a.status.toUpperCase()}`
-      });
-    });
+    const mainId = agentOrder.find(id => agents[id]?.isMain);
+    const leader = mainId ? agents[mainId] : agents[agentOrder[0]];
+    const spiritCount = agentOrder.length - 1;
+    bootMsgs.push({ d: 900, t: `> Companion: ${leader?.name || 'Unknown'}` });
+    if (spiritCount > 0) {
+      bootMsgs.push({ d: 1200, t: `> ${spiritCount} spirit${spiritCount > 1 ? 's' : ''} detected` });
+    }
     bootMsgs.push({
-      d: 1400 + agentOrder.length * 300 + 400,
-      t: '> Party assembled. Use ← → to rotate.'
+      d: 1500,
+      t: '> Ready. Chat with your companion below.'
     });
   } else {
-    bootMsgs.push({ d: 900, t: '> No companions found. Create one to get started!' });
+    bootMsgs.push({ d: 900, t: '> No companion found. Create one to get started!' });
   }
 
   bootMsgs.forEach(({ d, t }) => {
@@ -1431,9 +1429,70 @@ function renderPixelGallery() {
   });
 }
 
+// Forge tab switching (Companions vs Spirits)
+let activeForgeTab = 'companions';
+let selectedSpiritId = null;
+
+window.switchForgeTab = function(tab) {
+  activeForgeTab = tab;
+  document.querySelectorAll('.forge-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('forge-companions').classList.toggle('hidden', tab !== 'companions');
+  document.getElementById('forge-spirits').classList.toggle('hidden', tab !== 'spirits');
+};
+
+function renderSpiritGallery() {
+  const grid = document.getElementById('spirit-gallery');
+  if (!grid) return;
+  
+  let cybermons = [];
+  try {
+    const cmPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    const fs = require('fs');
+    if (fs.existsSync(cmPath)) {
+      cybermons = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).cybermons || [];
+    }
+  } catch {}
+
+  if (!cybermons.length) {
+    grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">No spirits found</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  cybermons.forEach(cm => {
+    const card = document.createElement('div');
+    card.className = `spirit-card ${selectedSpiritId === cm.id ? 'selected' : ''}`;
+    card.dataset.spiritId = cm.id;
+    card.onclick = () => selectSpirit(cm.id);
+
+    const imgEl = document.createElement('img');
+    imgEl.src = `file://${path.join(__dirname, 'assets', 'cybermons', cm.id + '.png')}`;
+    imgEl.alt = cm.name;
+    imgEl.style.cssText = 'width:64px;height:64px;object-fit:contain;';
+
+    const label = document.createElement('div');
+    label.className = 'spirit-label';
+    label.textContent = cm.name;
+
+    card.appendChild(imgEl);
+    card.appendChild(label);
+    grid.appendChild(card);
+  });
+}
+
+window.selectSpirit = function(id) {
+  selectedSpiritId = id;
+  document.querySelectorAll('.spirit-card').forEach(card => {
+    card.classList.toggle('selected', card.dataset.spiritId === id);
+  });
+  // Also clear companion selection when picking a spirit
+  selectedPixelCompanion = null;
+  document.querySelectorAll('.pixel-companion-card').forEach(c => c.classList.remove('selected'));
+};
+
 window.selectPixelCompanion = function(id) {
   selectedPixelCompanion = id;
-  selectedCybermon = null; // clear 3D selection
+  selectedSpiritId = null; // clear spirit selection
 
   // Update gallery selection
   document.querySelectorAll('.pixel-companion-card').forEach(card => {
@@ -1477,16 +1536,28 @@ window.openCompanionEditor = function() {
   // Set name
   document.getElementById('editor-name').value = agent.name || '';
 
-  // Reset selection
+  // Reset selections
   selectedPixelCompanion = null;
+  selectedSpiritId = null;
 
-  // Render pixel gallery
+  // Determine if this is the companion (main) or a spirit
+  const isCompanion = agent.isMain;
+
+  // Render both galleries
   renderPixelGallery();
+  renderSpiritGallery();
 
-  // Load saved config — restore selected pixel companion
+  // Default to correct tab
+  switchForgeTab(isCompanion ? 'companions' : 'spirits');
+
+  // Load saved config — restore selection
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
     if (config && config.pixelCompanionId) {
       selectPixelCompanion(config.pixelCompanionId);
+      switchForgeTab('companions');
+    } else if (config && config.cybermonId) {
+      selectSpirit(config.cybermonId);
+      switchForgeTab('spirits');
     }
   });
 
@@ -1498,13 +1569,6 @@ window.openCompanionEditor = function() {
   checkboxGrid.innerHTML = skillTypes.map(s =>
     `<label><input type="checkbox" value="${s}" ${focusSkills.includes(s) ? 'checked' : ''}> ${skillIcons[s]||'✨'} ${s}</label>`
   ).join('');
-
-  // Populate quest dropdown
-  cyberclaw.quests.list().then(quests => {
-    const select = document.getElementById('editor-quest');
-    select.innerHTML = '<option value="">— None —</option>' +
-      quests.map(q => `<option value="${q.id}" ${(agent.assignedQuests || []).includes(q.id) ? 'selected' : ''}>${q.name}</option>`).join('');
-  });
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
 };
@@ -1526,50 +1590,56 @@ window.saveCompanion = async function() {
   const checkboxes = document.querySelectorAll('#editor-skill-checkboxes input[type="checkbox"]');
   const focusSkills = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
 
-  // Gather quest assignment
-  const questId = document.getElementById('editor-quest').value || null;
-
-  // Must select a Pixel Companion
-  if (!selectedPixelCompanion) return;
+  // Must select either a companion or spirit
+  if (!selectedPixelCompanion && !selectedSpiritId) return;
 
   const _path = require('path');
 
-  // Build quest assignments — keep existing, toggle the selected one
-  const existingQuests = new Set(agents[editorAgentId]?.assignedQuests || []);
-  if (questId) existingQuests.add(questId);
-  const assignedQuests = [...existingQuests];
+  if (selectedPixelCompanion) {
+    // Save as Companion (pixel sprite)
+    const catalog = loadPixelCatalog();
+    const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
+    const idlePath = _path.join(__dirname, 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
 
-  // Save Pixel Companion
-  const catalog = loadPixelCatalog();
-  const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
-  const idlePath = _path.join(__dirname, 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
+    // Extract first frame as avatar
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const [fw, fh] = comp.frameSize;
+    canvas.width = fw;
+    canvas.height = fh;
+    const img = new Image();
+    await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
+    ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+    const dataUrl = canvas.toDataURL('image/png');
 
-  // Extract first frame as avatar
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const [fw, fh] = comp.frameSize;
-  canvas.width = fw;
-  canvas.height = fh;
-  const img = new Image();
-  await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
-  ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
-  const dataUrl = canvas.toDataURL('image/png');
-
-  await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-    pixelCompanionId: selectedPixelCompanion,
-    cybermonId: null,
-    customName: newName || undefined,
-    focusSkills,
-    assignedQuests,
-  });
-  await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
-  agent.avatar = dataUrl;
-  agent._pixelCompanionId = selectedPixelCompanion;
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      pixelCompanionId: selectedPixelCompanion,
+      cybermonId: null,
+      customName: newName || undefined,
+      focusSkills,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
+    agent.avatar = dataUrl;
+    agent._pixelCompanionId = selectedPixelCompanion;
+    agent._cybermonId = null;
+  } else if (selectedSpiritId) {
+    // Save as Spirit (cybermon PNG)
+    const pngPath = _path.join(__dirname, 'assets', 'cybermons', `${selectedSpiritId}.png`);
+    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
+      pixelCompanionId: null,
+      cybermonId: selectedSpiritId,
+      customName: newName || undefined,
+      focusSkills,
+    });
+    await cyberclaw.agents.saveAvatar(editorAgentId, `file://${pngPath}`);
+    agent.avatar = `file://${pngPath}`;
+    agent._pixelCompanionId = null;
+    agent._cybermonId = selectedSpiritId;
+  }
 
   // Update in-memory agent
   if (newName) agent.name = newName;
   agent.focusSkills = focusSkills;
-  agent.assignedQuests = assignedQuests;
 
   // Refresh UI
   buildCarousel();

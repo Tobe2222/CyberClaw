@@ -47,7 +47,7 @@
 .completed-cat { color: var(--green); opacity: 0.6; }
 
 .system-hdr { margin-top: auto; }
-.system-section { padding: 8px 14px; flex-shrink: 0; }
+.system-section { padding: 4px 14px; flex-shrink: 0; }
 .system-actions { margin-top: 8px; display: flex; gap: 6px; }
 .sys-btn {
   flex: 1; padding: 5px 8px; border: 1px solid var(--border-mid);

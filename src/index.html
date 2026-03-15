@@ -301,33 +301,38 @@
         <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
       </div>
       <div class="editor-content">
-        <!-- Pixel Companion Preview -->
-        <div class="editor-preview-pixel">
-          <div id="editor-pixel-viewer" class="pixel-preview"></div>
+        <!-- Forge Tabs: Companions vs Spirits -->
+        <div class="forge-tabs">
+          <button class="forge-tab active" data-tab="companions" onclick="switchForgeTab('companions')">🐾 Companions</button>
+          <button class="forge-tab" data-tab="spirits" onclick="switchForgeTab('spirits')">✨ Spirits</button>
         </div>
 
-        <!-- Pixel Companions Gallery -->
-        <div id="editor-pixel-section">
-          <div id="pixel-gallery" class="pixel-companion-grid"></div>
+        <!-- Companions Tab (pixel sprites) -->
+        <div id="forge-companions" class="forge-panel">
+          <div class="editor-preview-pixel">
+            <div id="editor-pixel-viewer" class="pixel-preview"></div>
+          </div>
+          <div id="editor-pixel-section">
+            <div id="pixel-gallery" class="pixel-companion-grid"></div>
+          </div>
+        </div>
+
+        <!-- Spirits Tab (cybermon PNGs) -->
+        <div id="forge-spirits" class="forge-panel hidden">
+          <div id="spirit-gallery" class="spirit-grid"></div>
         </div>
 
         <!-- Shared Controls -->
         <div class="editor-controls">
           <div class="editor-field">
             <label>Name</label>
-            <input type="text" id="editor-name" placeholder="Companion name" />
+            <input type="text" id="editor-name" placeholder="Name" />
           </div>
 
           <!-- Skill Focus -->
           <div class="editor-field">
             <label>Skill Focus</label>
             <div id="editor-skill-checkboxes" class="skill-checkbox-grid"></div>
-          </div>
-
-          <!-- Project Assignment -->
-          <div class="editor-field">
-            <label>Assigned Quest</label>
-            <select id="editor-quest"></select>
           </div>
         </div>
       </div>
