@@ -110,7 +110,7 @@ class PixelArena {
     if (!compData) return;
 
     // Load sprite images
-    const basePath = _path.join(__dirname, 'assets', 'pixel-companions', compData.folder);
+    const basePath = _path.join(__dirname, '..', 'assets', 'pixel-companions', compData.folder);
     const images = {};
 
     for (const [animName, animData] of Object.entries(compData.animations)) {
@@ -151,7 +151,7 @@ class PixelArena {
     if (this.spirits.find(s => s.id === agentId)) return;
 
     // Load spirit PNG
-    const imgPath = _path.join(__dirname, 'assets', 'spirits', `${spiritId}.png`);
+    const imgPath = _path.join(__dirname, '..', 'assets', 'spirits', `${spiritId}.png`);
     let img = null;
     try {
       img = new Image();
@@ -347,6 +347,7 @@ class PixelArena {
 
     // Sprite
     this.ctx.imageSmoothingEnabled = false;
+    if (!animData.img || !animData.img.complete || animData.img.naturalWidth === 0) return;
     this.ctx.drawImage(animData.img, sx, sy, fw, fh, comp.x, comp.y, dw, dh);
 
     // Name label — golden, prominent
@@ -382,6 +383,7 @@ class PixelArena {
     this.ctx.fill();
 
     // Cybermon image
+    if (!spirit.img || !spirit.img.complete || spirit.img.naturalWidth === 0) return;
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.drawImage(spirit.img, x, y, s, s);
 

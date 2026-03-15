@@ -13,13 +13,14 @@
 .titlebar-drag { display: flex; align-items: center; gap: 8px; }
 .titlebar-icon { font-size: 14px; }
 .titlebar-title { font-family: var(--font-cyber); font-size: 12px; font-weight: 700; color: var(--cyan); letter-spacing: 2px; text-transform: uppercase; }
-.titlebar-version { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
 .titlebar-update-btn {
   background: none; border: none; color: var(--text-muted); font-size: 10px;
-  cursor: pointer; padding: 0 4px; font-family: var(--font-mono);
-  -webkit-app-region: no-drag;
+  cursor: pointer; padding: 0 6px; font-family: var(--font-mono);
+  -webkit-app-region: no-drag; display: inline-flex; align-items: center; gap: 4px;
 }
 .titlebar-update-btn:hover { color: var(--cyan); }
+.titlebar-update-btn #update-icon { font-size: 10px; }
+.titlebar-update-btn #update-label { font-size: 9px; }
 .titlebar-controls { display: flex; gap: 2px; -webkit-app-region: no-drag; }
 .tb-btn { width: 36px; height: 28px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; border-radius: 4px; transition: all 0.15s; }
 .tb-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
