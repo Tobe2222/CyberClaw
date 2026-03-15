@@ -34,10 +34,42 @@ class PixelArena {
     this.groundColor = '#1a2a1a';
     this.grassPatches = [];
 
+    this.onSelect = null; // callback(agentId) when entity clicked
+
     this._resize();
     this._generateGrass();
     this._initResize();
+    this._initClick();
     this._animate();
+  }
+
+  _initClick() {
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (this.width / rect.width);
+      const my = (e.clientY - rect.top) * (this.height / rect.height);
+
+      // Check spirits first (they're on top visually at smaller size)
+      for (const spirit of this.spirits) {
+        if (mx >= spirit.x && mx <= spirit.x + spirit.size &&
+            my >= spirit.y && my <= spirit.y + spirit.size) {
+          if (this.onSelect) this.onSelect(spirit.id);
+          return;
+        }
+      }
+
+      // Check companion
+      if (this.companion) {
+        const c = this.companion;
+        const dw = (c.data.frameSize[0] || 32) * c.scale;
+        const dh = (c.data.frameSize[1] || 32) * c.scale;
+        if (mx >= c.x && mx <= c.x + dw && my >= c.y && my <= c.y + dh) {
+          if (this.onSelect) this.onSelect(c.id);
+          return;
+        }
+      }
+    });
+    this.canvas.style.cursor = 'pointer';
   }
 
   _resize() {
@@ -427,6 +459,43 @@ class PixelArena {
     if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
     this.companion = null;
     this.spirits = [];
+  }
+
+  // ── GET ENTITY BOUNDS (for camera crop) ─────────────────────
+
+  getEntityBounds(agentId) {
+    if (this.companion && this.companion.id === agentId) {
+      const c = this.companion;
+      const dw = (c.data.frameSize[0] || 32) * c.scale;
+      const dh = (c.data.frameSize[1] || 32) * c.scale;
+      return { x: c.x, y: c.y, w: dw, h: dh };
+    }
+    const spirit = this.spirits.find(s => s.id === agentId);
+    if (spirit) {
+      return { x: spirit.x, y: spirit.y, w: spirit.size, h: spirit.size };
+    }
+    return null;
+  }
+
+  // Render a cropped view of the arena centered on an entity
+  renderCameraView(targetCanvas, agentId, zoom) {
+    const bounds = this.getEntityBounds(agentId);
+    if (!bounds || !this.canvas) return;
+
+    const ctx = targetCanvas.getContext('2d');
+    const z = zoom || 2;
+    const srcW = targetCanvas.width / z;
+    const srcH = targetCanvas.height / z;
+    const cx = bounds.x + bounds.w / 2 - srcW / 2;
+    const cy = bounds.y + bounds.h / 2 - srcH / 2;
+
+    // Clamp to arena bounds
+    const sx = Math.max(0, Math.min(cx, this.width - srcW));
+    const sy = Math.max(0, Math.min(cy, this.height - srcH));
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+    ctx.drawImage(this.canvas, sx, sy, srcW, srcH, 0, 0, targetCanvas.width, targetCanvas.height);
   }
 
   // ── EXPORT STATE (for pop-out window) ───────────────────────

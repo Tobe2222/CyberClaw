@@ -87,9 +87,9 @@
 
     <!-- ========== CENTER: ARENA CAROUSEL + TERMINAL ========== -->
     <main id="panel-center">
-      <!-- Arena with rotating carousel -->
+      <!-- Party Arena -->
       <div id="party-arena">
-        <!-- Logo overlay (top center of arena) -->
+        <!-- Logo overlay (top center) -->
         <div id="cyberhive-logo-area">
           <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
             <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
@@ -99,65 +99,19 @@
             <span id="update-label"></span>
           </button>
         </div>
-        <div id="arena-bg">
-          <div class="arena-grid"></div>
-          <div class="arena-glow"></div>
-        </div>
 
-        <!-- Shared 2D pixel arena -->
+        <!-- Shared 2D pixel arena (the whole arena view) -->
         <div id="pixel-arena-container"></div>
 
         <!-- Pop-out button -->
         <button id="arena-popout-btn" onclick="popOutArena()" title="Pop out companion window">🪟</button>
 
-        <!-- Navigation arrows (cycle focused companion) -->
+        <!-- Navigation arrows (cycle selection) -->
         <button class="carousel-arrow carousel-left" onclick="carouselPrev()">‹</button>
         <button class="carousel-arrow carousel-right" onclick="carouselNext()">›</button>
 
-        <!-- Center agent name plate (the one in focus) -->
-        <div id="carousel-nameplate">
-          <span id="carousel-name" class="legendary-text">Codesuu</span>
-          <span id="carousel-class">Code Architect</span>
-          <div id="carousel-channel"></div>
-        </div>
-
         <!-- Edit button (bottom center) -->
-        <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit Companion">🎨 Edit</button>
-        <!-- Create button (bottom right) -->
-        <button id="btn-generate-companion" class="btn-generate-inline" onclick="openCompanionEditor(true)" title="Create New Companion">＋ Create</button>
-      </div>
-
-      <!-- Focused companion info strip (below carousel) -->
-      <div id="focused-agent-strip">
-        <div id="focused-portrait">
-          <div class="focused-avatar-border legendary" id="focused-border">
-            <img src="assets/avatars/codesuu.png" alt="Companion" id="focused-avatar-img">
-            <div class="focused-emoji" id="focused-emoji" style="display:none">🤖</div>
-          </div>
-        </div>
-        <div id="focused-info">
-          <div id="focused-name" class="legendary-text">Codesuu</div>
-          <div id="focused-class">Code Architect</div>
-          <div id="focused-id" style="display:none">anthropic-hiveclaw</div>
-          <div id="focused-status"><span class="status-dot online"></span> Online</div>
-          <div id="focused-channel-badge"></div>
-        </div>
-        <div id="focused-center-col">
-          <div class="focused-section-label">Skills</div>
-          <div id="focused-skills"></div>
-        </div>
-        <div id="focused-right-col">
-          <div id="focused-stats">
-            <div class="stat-bar-sm"><span class="stat-label-sm">HP</span><div class="bar-track-sm"><div class="bar-fill hp" id="focused-hp" style="width:100%"></div></div><span class="stat-val-sm" id="focused-hp-val">100/100</span></div>
-            <div class="stat-bar-sm"><span class="stat-label-sm">MP</span><div class="bar-track-sm"><div class="bar-fill mp" id="focused-mp" style="width:85%"></div></div><span class="stat-val-sm" id="focused-mp-val">85/100</span></div>
-            <div class="stat-bar-sm"><span class="stat-label-sm">XP</span><div class="bar-track-sm"><div class="bar-fill xp" id="focused-xp" style="width:30%"></div></div><span class="stat-val-sm" id="focused-xp-val">1,250/4,000</span></div>
-          </div>
-          <div id="focused-model-info">
-            <div class="model-indicator pulse-green"></div>
-            <span id="focused-model">Claude Opus 4</span>
-            <span id="focused-provider">Anthropic</span>
-          </div>
-        </div>
+        <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit">🎨 Edit</button>
       </div>
 
       <!-- Terminal strip -->
@@ -203,12 +157,9 @@
           </div>
         </div>
 
-        <!-- Character viewer (zoomed sprite/PNG preview) -->
+        <!-- Live camera view of character on arena -->
         <div id="inspect-viewer">
-          <div class="inspect-avatar-border legendary" id="inspect-border">
-            <img src="assets/avatars/codesuu.png" alt="Agent" id="inspect-avatar-img">
-            <div class="inspect-emoji" id="inspect-emoji" style="display:none">🤖</div>
-          </div>
+          <canvas id="inspect-camera" width="180" height="120"></canvas>
         </div>
 
         <!-- Status line: Class -->

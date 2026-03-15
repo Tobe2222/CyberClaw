@@ -299,6 +299,19 @@ async function initArenaCompanions() {
   }
 }
 
+// Camera view render loop — renders a cropped arena view into inspect panel
+function startCameraLoop() {
+  const cam = document.getElementById('inspect-camera');
+  if (!cam) return;
+  function renderCamera() {
+    if (pixelArena && window._inspectAgentId) {
+      pixelArena.renderCameraView(cam, window._inspectAgentId, 2.5);
+    }
+    requestAnimationFrame(renderCamera);
+  }
+  requestAnimationFrame(renderCamera);
+}
+
 // Pop-out companion window via Electron BrowserWindow
 window.popOutArena = function() {
   if (!pixelArena) return;
@@ -386,29 +399,9 @@ function updateInspect(agentId) {
     typeBadge.className = `inspect-type-badge ${agent.isMain ? '' : 'spirit'}`;
   }
 
-  // Portrait — use pixel companion, spirit 2D render, or avatar
-  const img = document.getElementById('inspect-avatar-img');
-  const emoji = document.getElementById('inspect-emoji');
-  if (agent._pixelCompanionId) {
-    // Use first frame of idle animation as portrait
-    if (agent.avatar) {
-      img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
-      img.style.imageRendering = 'pixelated';
-    }
-  } else {
-    img.style.imageRendering = '';
-    const spiritId = agent._spiritId;
-    const spiritPng = spiritId ? require('path').join(__dirname, 'assets', 'spirits', `${spiritId}.png`) : null;
-    if (spiritPng && require('fs').existsSync(spiritPng)) {
-      img.src = spiritPng; img.style.display = 'block'; emoji.style.display = 'none';
-    } else if (agent.avatar) {
-      img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
-    } else {
-      img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖';
-    }
-  }
+  // Camera view — track the currently inspected agent ID for the render loop
+  window._inspectAgentId = agentId;
 
-  document.getElementById('inspect-border').className = `inspect-avatar-border ${agent.rarity}`;
   document.getElementById('inspect-name').textContent = agent.name;
   document.getElementById('inspect-name').className = `${agent.rarity}-text`;
   document.getElementById('inspect-class').textContent = agent.class;
@@ -1280,6 +1273,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     buildCarousel();
     debugLog('buildCarousel done');
+    // Wire up click-to-select on arena entities
+    if (pixelArena) {
+      pixelArena.onSelect = (agentId) => {
+        const idx = agentOrder.indexOf(agentId);
+        if (idx >= 0) {
+          focusIndex = idx;
+          updateCarousel();
+        }
+      };
+    }
+    // Start camera render loop for inspect panel
+    startCameraLoop();
   } catch (e) {
     debugLog('buildCarousel CRASHED: ' + e.message + '\n' + e.stack);
   }

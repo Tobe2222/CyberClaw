@@ -88,7 +88,7 @@
     transparent 92%);
 }
 
-#arena-bg { position: absolute; inset: 0; overflow: hidden; }
+#arena-bg { display: none; /* PixelArena draws its own ground */ }
 
 /* Grass field ground */
 .arena-grid {
@@ -479,22 +479,17 @@
 .status-dot.idle { background: var(--gold); }
 .status-dot.offline { background: var(--text-muted); }
 
-/* Character viewer */
+/* Character camera viewer */
 #inspect-viewer {
-  text-align: center; padding: 8px;
+  text-align: center; padding: 4px 8px;
+  border-bottom: 1px solid var(--border-dark);
 }
-.inspect-avatar-border {
-  width: 90px; height: 90px; border-radius: 10px;
-  margin: 0 auto; padding: 3px;
-  display: flex; align-items: center; justify-content: center; overflow: hidden;
+#inspect-camera {
+  width: 100%; height: 80px; border-radius: 6px;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+  background: #1a2a1a;
+  border: 1px solid var(--border-dark);
 }
-.inspect-avatar-border.legendary { border: 3px solid var(--legendary); box-shadow: 0 0 15px rgba(251,191,36,0.3); animation: legendary-pulse 3s ease-in-out infinite; }
-.inspect-avatar-border.epic     { border: 2px solid var(--epic); box-shadow: 0 0 10px rgba(255,107,53,0.2); }
-.inspect-avatar-border.rare     { border: 2px solid var(--rare); box-shadow: 0 0 10px rgba(59,130,246,0.2); }
-.inspect-avatar-border.uncommon { border: 2px solid var(--uncommon); box-shadow: 0 0 8px rgba(74,222,128,0.15); }
-.inspect-avatar-border.common   { border: 2px solid var(--common); }
-.inspect-avatar-border img { width: 100%; height: 100%; border-radius: 10px; object-fit: contain; image-rendering: pixelated; }
-.inspect-emoji { font-size: 36px; }
 
 /* Status line: Level + Class */
 #inspect-status-line {
