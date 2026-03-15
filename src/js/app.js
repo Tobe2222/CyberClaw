@@ -1123,17 +1123,7 @@ function initMainTerminal() {
 let chatBusy = false;
 
 function updateChatTarget() {
-  const el = document.getElementById('chat-target');
-  if (agentOrder.length === 0) {
-    el.textContent = '🤖 —';
-    return;
-  }
-  // Always show party leader as chat target
-  const mainId = agentOrder.find(id => agents[id]?.isMain);
-  const leader = mainId ? agents[mainId] : agents[agentOrder[0]];
-  if (leader) {
-    el.textContent = `${leader.emoji || '🤖'} ${leader.name}`;
-  }
+  // chat-target element was removed — no-op
 }
 
 window.sendChat = async function() {
