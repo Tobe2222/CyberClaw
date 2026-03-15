@@ -319,7 +319,7 @@ function startCameraLoop() {
   function renderCamera() {
     if (pixelArena && window._inspectAgentId) {
       const agent = agents[window._inspectAgentId];
-      const zoom = agent && agent.isMain ? 1.5 : 2;
+      const zoom = agent && agent.isMain ? 1.2 : 1.5;
       pixelArena.renderCameraView(cam, window._inspectAgentId, zoom);
     }
     requestAnimationFrame(renderCamera);
@@ -1031,7 +1031,6 @@ function rebuildLeftPanel() {
       <span class="rune-icon">📡</span> SESSION
     </div>
     <div class="system-section">
-      <div class="stat-row"><span class="stat-key">Channel</span><span class="stat-value" id="inspect-channel">Discord</span></div>
       <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace">/media/.../2Print</span></div>
       <div class="stat-row"><span class="stat-key">Messages</span><span class="stat-value" id="stat-messages">0</span></div>
       <div class="stat-row"><span class="stat-key">Cost</span><span class="stat-value gold-text" id="stat-cost">$0.00</span></div>
