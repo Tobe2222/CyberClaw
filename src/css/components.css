@@ -842,7 +842,8 @@
 
 .editor-content {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   padding: 16px;
 }
 
@@ -872,10 +873,10 @@
 }
 
 .editor-controls {
-  flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .editor-field {
@@ -888,6 +889,10 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+.editor-field input#editor-name {
+  font-size: 16px; font-family: var(--font-cyber); text-align: center;
+  padding: 8px 12px; letter-spacing: 1px;
 }
 .editor-field input,
 .editor-field select {
@@ -913,7 +918,7 @@
 
 .skill-checkbox-grid {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
 }
 .skill-checkbox-grid label {
@@ -1501,11 +1506,12 @@
 /* ----- Pixel Companion Gallery ----- */
 .pixel-companion-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
-  max-height: 300px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 8px;
+  width: 100%;
 }
 .pixel-companion-card {
   border: 2px solid var(--border);
@@ -1540,16 +1546,16 @@
 
 /* ----- Forge Tabs (Companions / Spirits) ----- */
 .forge-tabs {
-  display: flex; gap: 4px; padding: 0 8px 8px; border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
 }
 .forge-tab {
-  padding: 6px 14px; border: none; background: rgba(255,255,255,0.05);
-  color: var(--text-secondary); font-size: 11px; font-family: var(--font-ui);
-  cursor: pointer; border-radius: 6px 6px 0 0; transition: all 0.2s;
+  flex: 1; padding: 10px 14px; border: none; background: rgba(255,255,255,0.03);
+  color: var(--text-secondary); font-size: 12px; font-family: var(--font-ui);
+  cursor: pointer; text-align: center; transition: all 0.2s;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
 }
-.forge-tab:hover { background: rgba(255,255,255,0.1); }
-.forge-tab.active { background: rgba(255,153,0,0.15); color: var(--orange); border-bottom: 2px solid var(--orange); }
+.forge-tab:hover { background: rgba(255,255,255,0.08); }
+.forge-tab.active { background: rgba(255,153,0,0.1); color: var(--orange); border-bottom: 2px solid var(--orange); }
 .forge-panel.hidden { display: none; }
 
 /* ----- Spirit Grid ----- */
@@ -1557,9 +1563,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 10px;
-  max-height: 350px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 8px;
+  width: 100%;
 }
 .spirit-card {
   border: 2px solid var(--border);

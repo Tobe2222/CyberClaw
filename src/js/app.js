@@ -258,7 +258,12 @@ async function initArenaCompanions() {
 
     if (pixelId) {
       leader._pixelCompanionId = pixelId;
-      await pixelArena.setCompanion(leaderId, pixelId, leader.name);
+      try {
+        await pixelArena.setCompanion(leaderId, pixelId, leader.name);
+        console.log(`[Arena] Companion set: ${leader.name} (${pixelId})`);
+      } catch (e) { console.error('[Arena] Failed to set companion:', e); }
+    } else {
+      console.warn('[Arena] No pixelId for leader');
     }
   }
 
@@ -489,9 +494,9 @@ function updateInspect(agentId) {
     const levelEl = document.getElementById('inspect-level');
     if (levelEl) levelEl.textContent = `Lv.${stats.level}`;
 
-    // RuneScape-style skill list — all categories shown with level + XP bar
+    // Skill list — companion shows ALL skills, spirits show only focus skills
     const skillsEl = document.getElementById('inspect-skills');
-    const allSkills = [
+    const allSkillDefs = [
       { name: 'Coding', icon: '💻' },
       { name: 'Writing', icon: '✍️' },
       { name: 'Design', icon: '🎨' },
@@ -502,18 +507,29 @@ function updateInspect(agentId) {
       { name: 'Game', icon: '🎮' },
       { name: 'General', icon: '✨' },
     ];
+    
+    // Spirits only show their assigned focus skills
+    const focusSkills = agent.focusSkills || [];
+    const displaySkills = agent.isMain
+      ? allSkillDefs
+      : allSkillDefs.filter(s => focusSkills.includes(s.name));
+    
     const skills = stats.skills || {};
-    skillsEl.innerHTML = allSkills.map(s => {
-      const sk = skills[s.name] || { level: 1, xp: 0 };
-      const xpNeeded = Math.floor(100 * Math.pow(1.5, sk.level - 1));
-      const pct = Math.min(100, (sk.xp / xpNeeded) * 100);
-      return `<div class="rs-skill-row">
-        <span class="rs-skill-icon">${s.icon}</span>
-        <span class="rs-skill-name">${s.name}</span>
-        <span class="rs-skill-level">${sk.level}</span>
-        <div class="rs-skill-bar"><div class="rs-skill-fill" style="width:${pct}%"></div></div>
-      </div>`;
-    }).join('');
+    if (displaySkills.length === 0 && !agent.isMain) {
+      skillsEl.innerHTML = '<div style="color:var(--text-muted);font-size:9px;padding:2px">No specializations assigned</div>';
+    } else {
+      skillsEl.innerHTML = displaySkills.map(s => {
+        const sk = skills[s.name] || { level: 1, xp: 0 };
+        const xpNeeded = Math.floor(100 * Math.pow(1.5, sk.level - 1));
+        const pct = Math.min(100, (sk.xp / xpNeeded) * 100);
+        return `<div class="rs-skill-row">
+          <span class="rs-skill-icon">${s.icon}</span>
+          <span class="rs-skill-name">${s.name}</span>
+          <span class="rs-skill-level">${sk.level}</span>
+          <div class="rs-skill-bar"><div class="rs-skill-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
+    }
   });
 
   // Model stack — primary + fallback rows
