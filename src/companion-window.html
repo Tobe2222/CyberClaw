@@ -28,7 +28,6 @@
       padding: 0 4px;
     }
     .mini-close:hover { color: #ff4444; }
-    #debug { position: fixed; bottom: 0; left: 0; right: 0; color: #f44; font-size: 10px; padding: 4px; z-index: 99; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -37,71 +36,30 @@
     <button class="mini-close" onclick="window.close()">✕</button>
   </div>
   <div id="arena"></div>
-  <div id="debug"></div>
 
   <script>
     const _path = require('path');
-    const _fs = require('fs');
-    const dbg = document.getElementById('debug');
-    function log(msg) { dbg.textContent += msg + ' | '; console.log('[popout]', msg); }
+    window._assetsDir = _path.join(__dirname, 'assets');
 
-    window.onerror = (msg, src, line) => { log(`ERR: ${msg} @${line}`); };
+    require(_path.join(__dirname, 'js', 'pixel-sprite.js'));
+    require(_path.join(__dirname, 'js', 'pixel-arena.js'));
 
-    try {
-      // Set assets dir — __dirname = src/ for this HTML file
-      window._assetsDir = _path.join(__dirname, 'assets');
-      log('assetsDir=' + window._assetsDir);
+    const urlParams = new URLSearchParams(window.location.search);
+    const state = JSON.parse(urlParams.get('state') || '{}');
 
-      // Verify assets dir exists
-      if (!_fs.existsSync(window._assetsDir)) {
-        log('ASSETS DIR NOT FOUND');
+    const arena = new PixelArena(document.getElementById('arena'));
+
+    if (state.bgPath) arena.setBackground(state.bgPath);
+    if (state.horizonLine) arena.horizonLine = state.horizonLine;
+
+    (async () => {
+      if (state.companionId) {
+        await arena.setCompanion(state.companionAgentId, state.companionId, state.companionName);
       }
-
-      // Load scripts via require (they'll get __dirname = src/js/)
-      // But we've set window._assetsDir so they'll use that instead
-      require(_path.join(__dirname, 'js', 'pixel-sprite.js'));
-      log('pixel-sprite loaded');
-      require(_path.join(__dirname, 'js', 'pixel-arena.js'));
-      log('pixel-arena loaded');
-
-      // Parse state
-      const urlParams = new URLSearchParams(window.location.search);
-      const stateStr = urlParams.get('state') || '{}';
-      const state = JSON.parse(stateStr);
-      log('state: companion=' + (state.companionId || 'none') + ' spirits=' + (state.spirits?.length || 0));
-
-      // Create arena
-      const arena = new PixelArena(document.getElementById('arena'));
-      log('arena created');
-
-      // Apply background
-      if (state.bgPath) {
-        arena.setBackground(state.bgPath);
-        log('bg=' + state.bgPath);
+      for (const spirit of (state.spirits || [])) {
+        await arena.addSpirit(spirit.id, spirit.spiritId, spirit.name);
       }
-      if (state.horizonLine) arena.horizonLine = state.horizonLine;
-
-      // Load entities
-      (async () => {
-        try {
-          if (state.companionId) {
-            await arena.setCompanion(state.companionAgentId, state.companionId, state.companionName);
-            log('companion set: ' + state.companionName);
-          }
-          for (const spirit of (state.spirits || [])) {
-            await arena.addSpirit(spirit.id, spirit.spiritId, spirit.name);
-            log('spirit: ' + spirit.name);
-          }
-          log('DONE');
-          // Clear debug after 5 seconds if everything worked
-          setTimeout(() => { dbg.style.display = 'none'; }, 5000);
-        } catch (e) {
-          log('ASYNC ERR: ' + e.message);
-        }
-      })();
-    } catch (e) {
-      log('INIT ERR: ' + e.message);
-    }
+    })();
   </script>
 </body>
 </html>
