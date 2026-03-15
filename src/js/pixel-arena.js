@@ -30,7 +30,10 @@ class PixelArena {
     this.animId = null;
     this.lastTime = 0;
 
-    // Ground
+    // Background image
+    this.bgImage = null;
+
+    // Ground (fallback when no bg image)
     this.groundColor = '#1a2a1a';
     this.grassPatches = [];
 
@@ -100,6 +103,16 @@ class PixelArena {
         shade: Math.random() * 0.3
       });
     }
+  }
+
+  // ── BACKGROUND ──────────────────────────────────────────────
+
+  setBackground(imagePath) {
+    if (!imagePath) { this.bgImage = null; return; }
+    const img = new Image();
+    img.onload = () => { this.bgImage = img; };
+    img.onerror = () => { this.bgImage = null; };
+    img.src = `file://${imagePath}`;
   }
 
   // ── COMPANION (main, pixel sprite) ──────────────────────────
@@ -339,12 +352,6 @@ class PixelArena {
     const dw = fw * comp.scale;
     const dh = fh * comp.scale;
 
-    // Shadow
-    this.ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    this.ctx.beginPath();
-    this.ctx.ellipse(comp.x + dw / 2, comp.y + dh, dw * 0.4, 6, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-
     // Sprite
     this.ctx.imageSmoothingEnabled = false;
     if (!animData.img || !animData.img.complete || animData.img.naturalWidth === 0) return;
@@ -395,7 +402,14 @@ class PixelArena {
   }
 
   _drawGround() {
-    // Base ground
+    if (this.bgImage && this.bgImage.complete && this.bgImage.naturalWidth > 0) {
+      // Draw background image covering the whole arena
+      this.ctx.imageSmoothingEnabled = false;
+      this.ctx.drawImage(this.bgImage, 0, 0, this.width, this.height);
+      return;
+    }
+
+    // Fallback: simple ground
     this.ctx.fillStyle = this.groundColor;
     this.ctx.fillRect(0, 0, this.width, this.height);
 
@@ -404,22 +418,6 @@ class PixelArena {
       const green = Math.floor(40 + g.shade * 30);
       this.ctx.fillStyle = `rgb(${10 + g.shade * 10}, ${green}, ${10 + g.shade * 5})`;
       this.ctx.fillRect(g.x, g.y, g.size, g.size * 0.6);
-    }
-
-    // Subtle grid
-    this.ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-    this.ctx.lineWidth = 1;
-    for (let x = 0; x < this.width; x += 48) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, this.height);
-      this.ctx.stroke();
-    }
-    for (let y = 0; y < this.height; y += 48) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, y);
-      this.ctx.lineTo(this.width, y);
-      this.ctx.stroke();
     }
   }
 

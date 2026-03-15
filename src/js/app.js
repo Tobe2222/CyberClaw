@@ -313,6 +313,73 @@ function startCameraLoop() {
   requestAnimationFrame(renderCamera);
 }
 
+// ---------------------------------------------------------------------------
+// Background selector
+// ---------------------------------------------------------------------------
+const BACKGROUNDS = [
+  { id: 'none', label: 'Default (Dark)', file: null },
+  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png' },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png' },
+  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png' },
+];
+
+let currentBgId = 'none';
+
+function loadSavedBackground() {
+  try {
+    const saved = localStorage.getItem('cyberclaw-arena-bg');
+    if (saved) {
+      currentBgId = saved;
+      const bg = BACKGROUNDS.find(b => b.id === saved);
+      if (bg && bg.file && pixelArena) {
+        const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+        pixelArena.setBackground(bgPath);
+      }
+    }
+  } catch {}
+}
+
+window.openBgSelector = function() {
+  const overlay = document.getElementById('bg-selector-overlay');
+  overlay.classList.remove('hidden');
+
+  const grid = document.getElementById('bg-grid');
+  grid.innerHTML = '';
+
+  for (const bg of BACKGROUNDS) {
+    const card = document.createElement('div');
+    card.className = `bg-card${bg.id === currentBgId ? ' selected' : ''}`;
+    
+    if (bg.file) {
+      const imgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+      card.innerHTML = `<img src="file://${imgPath}" alt="${bg.label}"><div class="bg-card-label">${bg.label}</div>`;
+    } else {
+      card.innerHTML = `<div class="bg-card-none">🌑 ${bg.label}</div>`;
+    }
+    
+    card.addEventListener('click', () => {
+      currentBgId = bg.id;
+      localStorage.setItem('cyberclaw-arena-bg', bg.id);
+      if (bg.file) {
+        const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+        pixelArena.setBackground(bgPath);
+      } else {
+        pixelArena.setBackground(null);
+      }
+      // Update selected state
+      grid.querySelectorAll('.bg-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+    
+    grid.appendChild(card);
+  }
+};
+
+window.closeBgSelector = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('bg-selector-overlay').classList.add('hidden');
+};
+
 // Pop-out companion window via Electron BrowserWindow
 window.popOutArena = function() {
   if (!pixelArena) return;
@@ -1255,6 +1322,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       };
     }
+    // Load saved background
+    loadSavedBackground();
     // Start camera render loop for inspect panel
     startCameraLoop();
   } catch (e) {
@@ -1362,12 +1431,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ---------------------------------------------------------------------------
 const APP_VERSION = require('../package.json').version;
 
-// Set version labels on load
+// Set version label on load (single display in titlebar)
 document.addEventListener('DOMContentLoaded', () => {
   const label = document.getElementById('update-label');
   if (label) label.textContent = `v${APP_VERSION}`;
-  const titleVer = document.getElementById('titlebar-version');
-  if (titleVer) titleVer.textContent = `v${APP_VERSION}`;
 });
 
 window.checkForUpdate = async function() {

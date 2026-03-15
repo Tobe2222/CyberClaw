@@ -16,10 +16,9 @@
     <div class="titlebar-drag">
       <span class="titlebar-icon">⚔️</span>
       <span class="titlebar-title">CyberClaw</span>
-      <button id="update-check-btn" class="titlebar-update-btn" onclick="checkForUpdate()" title="Check for updates">
-        <span id="titlebar-version"></span>
-        <span id="update-icon"></span>
+      <button id="update-check-btn" class="titlebar-update-btn" onclick="checkForUpdate()" title="Click to check for updates">
         <span id="update-label"></span>
+        <span id="update-icon"></span>
       </button>
     </div>
     <div class="titlebar-controls">
@@ -110,8 +109,22 @@
         <button class="carousel-arrow carousel-left" onclick="carouselPrev()">‹</button>
         <button class="carousel-arrow carousel-right" onclick="carouselNext()">›</button>
 
+        <!-- Background selector (bottom left) -->
+        <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
+
         <!-- Edit button (bottom center) -->
         <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit">🎨 Edit</button>
+      </div>
+
+      <!-- Background selector modal -->
+      <div id="bg-selector-overlay" class="modal-overlay hidden" onclick="closeBgSelector(event)">
+        <div class="modal-panel bg-selector-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon">🖼️</span> ARENA BACKGROUND
+            <button class="modal-close" onclick="closeBgSelector()">✕</button>
+          </div>
+          <div id="bg-grid" class="bg-grid"></div>
+        </div>
       </div>
 
       <!-- Terminal strip -->
