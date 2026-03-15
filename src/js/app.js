@@ -251,7 +251,7 @@ async function initArenaCompanions() {
       const config = await cyberclaw.agents.getSpriteConfig(leaderId);
       pixelId = config?.pixelCompanionId;
       debugLog('[Arena] Leader config: ' + JSON.stringify(config));
-    } catch (e) { debugLog('[Arena] ERROR: Leader config error:', e); }
+    } catch (e) { debugLog('[Arena] ERROR leader config: ' + e.message); }
 
     // Default to first pixel companion if none assigned
     if (!pixelId && defaultCompanions.length > 0) {
@@ -262,8 +262,8 @@ async function initArenaCompanions() {
       leader._pixelCompanionId = pixelId;
       try {
         await pixelArena.setCompanion(leaderId, pixelId, leader.name);
-        console.log(`[Arena] Companion set: ${leader.name} (${pixelId})`);
-      } catch (e) { debugLog('[Arena] ERROR: Failed to set companion:', e); }
+        debugLog(`[Arena] Companion set: ${leader.name} (${pixelId})`);
+      } catch (e) { debugLog('[Arena] ERROR set companion: ' + e.message + '\n' + e.stack); }
     } else {
       debugLog('[Arena] WARN: No pixelId for leader');
     }
@@ -287,16 +287,17 @@ async function initArenaCompanions() {
       spiritId = spirits[spiritIdx % spirits.length].id;
     }
 
-    console.log(`[Arena] Spirit ${id}: spiritId=${spiritId}`);
+    debugLog(`[Arena] Spirit ${id}: spiritId=${spiritId}`);
     if (spiritId) {
       agent._spiritId = spiritId;
       try {
         await pixelArena.addSpirit(id, spiritId, agent.name);
-        console.log(`[Arena] Added spirit ${agent.name} (${spiritId})`);
-      } catch (e) { console.error(`[Arena] Failed to add spirit ${id}:`, e); }
+        debugLog(`[Arena] Added spirit ${agent.name} (${spiritId})`);
+      } catch (e) { debugLog(`[Arena] ERROR Failed to add spirit ${id}:`, e); }
     }
     spiritIdx++;
   }
+  debugLog(`[Arena] Init complete. Companion: ${pixelArena.companion ? 'yes' : 'no'}, Spirits: ${pixelArena.spirits.length}`);
 }
 
 // Camera view render loop — renders a cropped arena view into inspect panel
@@ -347,42 +348,13 @@ document.addEventListener('keydown', e => {
 });
 
 // ---------------------------------------------------------------------------
-// Focused agent strip (below carousel)
-// ---------------------------------------------------------------------------
+// Focused agent (no-op — old strip removed, inspect panel handles everything)
 function updateFocused(agentId) {
-  const agent = agents[agentId];
-  if (!agent) return;
-
-  const img = document.getElementById('focused-avatar-img');
-  const emoji = document.getElementById('focused-emoji');
-  if (agent.avatar) { img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none'; }
-  else { img.style.display = 'none'; emoji.style.display = 'flex'; emoji.textContent = agent.emoji || '🤖'; }
-
-  document.getElementById('focused-border').className = `focused-avatar-border ${agent.rarity}`;
-  document.getElementById('focused-name').textContent = agent.name;
-  document.getElementById('focused-name').className = `${agent.rarity}-text`;
-  document.getElementById('focused-class').textContent = agent.class;
-  document.getElementById('focused-id').textContent = agent.id;
-
-  const statusEl = document.getElementById('focused-status');
-  statusEl.innerHTML = `<span class="status-dot ${agent.status}"></span> ${agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}`;
-
-  document.getElementById('focused-channel-badge').innerHTML =
-    `<span class="channel-badge ${agent.channelBadge}">${agent.channelIcon} ${agent.channelDetail}</span>`;
-
-  setBar('focused-hp', agent.hp);
-  setBar('focused-mp', agent.mp);
-  setBar('focused-xp', agent.xp);
-
-  document.getElementById('focused-model').textContent = agent.model;
-  document.getElementById('focused-provider').textContent = agent.provider;
-
-  // Skills
-  const icons = { 'Coding Agent': '💻', 'Weather': '🌤️', 'Healthcheck': '🔒', 'Skill Creator': '📜' };
-  const skillsEl = document.getElementById('focused-skills');
-  skillsEl.innerHTML = agent.skills.length === 0
-    ? '<span class="focused-skill-tag" style="color:var(--text-muted)">No skills</span>'
-    : agent.skills.map(s => `<span class="focused-skill-tag"><span class="skill-tag-icon">${icons[s]||'✨'}</span>${s}</span>`).join('');
+  // Just updates the carousel nameplate if it exists
+  const nameEl = document.getElementById('carousel-name');
+  if (nameEl) nameEl.textContent = agents[agentId]?.name || '';
+  const classEl = document.getElementById('carousel-class');
+  if (classEl) classEl.textContent = agents[agentId]?.class || '';
 }
 
 // ---------------------------------------------------------------------------

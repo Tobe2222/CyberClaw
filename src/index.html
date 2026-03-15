@@ -17,6 +17,10 @@
       <span class="titlebar-icon">⚔️</span>
       <span class="titlebar-title">CyberClaw</span>
       <span class="titlebar-version" id="titlebar-version"></span>
+      <button id="update-check-btn" class="titlebar-update-btn" onclick="checkForUpdate()" title="Check for updates">
+        <span id="update-icon">🔄</span>
+        <span id="update-label"></span>
+      </button>
     </div>
     <div class="titlebar-controls">
       <button class="tb-btn tb-min" onclick="cyberclaw.window.minimize()">─</button>
@@ -94,10 +98,6 @@
           <a href="#" id="cyberhive-logo-link" onclick="cyberclaw.window.openExternal('https://cyberhive.no'); return false;">
             <img src="assets/cyberhive-logo.png" id="cyberhive-logo" alt="CyberHive" />
           </a>
-          <button id="update-check-btn" class="update-btn" onclick="checkForUpdate()" title="Check for updates">
-            <span id="update-icon">🔄</span>
-            <span id="update-label"></span>
-          </button>
         </div>
 
         <!-- Shared 2D pixel arena (the whole arena view) -->
