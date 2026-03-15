@@ -303,13 +303,13 @@
         <span class="rune-icon">🎨</span> COMPANION FORGE
         <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
       </div>
-      <div class="editor-content">
-        <!-- Forge Tabs: Companions vs Spirits -->
-        <div class="forge-tabs">
-          <button class="forge-tab active" data-tab="companions" onclick="switchForgeTab('companions')">🐾 Companions</button>
-          <button class="forge-tab" data-tab="spirits" onclick="switchForgeTab('spirits')">✨ Spirits</button>
-        </div>
+      <!-- Forge Tabs: above editor content -->
+      <div class="forge-tabs">
+        <button class="forge-tab active" data-tab="companions" onclick="switchForgeTab('companions')">🐾 Companions</button>
+        <button class="forge-tab" data-tab="spirits" onclick="switchForgeTab('spirits')">✨ Spirits</button>
+      </div>
 
+      <div class="editor-content">
         <!-- Companions Tab (pixel sprites) -->
         <div id="forge-companions" class="forge-panel">
           <div class="editor-preview-pixel">

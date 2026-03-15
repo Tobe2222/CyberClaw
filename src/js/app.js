@@ -240,13 +240,16 @@ async function initArenaCompanions() {
   // Find party leader (main agent) — becomes the Companion
   const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
   
+  console.log('[Arena] Leader:', leaderId, 'Agents:', agentOrder.length, 'Spirits catalog:', spirits.length);
+
   if (leaderId) {
     const leader = agents[leaderId];
     let pixelId = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(leaderId);
       pixelId = config?.pixelCompanionId;
-    } catch {}
+      console.log('[Arena] Leader config:', JSON.stringify(config));
+    } catch (e) { console.error('[Arena] Leader config error:', e); }
 
     // Default to first pixel companion if none assigned
     if (!pixelId && defaultCompanions.length > 0) {
@@ -265,11 +268,11 @@ async function initArenaCompanions() {
     if (id === leaderId) continue; // skip the companion
     const agent = agents[id];
 
-    // Check if spirit has a saved spirit
+    // Check if spirit has a saved spirit (support legacy cybermonId key)
     let spiritId = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
-      spiritId = config?.spiritId;
+      spiritId = config?.spiritId || config?.cybermonId;
     } catch {}
 
     // Auto-assign a spirit if none saved
@@ -277,9 +280,13 @@ async function initArenaCompanions() {
       spiritId = spirits[spiritIdx % spirits.length].id;
     }
 
+    console.log(`[Arena] Spirit ${id}: spiritId=${spiritId}`);
     if (spiritId) {
       agent._spiritId = spiritId;
-      await pixelArena.addSpirit(id, spiritId, agent.name);
+      try {
+        await pixelArena.addSpirit(id, spiritId, agent.name);
+        console.log(`[Arena] Added spirit ${agent.name} (${spiritId})`);
+      } catch (e) { console.error(`[Arena] Failed to add spirit ${id}:`, e); }
     }
     spiritIdx++;
   }
@@ -1243,9 +1250,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('No companions found');
   }
 
-  // Pre-load Cybermon catalog for 3D arena
-  try { await loadCybermonCatalog(); } catch(e) { console.warn('Catalog load failed:', e); }
-
   buildCarousel();
   updateSystemInfo();
 
@@ -1260,9 +1264,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch {}
 
   // Right panel shows focused companion
-  if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]);
+  try { if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]); } catch (e) { console.error('[Boot] Inspect init failed:', e); }
 
-  initMainTerminal();
+  try { initMainTerminal(); } catch (e) { console.error('[Boot] Terminal init failed:', e); }
 
   // Chat input Enter key
   document.getElementById('chat-input').addEventListener('keydown', e => {
@@ -1271,6 +1275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Boot messages in chat
   const msgs = document.getElementById('chat-messages');
+  console.log('[Chat] chat-messages element:', msgs ? 'found' : 'NOT FOUND');
   const bootMsgs = [
     { d: 400,  t: `> CyberClaw v${APP_VERSION} initializing...` },
   ];
