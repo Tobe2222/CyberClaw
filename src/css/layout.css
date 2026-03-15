@@ -237,14 +237,9 @@
   background: rgba(255,107,53,0.15); border-color: var(--cyan-dim);
 }
 
-/* Arena fullscreen mode — main takes full width */
-main.arena-fullscreen {
-  position: absolute;
-  top: 32px; /* below titlebar */
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
+/* Arena expanded mode — single column, main fills everything */
+#app.arena-expanded {
+  grid-template-columns: 1fr;
 }
 
 /* === CAROUSEL (legacy, kept for compatibility) === */

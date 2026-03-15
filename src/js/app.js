@@ -386,22 +386,20 @@ window.closeBgSelector = function(e) {
 let arenaExpanded = false;
 window.toggleArenaExpand = function() {
   arenaExpanded = !arenaExpanded;
+  const app = document.getElementById('app');
   const left = document.getElementById('panel-left');
   const right = document.getElementById('panel-right');
-  const main = document.querySelector('main');
   const btn = document.getElementById('arena-expand-btn');
 
   if (arenaExpanded) {
+    app.classList.add('arena-expanded');
     left.style.display = 'none';
     right.style.display = 'none';
-    main.classList.add('arena-fullscreen');
-    btn.textContent = '⛶';
     btn.title = 'Collapse arena';
   } else {
+    app.classList.remove('arena-expanded');
     left.style.display = '';
     right.style.display = '';
-    main.classList.remove('arena-fullscreen');
-    btn.textContent = '⛶';
     btn.title = 'Expand arena';
   }
 
