@@ -38,40 +38,28 @@
   </div>
   <div id="arena"></div>
 
+  <!-- Set assets dir before loading scripts (they check window._assetsDir) -->
+  <script>
+    window._assetsDir = require('path').join(__dirname, 'assets');
+  </script>
+  <script src="js/pixel-sprite.js"></script>
+  <script src="js/pixel-arena.js"></script>
   <script>
     const path = require('path');
-    const srcDir = path.join(__dirname);
 
-    // pixel-sprite.js uses __dirname to find assets.
-    // When loaded via <script> in index.html, __dirname = src/
-    // When loaded via require(), __dirname = src/js/ (wrong for asset paths)
-    // So we load them via <script> tag injection to keep __dirname = src/
-    function loadScript(src) {
-      return new Promise((resolve) => {
-        const s = document.createElement('script');
-        s.src = `file://${src}`;
-        s.onload = resolve;
-        s.onerror = resolve;
-        document.head.appendChild(s);
-      });
-    }
+    // Parse state from query string
+    const urlParams = new URLSearchParams(window.location.search);
+    const state = JSON.parse(decodeURIComponent(urlParams.get('state') || '{}'));
 
+    // Create arena
+    const arena = new PixelArena(document.getElementById('arena'));
+
+    // Apply background + horizon
+    if (state.bgPath) arena.setBackground(state.bgPath);
+    if (state.horizonLine) arena.horizonLine = state.horizonLine;
+
+    // Build companion + spirits from state
     (async () => {
-      await loadScript(path.join(srcDir, 'js', 'pixel-sprite.js'));
-      await loadScript(path.join(srcDir, 'js', 'pixel-arena.js'));
-
-      // Parse state from query string
-      const urlParams = new URLSearchParams(window.location.search);
-      const state = JSON.parse(decodeURIComponent(urlParams.get('state') || '{}'));
-
-      // Create arena
-      const arena = new PixelArena(document.getElementById('arena'));
-
-      // Apply background + horizon
-      if (state.bgPath) arena.setBackground(state.bgPath);
-      if (state.horizonLine) arena.horizonLine = state.horizonLine;
-
-      // Build companion + spirits from state
       if (state.companionId) {
         await arena.setCompanion(state.companionAgentId, state.companionId, state.companionName);
       }

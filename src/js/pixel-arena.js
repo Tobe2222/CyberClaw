@@ -124,7 +124,8 @@ class PixelArena {
     if (!compData) return;
 
     // Load sprite images
-    const basePath = _path.join(__dirname, '..', 'assets', 'pixel-companions', compData.folder);
+    const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
+    const basePath = _path.join(assetsDir, 'pixel-companions', compData.folder);
     const images = {};
 
     for (const [animName, animData] of Object.entries(compData.animations)) {
@@ -165,7 +166,8 @@ class PixelArena {
     if (this.spirits.find(s => s.id === agentId)) return;
 
     // Load spirit PNG
-    const imgPath = _path.join(__dirname, '..', 'assets', 'spirits', `${spiritId}.png`);
+    const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
+    const imgPath = _path.join(assetsDir, 'spirits', `${spiritId}.png`);
     let img = null;
     try {
       img = new Image();
