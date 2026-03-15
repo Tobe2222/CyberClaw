@@ -809,14 +809,19 @@
 }
 .modal-overlay.hidden { display: none; }
 
-.modal-panel.companion-editor {
+.modal-panel.companion-editor,
+.modal-panel.spirit-editor {
   background: var(--bg-panel);
   border: 2px solid var(--accent);
   border-radius: 12px;
-  width: 750px;
+  width: 550px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 0 40px rgba(255,107,53,0.3), 0 0 80px rgba(255,107,53,0.1);
+}
+.modal-panel.spirit-editor {
+  border-color: #00aaff;
+  box-shadow: 0 0 40px rgba(0,170,255,0.2);
 }
 
 .modal-header {
@@ -1551,18 +1556,55 @@
   font-family: var(--font-mono);
 }
 
-/* ----- Forge Tabs (Companions / Spirits) ----- */
-.forge-tabs {
-  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+/* Companion Forge layout */
+.forge-companion-layout { display: flex; flex-direction: column; }
+
+.forge-equip-area {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 12px;
 }
-.forge-tab {
-  flex: 1; padding: 10px 14px; border: none; background: rgba(255,255,255,0.03);
-  color: var(--text-secondary); font-size: 12px; font-family: var(--font-ui);
-  cursor: pointer; text-align: center; transition: all 0.2s;
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
+
+.equip-column { display: flex; flex-direction: column; gap: 8px; }
+
+.equip-slot {
+  width: 56px; height: 56px; border: 2px solid var(--border);
+  border-radius: 8px; background: rgba(0,0,0,0.4);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s;
 }
-.forge-tab:hover { background: rgba(255,255,255,0.08); }
-.forge-tab.active { background: rgba(255,153,0,0.1); color: var(--orange); border-bottom: 2px solid var(--orange); }
+.equip-slot:hover { border-color: var(--accent); background: rgba(255,153,0,0.05); }
+.equip-slot .equip-icon { font-size: 18px; }
+.equip-slot .equip-label {
+  font-size: 7px; color: var(--text-muted); font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;
+}
+
+.forge-companion-preview {
+  position: relative; width: 180px; height: 180px;
+  border: 2px solid var(--border-dark); border-radius: 10px;
+  background: rgba(0,0,0,0.3); overflow: hidden;
+}
+#forge-companion-viewer {
+  width: 100%; height: 100%;
+}
+#forge-companion-viewer canvas {
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
+
+.forge-change-btn {
+  position: absolute; top: 6px; left: 6px; z-index: 10;
+  background: rgba(0,0,0,0.7); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 9px; padding: 2px 8px;
+  border-radius: 4px; cursor: pointer; font-family: var(--font-mono);
+}
+.forge-change-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.companion-picker {
+  border-top: 1px solid var(--border-dark);
+  padding: 8px; max-height: 160px; overflow-y: auto;
+}
+.companion-picker.hidden { display: none; }
+
 .forge-panel.hidden { display: none; }
 
 /* ----- Spirit Grid ----- */

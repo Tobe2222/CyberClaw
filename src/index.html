@@ -18,7 +18,7 @@
       <span class="titlebar-title">CyberClaw</span>
       <button id="update-check-btn" class="titlebar-update-btn" onclick="checkForUpdate()" title="Click to check for updates">
         <span id="update-label"></span>
-        <span id="update-icon"></span>
+        <span id="update-icon">🔄</span>
       </button>
     </div>
     <div class="titlebar-controls">
@@ -158,31 +158,27 @@
     <!-- ========== RIGHT: COMPANION / INSPECT ========== -->
     <aside id="panel-right" class="panel">
       <div id="inspect-panel">
-        <!-- Name + type header (centered) -->
-        <div id="inspect-header-block">
-          <div id="inspect-header-row">
-            <span id="inspect-name" class="legendary-text">Codesuu</span>
-            <span id="inspect-type-label" class="inspect-type-badge">Companion</span>
-          </div>
-          <div class="inspect-status" id="inspect-status">
-            <span class="status-dot online"></span> Online
-          </div>
-        </div>
-
         <!-- Live camera view of character on arena -->
         <div id="inspect-viewer">
           <canvas id="inspect-camera" width="180" height="120"></canvas>
         </div>
 
-        <!-- Status line: Class -->
-        <div id="inspect-status-line">
-          <span id="inspect-class">Code Architect</span>
+        <!-- Name + type -->
+        <div id="inspect-header-block">
+          <div id="inspect-name" class="legendary-text">Codesuu</div>
+          <div id="inspect-type-label" class="inspect-type-badge">Companion</div>
+          <div class="inspect-status" id="inspect-status">
+            <span class="status-dot online"></span> Online
+          </div>
         </div>
         <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
+        <div id="inspect-status-line" style="display:none">
+          <span id="inspect-class">Code Architect</span>
+        </div>
 
-        <!-- Level + Bars -->
-        <div id="inspect-bars">
-          <div id="inspect-level" class="inspect-level" style="text-align:center;margin-bottom:4px">Lv.1</div>
+        <!-- Health & Mana -->
+        <div class="inspect-section">
+          <div class="section-title">Vitals</div>
           <div class="stat-bar-lg">
             <span class="stat-label-lg">HP</span>
             <div class="bar-track-lg"><div class="bar-fill hp" id="inspect-hp" style="width:100%"></div></div>
@@ -193,6 +189,12 @@
             <div class="bar-track-lg"><div class="bar-fill mp" id="inspect-mp" style="width:85%"></div></div>
             <span class="stat-val-lg" id="inspect-mp-val">85/100</span>
           </div>
+        </div>
+
+        <!-- Level & XP -->
+        <div class="inspect-section">
+          <div class="section-title">Level</div>
+          <div id="inspect-level" class="inspect-level" style="text-align:center;margin-bottom:4px">Lv.1</div>
           <div class="stat-bar-lg">
             <span class="stat-label-lg">XP</span>
             <div class="bar-track-lg"><div class="bar-fill xp" id="inspect-xp" style="width:30%"></div></div>
@@ -258,44 +260,97 @@
   <!-- Companion Sprite Generator -->
   <!-- Cybermon 3D viewer loaded via require() in app.js -->
 
-  <!-- Companion Editor Modal -->
+  <!-- Companion Forge Modal -->
   <div id="companion-editor-overlay" class="modal-overlay hidden" onclick="closeCompanionEditor(event)">
     <div class="modal-panel companion-editor" onclick="event.stopPropagation()">
       <div class="modal-header">
-        <span class="rune-icon">🎨</span> COMPANION FORGE
+        <span class="rune-icon">🐾</span> COMPANION FORGE
         <button class="modal-close" onclick="closeCompanionEditor()">✕</button>
       </div>
-      <!-- Forge Tabs: above editor content -->
-      <div class="forge-tabs">
-        <button class="forge-tab active" data-tab="companions" onclick="switchForgeTab('companions')">🐾 Companions</button>
-        <button class="forge-tab" data-tab="spirits" onclick="switchForgeTab('spirits')">✨ Spirits</button>
-      </div>
-
-      <div class="editor-content">
-        <!-- Name field on top -->
+      <div class="editor-content forge-companion-layout">
+        <!-- Name on top -->
         <div class="editor-name-row">
-          <input type="text" id="editor-name" class="editor-name-input" placeholder="Name" />
+          <input type="text" id="editor-name" class="editor-name-input" placeholder="Companion Name" />
         </div>
 
-        <!-- Companions Tab (pixel sprites) -->
-        <div id="forge-companions" class="forge-panel">
+        <!-- Equipment + Companion viewer -->
+        <div class="forge-equip-area">
+          <!-- Left equipment slots -->
+          <div class="equip-column equip-left">
+            <div class="equip-slot" data-slot="head" title="Head">
+              <span class="equip-icon">🪖</span>
+              <span class="equip-label">Head</span>
+            </div>
+            <div class="equip-slot" data-slot="neck" title="Neck">
+              <span class="equip-icon">📿</span>
+              <span class="equip-label">Neck</span>
+            </div>
+            <div class="equip-slot" data-slot="weapon" title="Weapon">
+              <span class="equip-icon">⚔️</span>
+              <span class="equip-label">Weapon</span>
+            </div>
+          </div>
+
+          <!-- Center: companion preview -->
+          <div class="forge-companion-preview">
+            <button class="forge-change-btn" onclick="toggleCompanionPicker()">🔄 Change</button>
+            <div id="forge-companion-viewer"></div>
+          </div>
+
+          <!-- Right equipment slots -->
+          <div class="equip-column equip-right">
+            <div class="equip-slot" data-slot="ring1" title="Ring">
+              <span class="equip-icon">💍</span>
+              <span class="equip-label">Ring</span>
+            </div>
+            <div class="equip-slot" data-slot="ring2" title="Ring">
+              <span class="equip-icon">💍</span>
+              <span class="equip-label">Ring</span>
+            </div>
+            <div class="equip-slot" data-slot="trinket" title="Trinket">
+              <span class="equip-icon">🔮</span>
+              <span class="equip-label">Trinket</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Companion picker (hidden by default) -->
+        <div id="companion-picker" class="companion-picker hidden">
           <div id="pixel-gallery" class="pixel-companion-grid"></div>
-        </div>
-
-        <!-- Spirits Tab (spirit PNGs) -->
-        <div id="forge-spirits" class="forge-panel hidden">
-          <div id="spirit-gallery" class="spirit-grid"></div>
-        </div>
-
-        <!-- Skill Focus -->
-        <div class="editor-field" style="padding: 8px 12px;">
-          <label>Skill Focus</label>
-          <div id="editor-skill-checkboxes" class="skill-checkbox-grid"></div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-sm btn-muted" onclick="closeCompanionEditor()">Cancel</button>
         <button class="btn-sm btn-primary" onclick="saveCompanion()">⚔️ Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spirit Forge Modal -->
+  <div id="spirit-editor-overlay" class="modal-overlay hidden" onclick="closeSpiritEditor(event)">
+    <div class="modal-panel spirit-editor" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="rune-icon">✨</span> SPIRIT FORGE
+        <button class="modal-close" onclick="closeSpiritEditor()">✕</button>
+      </div>
+      <div class="editor-content">
+        <!-- Name on top -->
+        <div class="editor-name-row">
+          <input type="text" id="spirit-editor-name" class="editor-name-input" placeholder="Spirit Name" />
+        </div>
+
+        <!-- Spirit gallery -->
+        <div id="spirit-gallery" class="spirit-grid"></div>
+
+        <!-- Skill Focus -->
+        <div class="editor-field" style="padding: 8px 12px;">
+          <label>Skill Focus</label>
+          <div id="spirit-skill-checkboxes" class="skill-checkbox-grid"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-sm btn-muted" onclick="closeSpiritEditor()">Cancel</button>
+        <button class="btn-sm btn-primary" onclick="saveSpirit()">✨ Save</button>
       </div>
     </div>
   </div>
