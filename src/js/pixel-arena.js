@@ -494,6 +494,7 @@ class PixelArena {
       companionId: this.companion?.pixelCompanionId,
       companionName: this.companion?.name,
       companionAgentId: this.companion?.id,
+      horizonLine: this.horizonLine,
       spirits: this.spirits.map(s => ({
         id: s.id,
         name: s.name,

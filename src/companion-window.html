@@ -54,6 +54,10 @@
     // Create arena
     const arena = new PixelArena(document.getElementById('arena'));
 
+    // Apply background + horizon
+    if (state.bgPath) arena.setBackground(state.bgPath);
+    if (state.horizonLine) arena.horizonLine = state.horizonLine;
+
     // Build companion + spirits from state
     (async () => {
       if (state.companionId) {

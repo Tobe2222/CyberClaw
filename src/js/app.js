@@ -219,6 +219,15 @@ function buildCarousel() {
   // Restore background
   applyBackground(currentBgId);
 
+  // Wire click-to-select
+  pixelArena.onSelect = (agentId) => {
+    const idx = agentOrder.indexOf(agentId);
+    if (idx >= 0) {
+      focusIndex = idx;
+      updateCarousel();
+    }
+  };
+
   // Populate companion + spirits
   initArenaCompanions();
   updateCarousel();
@@ -309,9 +318,8 @@ function startCameraLoop() {
   if (!cam) return;
   function renderCamera() {
     if (pixelArena && window._inspectAgentId) {
-      // Companions are bigger, slightly more zoom
       const agent = agents[window._inspectAgentId];
-      const zoom = agent && agent.isMain ? 2.2 : 2.5;
+      const zoom = agent && agent.isMain ? 1.5 : 2;
       pixelArena.renderCameraView(cam, window._inspectAgentId, zoom);
     }
     requestAnimationFrame(renderCamera);
@@ -378,6 +386,11 @@ window.closeBgSelector = function(e) {
 window.popOutArena = function() {
   if (!pixelArena) return;
   const state = pixelArena.getState();
+  // Include background info
+  const bg = BACKGROUNDS.find(b => b.id === currentBgId);
+  if (bg && bg.file) {
+    state.bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+  }
   cyberclaw.arena.popout(state);
 };
 
@@ -434,6 +447,10 @@ function updateInspect(agentId) {
 
   // Camera view — track the currently inspected agent ID for the render loop
   window._inspectAgentId = agentId;
+
+  // Hide equipment for spirits
+  const equipSection = document.getElementById('inspect-equipment-section');
+  if (equipSection) equipSection.style.display = agent.isMain ? '' : 'none';
 
   document.getElementById('inspect-name').textContent = agent.name;
   document.getElementById('inspect-name').className = `${agent.rarity}-text`;
@@ -1247,10 +1264,8 @@ setInterval(() => {
 // Resize carousel on window resize
 window.addEventListener('resize', () => { requestAnimationFrame(updateCarousel); });
 
-// Update system section with live companion count
 function updateSystemInfo() {
-  const el = document.getElementById('stat-companions');
-  if (el) el.textContent = agentOrder.length.toString();
+  // no-op — system info populated elsewhere
 }
 
 // Check Anthropic rate limit via gateway
@@ -1305,17 +1320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     buildCarousel();
     debugLog('buildCarousel done');
-    // Wire up click-to-select on arena entities
-    if (pixelArena) {
-      pixelArena.onSelect = (agentId) => {
-        const idx = agentOrder.indexOf(agentId);
-        if (idx >= 0) {
-          focusIndex = idx;
-          updateCarousel();
-        }
-      };
-    }
-    // Load saved background
+    // Load saved background (first boot only — subsequent rebuilds use applyBackground in buildCarousel)
     loadSavedBackground();
     // Start camera render loop for inspect panel
     startCameraLoop();
