@@ -1,7 +1,7 @@
 {
   "name": "cyberclaw",
   "version": "1.0.4",
-  "description": "CyberClaw — RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
+  "description": "CyberClaw \u2014 RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -59,11 +59,6 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "Tobe2222",
-      "repo": "CyberClaw"
     }
   },
   "devDependencies": {

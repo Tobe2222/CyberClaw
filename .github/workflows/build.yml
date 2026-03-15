@@ -10,24 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    outputs:
-      upload_url: ${{ steps.create.outputs.upload_url }}
-    steps:
-      - uses: softprops/action-gh-release@v2
-        id: create
-        with:
-          draft: true
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-linux:
     runs-on: ubuntu-latest
-    needs: create-release
-    if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,6 +25,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           files: |
             dist/*.AppImage
             dist/*.deb
@@ -49,8 +34,6 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    needs: create-release
-    if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -64,14 +47,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*Setup*.exe
+          draft: true
+          files: |
+            dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-mac:
     runs-on: macos-latest
-    needs: create-release
-    if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -85,6 +68,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          draft: true
+          files: |
+            dist/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
