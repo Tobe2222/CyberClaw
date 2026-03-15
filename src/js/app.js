@@ -368,7 +368,12 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  document.getElementById('right-header-text').textContent = agent.isMain ? 'COMPANION' : 'SPIRIT';
+  // Set type badge
+  const typeBadge = document.getElementById('inspect-type-label');
+  if (typeBadge) {
+    typeBadge.textContent = agent.isMain ? 'Companion' : 'Spirit';
+    typeBadge.className = `inspect-type-badge ${agent.isMain ? '' : 'spirit'}`;
+  }
 
   // Portrait — use pixel companion, spirit 2D render, or avatar
   const img = document.getElementById('inspect-avatar-img');
@@ -1280,11 +1285,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     bootMsgs.push({
       d: 1500,
-      t: '> Ready. Chat with your companion below.'
+      t: '> Ready. Chat with your companion below. ⚔️'
     });
   } else {
-    bootMsgs.push({ d: 900, t: '> No companion found. Create one to get started!' });
+    bootMsgs.push({ d: 900, t: '> No companion found. Run OpenClaw Doctor or create one to get started!' });
   }
+
+  // Always show a system ready message
+  bootMsgs.push({
+    d: bootMsgs.length > 0 ? bootMsgs[bootMsgs.length - 1].d + 500 : 500,
+    t: `> CyberClaw v${APP_VERSION} online.`
+  });
 
   bootMsgs.forEach(({ d, t }) => {
     setTimeout(() => {
@@ -1336,10 +1347,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ---------------------------------------------------------------------------
 const APP_VERSION = require('../package.json').version;
 
-// Set version label on load
+// Set version labels on load
 document.addEventListener('DOMContentLoaded', () => {
   const label = document.getElementById('update-label');
   if (label) label.textContent = `v${APP_VERSION}`;
+  const titleVer = document.getElementById('titlebar-version');
+  if (titleVer) titleVer.textContent = `v${APP_VERSION}`;
 });
 
 window.checkForUpdate = async function() {

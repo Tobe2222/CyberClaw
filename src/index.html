@@ -16,7 +16,7 @@
     <div class="titlebar-drag">
       <span class="titlebar-icon">⚔️</span>
       <span class="titlebar-title">CyberClaw</span>
-      <span class="titlebar-version" id="titlebar-version">v1.0.3</span>
+      <span class="titlebar-version" id="titlebar-version"></span>
     </div>
     <div class="titlebar-controls">
       <button class="tb-btn tb-min" onclick="cyberclaw.window.minimize()">─</button>
@@ -96,7 +96,7 @@
           </a>
           <button id="update-check-btn" class="update-btn" onclick="checkForUpdate()" title="Check for updates">
             <span id="update-icon">🔄</span>
-            <span id="update-label">v1.0.3</span>
+            <span id="update-label"></span>
           </button>
         </div>
         <div id="arena-bg">
@@ -191,25 +191,32 @@
 
     <!-- ========== RIGHT: COMPANION / INSPECT ========== -->
     <aside id="panel-right" class="panel">
-      <div class="panel-header">
-        <span class="rune-icon">👑</span> <span id="right-header-text">COMPANION</span>
-      </div>
-
       <div id="inspect-panel">
-        <!-- Big portrait -->
-        <div id="inspect-portrait">
-          <div class="inspect-avatar-border legendary" id="inspect-border">
-            <img src="assets/avatars/codesuu.png" alt="Agent" id="inspect-avatar-img">
-            <div class="inspect-emoji" id="inspect-emoji" style="display:none">🤖</div>
+        <!-- Name + type header (centered) -->
+        <div id="inspect-header-block">
+          <div id="inspect-header-row">
+            <span id="inspect-name" class="legendary-text">Codesuu</span>
+            <span id="inspect-type-label" class="inspect-type-badge">Companion</span>
           </div>
           <div class="inspect-status" id="inspect-status">
             <span class="status-dot online"></span> Online
           </div>
-          <div id="inspect-name" class="legendary-text">Codesuu</div>
-          <span id="inspect-level" class="inspect-level">Lv.1</span>
-          <div id="inspect-class">Code Architect</div>
-          <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
         </div>
+
+        <!-- Character viewer (zoomed sprite/PNG preview) -->
+        <div id="inspect-viewer">
+          <div class="inspect-avatar-border legendary" id="inspect-border">
+            <img src="assets/avatars/codesuu.png" alt="Agent" id="inspect-avatar-img">
+            <div class="inspect-emoji" id="inspect-emoji" style="display:none">🤖</div>
+          </div>
+        </div>
+
+        <!-- Status line: Level, Class -->
+        <div id="inspect-status-line">
+          <span id="inspect-level" class="inspect-level">Lv.1</span>
+          <span id="inspect-class">Code Architect</span>
+        </div>
+        <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
 
         <!-- Bars -->
         <div id="inspect-bars">
