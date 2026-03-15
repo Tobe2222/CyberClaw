@@ -383,15 +383,32 @@ window.closeBgSelector = function(e) {
 };
 
 // Pop-out companion window via Electron BrowserWindow
-window.popOutArena = function() {
-  if (!pixelArena) return;
-  const state = pixelArena.getState();
-  // Include background info
-  const bg = BACKGROUNDS.find(b => b.id === currentBgId);
-  if (bg && bg.file) {
-    state.bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+let arenaExpanded = false;
+window.toggleArenaExpand = function() {
+  arenaExpanded = !arenaExpanded;
+  const left = document.getElementById('panel-left');
+  const right = document.getElementById('panel-right');
+  const main = document.querySelector('main');
+  const btn = document.getElementById('arena-expand-btn');
+
+  if (arenaExpanded) {
+    left.style.display = 'none';
+    right.style.display = 'none';
+    main.classList.add('arena-fullscreen');
+    btn.textContent = '⛶';
+    btn.title = 'Collapse arena';
+  } else {
+    left.style.display = '';
+    right.style.display = '';
+    main.classList.remove('arena-fullscreen');
+    btn.textContent = '⛶';
+    btn.title = 'Expand arena';
   }
-  cyberclaw.arena.popout(state);
+
+  // Resize the arena canvas to fill available space
+  if (pixelArena) {
+    setTimeout(() => pixelArena.resize(), 50);
+  }
 };
 
 function updateCarousel() {

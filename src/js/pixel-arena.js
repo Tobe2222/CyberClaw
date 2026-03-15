@@ -85,6 +85,8 @@ class PixelArena {
     this.height = h;
   }
 
+  resize() { this._resize(); }
+
   _initResize() {
     this.resizeObs = new ResizeObserver(() => {
       this._resize();
