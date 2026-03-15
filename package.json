@@ -42,11 +42,10 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "src/assets/icons/cyberclaw.icns"
+      "icon": "src/assets/icons/cyberclaw.png"
     },
     "win": {
       "target": [
