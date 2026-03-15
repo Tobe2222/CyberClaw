@@ -216,6 +216,9 @@ function buildCarousel() {
   // Create shared pixel arena
   pixelArena = new PixelArena(container);
 
+  // Restore background
+  applyBackground(currentBgId);
+
   // Populate companion + spirits
   initArenaCompanions();
   updateCarousel();
@@ -306,7 +309,10 @@ function startCameraLoop() {
   if (!cam) return;
   function renderCamera() {
     if (pixelArena && window._inspectAgentId) {
-      pixelArena.renderCameraView(cam, window._inspectAgentId, 2.5);
+      // Companions are bigger, zoom in more
+      const agent = agents[window._inspectAgentId];
+      const zoom = agent && agent.isMain ? 4 : 3.5;
+      pixelArena.renderCameraView(cam, window._inspectAgentId, zoom);
     }
     requestAnimationFrame(renderCamera);
   }
@@ -317,26 +323,26 @@ function startCameraLoop() {
 // Background selector
 // ---------------------------------------------------------------------------
 const BACKGROUNDS = [
-  { id: 'none', label: 'Default (Dark)', file: null },
-  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png' },
-  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png' },
-  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png' },
+  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.55 },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.35 },
+  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.50 },
 ];
 
-let currentBgId = 'none';
+let currentBgId = 'forest'; // default
+
+function applyBackground(bgId) {
+  const bg = BACKGROUNDS.find(b => b.id === bgId);
+  if (!bg || !pixelArena) return;
+  currentBgId = bgId;
+  const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+  pixelArena.setBackground(bgPath);
+  pixelArena.horizonLine = bg.horizon || 0.5;
+  localStorage.setItem('cyberclaw-arena-bg', bgId);
+}
 
 function loadSavedBackground() {
-  try {
-    const saved = localStorage.getItem('cyberclaw-arena-bg');
-    if (saved) {
-      currentBgId = saved;
-      const bg = BACKGROUNDS.find(b => b.id === saved);
-      if (bg && bg.file && pixelArena) {
-        const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
-        pixelArena.setBackground(bgPath);
-      }
-    }
-  } catch {}
+  const saved = localStorage.getItem('cyberclaw-arena-bg') || currentBgId;
+  applyBackground(saved);
 }
 
 window.openBgSelector = function() {
@@ -350,23 +356,11 @@ window.openBgSelector = function() {
     const card = document.createElement('div');
     card.className = `bg-card${bg.id === currentBgId ? ' selected' : ''}`;
     
-    if (bg.file) {
-      const imgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
-      card.innerHTML = `<img src="file://${imgPath}" alt="${bg.label}"><div class="bg-card-label">${bg.label}</div>`;
-    } else {
-      card.innerHTML = `<div class="bg-card-none">🌑 ${bg.label}</div>`;
-    }
+    const imgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+    card.innerHTML = `<img src="file://${imgPath}" alt="${bg.label}"><div class="bg-card-label">${bg.label}</div>`;
     
     card.addEventListener('click', () => {
-      currentBgId = bg.id;
-      localStorage.setItem('cyberclaw-arena-bg', bg.id);
-      if (bg.file) {
-        const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
-        pixelArena.setBackground(bgPath);
-      } else {
-        pixelArena.setBackground(null);
-      }
-      // Update selected state
+      applyBackground(bg.id);
       grid.querySelectorAll('.bg-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
     });
@@ -1508,7 +1502,7 @@ function renderPixelGallery() {
 
     // Create a mini sprite preview
     const previewContainer = document.createElement('div');
-    previewContainer.style.cssText = 'width:96px;height:96px;margin:0 auto;';
+    previewContainer.style.cssText = 'width:64px;height:64px;margin:0 auto;';
 
     const label = document.createElement('div');
     label.className = 'pixel-label';
@@ -1519,7 +1513,7 @@ function renderPixelGallery() {
     grid.appendChild(card);
 
     // Init a small PixelSprite for preview
-    const sprite = new PixelSprite(previewContainer, { scale: 3, direction: 0, animation: 'idle' });
+    const sprite = new PixelSprite(previewContainer, { scale: 2, direction: 0, animation: 'idle' });
     sprite.show(comp.id);
   });
 }
@@ -1589,30 +1583,13 @@ window.selectPixelCompanion = function(id) {
   selectedPixelCompanion = id;
   selectedSpiritId = null; // clear spirit selection
 
-  // Update gallery selection
+  // Update gallery selection — just toggle glow on cards
+  const catalog = loadPixelCatalog();
   document.querySelectorAll('.pixel-companion-card').forEach(card => {
     const label = card.querySelector('.pixel-label');
-    card.classList.toggle('selected', label && label.textContent === loadPixelCatalog().companions.find(c => c.id === id)?.name);
+    const compName = catalog.companions.find(c => c.id === id)?.name;
+    card.classList.toggle('selected', label && label.textContent === compName);
   });
-
-  // Show large preview
-  const previewEl = document.getElementById('editor-pixel-viewer');
-  if (previewEl) {
-    if (editorPixelSprite) editorPixelSprite.dispose();
-    editorPixelSprite = new PixelSprite(previewEl, { scale: 6, direction: 0, animation: 'idle' });
-    editorPixelSprite.show(id);
-
-    // Cycle through animations for preview
-    let animIndex = 0;
-    const anims = Object.keys(loadPixelCatalog().companions.find(c => c.id === id)?.animations || {});
-    if (previewEl._animInterval) clearInterval(previewEl._animInterval);
-    previewEl._animInterval = setInterval(() => {
-      if (editorPixelSprite && anims.length) {
-        animIndex = (animIndex + 1) % anims.length;
-        editorPixelSprite.setAnimation(anims[animIndex]);
-      }
-    }, 2000);
-  }
 };
 
 // ---------------------------------------------------------------------------

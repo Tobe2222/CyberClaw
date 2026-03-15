@@ -564,3 +564,13 @@
 .skill-slot-sm { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
 .skill-icon-sm { width: 22px; height: 22px; background: var(--bg-card); border: 1px solid var(--border-dark); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
 .skill-name-sm { font-size: 10px; color: var(--text-primary); }
+
+/* Edit button in inspect panel */
+.inspect-edit-row { padding: 6px 8px; }
+.inspect-edit-btn {
+  width: 100%; padding: 5px 0; border-radius: 6px; cursor: pointer;
+  background: rgba(255,153,0,0.1); border: 1px solid rgba(255,153,0,0.3);
+  color: var(--orange); font-size: 11px; font-family: var(--font-cyber);
+  letter-spacing: 1px; transition: all 0.2s;
+}
+.inspect-edit-btn:hover { background: rgba(255,153,0,0.2); border-color: var(--orange); }

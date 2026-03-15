@@ -894,6 +894,17 @@
   font-size: 16px; font-family: var(--font-cyber); text-align: center;
   padding: 8px 12px; letter-spacing: 1px;
 }
+.editor-name-row {
+  padding: 10px 12px 4px; text-align: center;
+  border-bottom: 1px solid var(--border-dark);
+}
+.editor-name-input {
+  font-size: 18px; font-family: var(--font-cyber); text-align: center;
+  padding: 6px 16px; letter-spacing: 1px; width: 80%;
+  background: var(--bg-dark); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 6px;
+}
+.editor-name-input:focus { border-color: var(--accent); outline: none; }
 .editor-field input,
 .editor-field select {
   background: var(--bg-dark);
@@ -1505,43 +1516,39 @@
 
 /* ----- Pixel Companion Gallery ----- */
 .pixel-companion-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
-  max-height: 280px;
-  overflow-y: auto;
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center;
+  max-height: 200px; overflow-y: auto;
   padding: 8px;
-  width: 100%;
 }
 .pixel-companion-card {
   border: 2px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
+  padding: 4px;
   cursor: pointer;
   text-align: center;
   transition: all 0.2s;
   background: rgba(0,0,0,0.4);
+  width: 80px;
 }
 .pixel-companion-card:hover {
   border-color: var(--cyan);
-  transform: scale(1.02);
 }
 .pixel-companion-card.selected {
-  border-color: var(--orange);
-  box-shadow: 0 0 12px rgba(255,153,0,0.4);
+  border-color: var(--gold);
+  box-shadow: 0 0 16px rgba(251,191,36,0.5);
+  background: rgba(251,191,36,0.08);
 }
 .pixel-companion-card canvas {
   image-rendering: pixelated;
-  width: 96px;
-  height: 96px;
-  margin: 0 auto;
-  display: block;
+  width: 64px; height: 64px;
+  margin: 0 auto; display: block;
 }
 .pixel-companion-card .pixel-label {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--text);
-  font-family: var(--font-ui);
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 /* ----- Forge Tabs (Companions / Spirits) ----- */

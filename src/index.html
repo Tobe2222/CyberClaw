@@ -112,8 +112,7 @@
         <!-- Background selector (bottom left) -->
         <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
 
-        <!-- Edit button (bottom center) -->
-        <button class="carousel-edit-btn-bottom" onclick="openCompanionEditor()" title="Edit">🎨 Edit</button>
+
       </div>
 
       <!-- Background selector modal -->
@@ -247,6 +246,11 @@
             </div>
           </div>
         </div>
+
+        <!-- Edit button -->
+        <div class="inspect-edit-row">
+          <button class="inspect-edit-btn" onclick="openCompanionEditor()" title="Edit character">🎨 Edit</button>
+        </div>
       </div>
     </aside>
   </div>
@@ -268,14 +272,14 @@
       </div>
 
       <div class="editor-content">
+        <!-- Name field on top -->
+        <div class="editor-name-row">
+          <input type="text" id="editor-name" class="editor-name-input" placeholder="Name" />
+        </div>
+
         <!-- Companions Tab (pixel sprites) -->
         <div id="forge-companions" class="forge-panel">
-          <div class="editor-preview-pixel">
-            <div id="editor-pixel-viewer" class="pixel-preview"></div>
-          </div>
-          <div id="editor-pixel-section">
-            <div id="pixel-gallery" class="pixel-companion-grid"></div>
-          </div>
+          <div id="pixel-gallery" class="pixel-companion-grid"></div>
         </div>
 
         <!-- Spirits Tab (spirit PNGs) -->
@@ -283,18 +287,10 @@
           <div id="spirit-gallery" class="spirit-grid"></div>
         </div>
 
-        <!-- Shared Controls -->
-        <div class="editor-controls">
-          <div class="editor-field">
-            <label>Name</label>
-            <input type="text" id="editor-name" placeholder="Name" />
-          </div>
-
-          <!-- Skill Focus -->
-          <div class="editor-field">
-            <label>Skill Focus</label>
-            <div id="editor-skill-checkboxes" class="skill-checkbox-grid"></div>
-          </div>
+        <!-- Skill Focus -->
+        <div class="editor-field" style="padding: 8px 12px;">
+          <label>Skill Focus</label>
+          <div id="editor-skill-checkboxes" class="skill-checkbox-grid"></div>
         </div>
       </div>
       <div class="modal-footer">

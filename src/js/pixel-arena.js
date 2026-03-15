@@ -30,8 +30,9 @@ class PixelArena {
     this.animId = null;
     this.lastTime = 0;
 
-    // Background image
+    // Background image + horizon
     this.bgImage = null;
+    this.horizonLine = 0.5; // fraction of canvas height — companions stay below this
 
     // Ground (fallback when no bg image)
     this.groundColor = '#1a2a1a';
@@ -144,7 +145,7 @@ class PixelArena {
       data: compData,
       images,
       x: this.width / 2,
-      y: this.height / 2,
+      y: this.height * Math.max(this.horizonLine + 0.1, 0.5),
       vx: 0,
       vy: 0,
       direction: 0,
@@ -177,11 +178,11 @@ class PixelArena {
       return; // skip if image missing
     }
 
-    // Random position near companion (or center)
-    const cx = this.companion ? this.companion.x : this.width / 2;
-    const cy = this.companion ? this.companion.y : this.height / 2;
+    // Random position spread across the arena
+    const cx = this.width * (0.2 + Math.random() * 0.6);
+    const cy = this.height * (0.15 + Math.random() * 0.6);
     const angle = Math.random() * Math.PI * 2;
-    const dist = 80 + Math.random() * 120;
+    const dist = 40 + Math.random() * 60;
 
     this.spirits.push({
       id: agentId,
@@ -255,28 +256,16 @@ class PixelArena {
     comp.x += comp.vx * dt;
     comp.y += comp.vy * dt;
 
-    // Soft bounds — pull back toward center when too far
+    // Bounds — companion stays below horizon line
     const fw = (comp.data.frameSize[0] || 32) * comp.scale;
     const fh = (comp.data.frameSize[1] || 32) * comp.scale;
-    const margin = 40;
-    const centerX = this.width / 2 - fw / 2;
-    const centerY = this.height / 2 - fh / 2;
-    const maxDrift = Math.min(this.width, this.height) * 0.25;
+    const margin = 20;
+    const horizonY = this.height * this.horizonLine;
 
-    const dx = comp.x - centerX;
-    const dy = comp.y - centerY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > maxDrift) {
-      // Gently pull back
-      comp.vx -= (dx / dist) * 0.0001 * dt;
-      comp.vy -= (dy / dist) * 0.0001 * dt;
-    }
-
-    // Hard bounds
+    // Hard bounds — horizon on top, edges on sides
     if (comp.x < margin) { comp.x = margin; comp.vx = Math.abs(comp.vx); comp.direction = 2; }
     if (comp.x > this.width - fw - margin) { comp.x = this.width - fw - margin; comp.vx = -Math.abs(comp.vx); comp.direction = 1; }
-    if (comp.y < margin) { comp.y = margin; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
+    if (comp.y < horizonY) { comp.y = horizonY; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
     if (comp.y > this.height - fh - margin) { comp.y = this.height - fh - margin; comp.vy = -Math.abs(comp.vy); comp.direction = 3; }
   }
 
@@ -314,8 +303,8 @@ class PixelArena {
       const dx = spirit.x - compCenterX;
       const dy = spirit.y - compCenterY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const maxOrbit = 160;
-      const minOrbit = 60;
+      const maxOrbit = 300;
+      const minOrbit = 80;
 
       if (dist > maxOrbit) {
         // Pull back toward companion
