@@ -222,7 +222,9 @@ function buildCarousel() {
 }
 
 async function initArenaCompanions() {
-  if (!pixelArena) return;
+  if (!pixelArena) { debugLog('[Arena] ERROR: No pixelArena!'); return; }
+  debugLog('[Arena] initArenaCompanions called, agents: ' + agentOrder.join(', '));
+  debugLog('[Arena] isMain flags: ' + agentOrder.map(id => `${id}=${agents[id]?.isMain}`).join(', '));
 
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
@@ -240,7 +242,7 @@ async function initArenaCompanions() {
   // Find party leader (main agent) — becomes the Companion
   const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
   
-  console.log('[Arena] Leader:', leaderId, 'Agents:', agentOrder.length, 'Spirits catalog:', spirits.length);
+  debugLog(`[Arena] Leader: ${leaderId}, Agents: ${agentOrder.length}, Spirits catalog: ${spirits.length}`);
 
   if (leaderId) {
     const leader = agents[leaderId];
@@ -248,8 +250,8 @@ async function initArenaCompanions() {
     try {
       const config = await cyberclaw.agents.getSpriteConfig(leaderId);
       pixelId = config?.pixelCompanionId;
-      console.log('[Arena] Leader config:', JSON.stringify(config));
-    } catch (e) { console.error('[Arena] Leader config error:', e); }
+      debugLog('[Arena] Leader config: ' + JSON.stringify(config));
+    } catch (e) { debugLog('[Arena] ERROR: Leader config error:', e); }
 
     // Default to first pixel companion if none assigned
     if (!pixelId && defaultCompanions.length > 0) {
@@ -261,9 +263,9 @@ async function initArenaCompanions() {
       try {
         await pixelArena.setCompanion(leaderId, pixelId, leader.name);
         console.log(`[Arena] Companion set: ${leader.name} (${pixelId})`);
-      } catch (e) { console.error('[Arena] Failed to set companion:', e); }
+      } catch (e) { debugLog('[Arena] ERROR: Failed to set companion:', e); }
     } else {
-      console.warn('[Arena] No pixelId for leader');
+      debugLog('[Arena] WARN: No pixelId for leader');
     }
   }
 
@@ -313,10 +315,7 @@ function updateCarousel() {
   updateInspect(focusedId);
   updateChatTarget();
 
-  // Highlight focused companion in the pixel arena
-  if (pixelArena) {
-    pixelArena.setFocused(focusedId);
-  }
+  // Arena uses companion/spirit model now — no focus cycling needed
 }
 
 window.carouselNext = function() {
@@ -1257,8 +1256,19 @@ async function updateRateLimit() {
   }
 }
 
+// Debug log to file
+const _debugFs = require('fs');
+const _debugPath = require('path');
+const _debugFile = _debugPath.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log');
+function debugLog(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(msg);
+  try { _debugFs.appendFileSync(_debugFile, line); } catch {}
+}
+
 // Boot
 document.addEventListener('DOMContentLoaded', async () => {
+  debugLog('=== CyberClaw Boot ===');
   // Discover agents from OpenClaw
   await loadAgents();
 
@@ -1266,7 +1276,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('No companions found');
   }
 
-  buildCarousel();
+  debugLog(`Agents loaded: ${agentOrder.length} — ${agentOrder.join(', ')}`);
+  try {
+    buildCarousel();
+    debugLog('buildCarousel done');
+  } catch (e) {
+    debugLog('buildCarousel CRASHED: ' + e.message + '\n' + e.stack);
+  }
   updateSystemInfo();
 
   // Populate system info
@@ -1280,18 +1296,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch {}
 
   // Right panel shows focused companion
-  try { if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]); } catch (e) { console.error('[Boot] Inspect init failed:', e); }
+  try { if (agentOrder[focusIndex]) updateInspect(agentOrder[focusIndex]); debugLog('updateInspect done'); } catch (e) { debugLog('[Boot] ERROR Inspect: ' + e.message + '\n' + e.stack); }
 
-  try { initMainTerminal(); } catch (e) { console.error('[Boot] Terminal init failed:', e); }
+  try { initMainTerminal(); debugLog('initMainTerminal done'); } catch (e) { debugLog('[Boot] ERROR Terminal: ' + e.message + '\n' + e.stack); }
 
   // Chat input Enter key
   document.getElementById('chat-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendChat(); }
   });
 
+  debugLog('Reached boot messages section');
   // Boot messages in chat
   const msgs = document.getElementById('chat-messages');
-  console.log('[Chat] chat-messages element:', msgs ? 'found' : 'NOT FOUND');
+  debugLog('[Chat] chat-messages element: ' + (msgs ? 'found' : 'NOT FOUND'));
   const bootMsgs = [
     { d: 400,  t: `> CyberClaw v${APP_VERSION} initializing...` },
   ];
@@ -1577,21 +1594,27 @@ window.openCompanionEditor = function() {
   // Determine if this is the companion (main) or a spirit
   const isCompanion = agent.isMain;
 
-  // Render both galleries
-  renderPixelGallery();
-  renderSpiritGallery();
+  // Show/hide forge tabs based on type — companion can't pick spirits, spirits can't pick companions
+  const companionTab = document.querySelector('.forge-tab[data-tab="companions"]');
+  const spiritTab = document.querySelector('.forge-tab[data-tab="spirits"]');
+  if (companionTab) companionTab.style.display = isCompanion ? '' : 'none';
+  if (spiritTab) spiritTab.style.display = isCompanion ? 'none' : '';
 
-  // Default to correct tab
-  switchForgeTab(isCompanion ? 'companions' : 'spirits');
+  // Render correct gallery only
+  if (isCompanion) {
+    renderPixelGallery();
+    switchForgeTab('companions');
+  } else {
+    renderSpiritGallery();
+    switchForgeTab('spirits');
+  }
 
   // Load saved config — restore selection
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
-    if (config && config.pixelCompanionId) {
+    if (isCompanion && config && config.pixelCompanionId) {
       selectPixelCompanion(config.pixelCompanionId);
-      switchForgeTab('companions');
-    } else if (config && config.spiritId) {
-      selectSpirit(config.spiritId);
-      switchForgeTab('spirits');
+    } else if (!isCompanion && (config?.spiritId || config?.cybermonId)) {
+      selectSpirit(config.spiritId || config.cybermonId);
     }
   });
 
@@ -1615,6 +1638,7 @@ window.closeCompanionEditor = function(e) {
 
 window.saveCompanion = async function() {
   if (!editorAgentId) return;
+  try {
   const agent = agents[editorAgentId];
 
   // Gather name
@@ -1678,6 +1702,10 @@ window.saveCompanion = async function() {
   // Refresh UI
   buildCarousel();
   closeCompanionEditor();
+  } catch (e) {
+    debugLog('[Save] ERROR: ' + e.message + '\n' + e.stack);
+    alert('Save failed: ' + e.message);
+  }
 };
 
 // (populateSelect removed — pixel sprites replaced by Cybermon gallery)

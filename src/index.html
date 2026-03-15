@@ -211,15 +211,15 @@
           </div>
         </div>
 
-        <!-- Status line: Level, Class -->
+        <!-- Status line: Class -->
         <div id="inspect-status-line">
-          <span id="inspect-level" class="inspect-level">Lv.1</span>
           <span id="inspect-class">Code Architect</span>
         </div>
         <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
 
-        <!-- Bars -->
+        <!-- Level + Bars -->
         <div id="inspect-bars">
+          <div id="inspect-level" class="inspect-level" style="text-align:center;margin-bottom:4px">Lv.1</div>
           <div class="stat-bar-lg">
             <span class="stat-label-lg">HP</span>
             <div class="bar-track-lg"><div class="bar-fill hp" id="inspect-hp" style="width:100%"></div></div>
@@ -235,12 +235,6 @@
             <div class="bar-track-lg"><div class="bar-fill xp" id="inspect-xp" style="width:30%"></div></div>
             <span class="stat-val-lg" id="inspect-xp-val">1,250/4,000</span>
           </div>
-        </div>
-
-        <!-- Focuses -->
-        <div class="inspect-section" id="inspect-focuses-section">
-          <div class="section-title">Focuses</div>
-          <div id="inspect-focuses"></div>
         </div>
 
         <!-- Skills -->
@@ -347,7 +341,15 @@
   </div>
 
   <script src="js/pixel-sprite.js"></script>
-  <script src="js/pixel-arena.js"></script>
+  <script>
+    // Load pixel-arena via require to avoid silent script load failures
+    try {
+      require('./js/pixel-arena.js');
+    } catch(e) {
+      console.error('Failed to load pixel-arena.js:', e);
+      try { require('fs').appendFileSync(require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-arena.js REQUIRE ERROR: ${e.message}\n${e.stack}\n`); } catch {}
+    }
+  </script>
   <script src="js/app.js"></script>
 </body>
 </html>

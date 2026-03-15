@@ -6,6 +6,7 @@
 const _path = require('path');
 const _fs = require('fs');
 
+try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-sprite.js loaded OK\n`); } catch {}
 let pixelCatalog = null;
 
 function loadPixelCatalog() {

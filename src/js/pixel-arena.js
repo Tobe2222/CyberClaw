@@ -1,3 +1,4 @@
+try { require('fs').appendFileSync(require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-arena.js TOP\n`); } catch {}
 /* ============================================================
    PixelArena — Shared 2D arena with Companion + Spirits
    
@@ -7,6 +8,7 @@
 
 const _path = require('path');
 const _fs = require('fs');
+try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-arena.js requires OK\n`); } catch {}
 
 class PixelArena {
   constructor(containerId) {
@@ -445,3 +447,4 @@ class PixelArena {
 
 // Export globally
 window.PixelArena = PixelArena;
+try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] PixelArena exported OK\n`); } catch {}
