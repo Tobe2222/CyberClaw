@@ -2,7 +2,7 @@
    PixelArena — Shared 2D arena with Companion + Spirits
    
    Companion = main agent (party leader), large pixel sprite, center
-   Spirits   = helper agents, small cybermon PNG sprites, orbit around
+   Spirits   = helper agents, small spirit PNG sprites, orbit around
    ============================================================ */
 
 const _path = require('path');
@@ -22,7 +22,7 @@ class PixelArena {
 
     // Main companion (pixel sprite, big)
     this.companion = null;
-    // Spirits (cybermon PNGs, small, orbiting)
+    // Spirits (spirit PNGs, small, orbiting)
     this.spirits = [];
     
     this.animId = null;
@@ -111,13 +111,13 @@ class PixelArena {
     };
   }
 
-  // ── SPIRITS (helpers, cybermon PNGs) ────────────────────────
+  // ── SPIRITS (helpers, spirit PNGs) ────────────────────────
 
-  async addSpirit(agentId, cybermonId, name) {
+  async addSpirit(agentId, spiritId, name) {
     if (this.spirits.find(s => s.id === agentId)) return;
 
-    // Load cybermon PNG
-    const imgPath = _path.join(__dirname, 'assets', 'cybermons', `${cybermonId}.png`);
+    // Load spirit PNG
+    const imgPath = _path.join(__dirname, 'assets', 'spirits', `${spiritId}.png`);
     let img = null;
     try {
       img = new Image();
@@ -138,8 +138,8 @@ class PixelArena {
 
     this.spirits.push({
       id: agentId,
-      name: name || cybermonId,
-      cybermonId,
+      name: name || spiritId,
+      spiritId,
       img,
       x: cx + Math.cos(angle) * dist,
       y: cy + Math.sin(angle) * dist,
@@ -437,7 +437,7 @@ class PixelArena {
       spirits: this.spirits.map(s => ({
         id: s.id,
         name: s.name,
-        cybermonId: s.cybermonId,
+        spiritId: s.spiritId,
       })),
     };
   }

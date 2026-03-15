@@ -227,13 +227,13 @@ async function initArenaCompanions() {
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
 
-  // Load cybermon catalog for spirits
-  let cybermons = [];
+  // Load spirit catalog for spirits
+  let spirits = [];
   try {
-    const cmPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    const cmPath = path.join(__dirname, 'assets', 'spirits', 'catalog.json');
     const fs = require('fs');
     if (fs.existsSync(cmPath)) {
-      cybermons = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).cybermons || [];
+      spirits = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).spirits || [];
     }
   } catch {}
 
@@ -259,27 +259,27 @@ async function initArenaCompanions() {
     }
   }
 
-  // All other agents become Spirits (use cybermon sprites)
+  // All other agents become Spirits (use spirit sprites)
   let spiritIdx = 0;
   for (const id of agentOrder) {
     if (id === leaderId) continue; // skip the companion
     const agent = agents[id];
 
-    // Check if spirit has a saved cybermon
-    let cybermonId = null;
+    // Check if spirit has a saved spirit
+    let spiritId = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
-      cybermonId = config?.cybermonId;
+      spiritId = config?.spiritId;
     } catch {}
 
-    // Auto-assign a cybermon if none saved
-    if (!cybermonId && cybermons.length > 0) {
-      cybermonId = cybermons[spiritIdx % cybermons.length].id;
+    // Auto-assign a spirit if none saved
+    if (!spiritId && spirits.length > 0) {
+      spiritId = spirits[spiritIdx % spirits.length].id;
     }
 
-    if (cybermonId) {
-      agent._cybermonId = cybermonId;
-      await pixelArena.addSpirit(id, cybermonId, agent.name);
+    if (spiritId) {
+      agent._spiritId = spiritId;
+      await pixelArena.addSpirit(id, spiritId, agent.name);
     }
     spiritIdx++;
   }
@@ -370,7 +370,7 @@ function updateInspect(agentId) {
 
   document.getElementById('right-header-text').textContent = agent.isMain ? 'COMPANION' : 'SPIRIT';
 
-  // Portrait — use pixel companion, cybermon 2D render, or avatar
+  // Portrait — use pixel companion, spirit 2D render, or avatar
   const img = document.getElementById('inspect-avatar-img');
   const emoji = document.getElementById('inspect-emoji');
   if (agent._pixelCompanionId) {
@@ -381,10 +381,10 @@ function updateInspect(agentId) {
     }
   } else {
     img.style.imageRendering = '';
-    const cybermonId = agent._cybermonId;
-    const cybermonPng = cybermonId ? require('path').join(__dirname, 'assets', 'cybermons', `${cybermonId}.png`) : null;
-    if (cybermonPng && require('fs').existsSync(cybermonPng)) {
-      img.src = cybermonPng; img.style.display = 'block'; emoji.style.display = 'none';
+    const spiritId = agent._spiritId;
+    const spiritPng = spiritId ? require('path').join(__dirname, 'assets', 'spirits', `${spiritId}.png`) : null;
+    if (spiritPng && require('fs').existsSync(spiritPng)) {
+      img.src = spiritPng; img.style.display = 'block'; emoji.style.display = 'none';
     } else if (agent.avatar) {
       img.src = agent.avatar; img.style.display = 'block'; emoji.style.display = 'none';
     } else {
@@ -1444,29 +1444,29 @@ function renderSpiritGallery() {
   const grid = document.getElementById('spirit-gallery');
   if (!grid) return;
   
-  let cybermons = [];
+  let spirits = [];
   try {
-    const cmPath = path.join(__dirname, 'assets', 'cybermons', 'catalog.json');
+    const cmPath = path.join(__dirname, 'assets', 'spirits', 'catalog.json');
     const fs = require('fs');
     if (fs.existsSync(cmPath)) {
-      cybermons = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).cybermons || [];
+      spirits = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).spirits || [];
     }
   } catch {}
 
-  if (!cybermons.length) {
+  if (!spirits.length) {
     grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">No spirits found</div>';
     return;
   }
 
   grid.innerHTML = '';
-  cybermons.forEach(cm => {
+  spirits.forEach(cm => {
     const card = document.createElement('div');
     card.className = `spirit-card ${selectedSpiritId === cm.id ? 'selected' : ''}`;
     card.dataset.spiritId = cm.id;
     card.onclick = () => selectSpirit(cm.id);
 
     const imgEl = document.createElement('img');
-    imgEl.src = `file://${path.join(__dirname, 'assets', 'cybermons', cm.id + '.png')}`;
+    imgEl.src = `file://${path.join(__dirname, 'assets', 'spirits', cm.id + '.png')}`;
     imgEl.alt = cm.name;
     imgEl.style.cssText = 'width:64px;height:64px;object-fit:contain;';
 
@@ -1555,8 +1555,8 @@ window.openCompanionEditor = function() {
     if (config && config.pixelCompanionId) {
       selectPixelCompanion(config.pixelCompanionId);
       switchForgeTab('companions');
-    } else if (config && config.cybermonId) {
-      selectSpirit(config.cybermonId);
+    } else if (config && config.spiritId) {
+      selectSpirit(config.spiritId);
       switchForgeTab('spirits');
     }
   });
@@ -1614,27 +1614,27 @@ window.saveCompanion = async function() {
 
     await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
       pixelCompanionId: selectedPixelCompanion,
-      cybermonId: null,
+      spiritId: null,
       customName: newName || undefined,
       focusSkills,
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, dataUrl);
     agent.avatar = dataUrl;
     agent._pixelCompanionId = selectedPixelCompanion;
-    agent._cybermonId = null;
+    agent._spiritId = null;
   } else if (selectedSpiritId) {
-    // Save as Spirit (cybermon PNG)
-    const pngPath = _path.join(__dirname, 'assets', 'cybermons', `${selectedSpiritId}.png`);
+    // Save as Spirit (spirit PNG)
+    const pngPath = _path.join(__dirname, 'assets', 'spirits', `${selectedSpiritId}.png`);
     await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
       pixelCompanionId: null,
-      cybermonId: selectedSpiritId,
+      spiritId: selectedSpiritId,
       customName: newName || undefined,
       focusSkills,
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, `file://${pngPath}`);
     agent.avatar = `file://${pngPath}`;
     agent._pixelCompanionId = null;
-    agent._cybermonId = selectedSpiritId;
+    agent._spiritId = selectedSpiritId;
   }
 
   // Update in-memory agent
