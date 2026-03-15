@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npx electron-rebuild -f -w node-pty
       - run: npm run build:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,6 +41,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npx electron-rebuild -f -w node-pty
       - run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,6 +63,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npx electron-rebuild -f -w node-pty
       - run: npm run build:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

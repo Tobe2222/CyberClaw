@@ -1,7 +1,7 @@
 {
   "name": "cyberclaw",
   "version": "1.0.4",
-  "description": "CyberClaw \u2014 RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
+  "description": "CyberClaw — RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -61,12 +61,12 @@
     }
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "node-pty": "^1.0.0",
-    "three": "^0.183.2",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-web-links": "^0.9.0"
