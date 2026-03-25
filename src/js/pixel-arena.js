@@ -40,6 +40,10 @@ class PixelArena {
 
     this.onSelect = null; // callback(agentId) when entity clicked
 
+    // Treats system
+    this.treats = []; // { x, y, emoji, type, scale, age }
+    this.companionEmoji = null; // { emoji, timer }
+
     this._resize();
     this._generateGrass();
     this._initResize();
@@ -209,6 +213,20 @@ class PixelArena {
     this.spirits = this.spirits.filter(s => s.id !== agentId);
   }
 
+  // ── TREATS ───────────────────────────────────────────────────
+
+  dropTreat(canvasX, canvasY, treatType, emoji) {
+    this.treats.push({
+      x: canvasX - 14,
+      y: canvasY - 14,
+      type: treatType,
+      emoji: emoji || '🍖',
+      scale: 1,
+      age: 0,
+      bouncePhase: 0
+    });
+  }
+
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
   _updateCompanion(comp, dt) {
@@ -220,7 +238,65 @@ class PixelArena {
       comp.frame = (comp.frame + 1) % animData.frames;
     }
 
-    // AI state machine — mostly idle, sometimes wander
+    // Check for nearby treats — companion seeks food
+    if (this.treats.length > 0) {
+      const fw = (comp.data.frameSize[0] || 32) * comp.scale;
+      const fh = (comp.data.frameSize[1] || 32) * comp.scale;
+      const compCX = comp.x + fw / 2;
+      const compCY = comp.y + fh / 2;
+
+      // Find nearest treat
+      let nearest = null;
+      let nearDist = Infinity;
+      for (const treat of this.treats) {
+        const dx = (treat.x + 14) - compCX;
+        const dy = (treat.y + 14) - compCY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < nearDist) { nearest = treat; nearDist = dist; }
+      }
+
+      if (nearest) {
+        if (nearDist < 30) {
+          // Eat the treat!
+          this.treats = this.treats.filter(t => t !== nearest);
+          comp.state = 'idle';
+          comp.animation = 'idle';
+          comp.vx = 0;
+          comp.vy = 0;
+          comp.stateTimer = 2000;
+          // Show happy emoji
+          this.companionEmoji = { emoji: '😋', timer: 2500 };
+          // After eating, show hearts
+          setTimeout(() => { this.companionEmoji = { emoji: '❤️', timer: 1500 }; }, 2500);
+        } else {
+          // Walk toward treat
+          comp.state = 'seek';
+          comp.animation = 'walk';
+          const dx = (nearest.x + 14) - compCX;
+          const dy = (nearest.y + 14) - compCY;
+          const speed = 0.035;
+          comp.vx = (dx / nearDist) * speed;
+          comp.vy = (dy / nearDist) * speed;
+          // Direction: 0=down, 1=left, 2=right, 3=up
+          if (Math.abs(dx) > Math.abs(dy)) {
+            comp.direction = dx < 0 ? 1 : 2;
+          } else {
+            comp.direction = dy < 0 ? 3 : 0;
+          }
+          comp.stateTimer = 200; // keep seeking
+        }
+        // Skip normal AI
+      }
+    }
+
+    // Update emoji timer
+    if (this.companionEmoji) {
+      this.companionEmoji.timer -= dt;
+      if (this.companionEmoji.timer <= 0) this.companionEmoji = null;
+    }
+
+    // AI state machine — mostly idle, sometimes wander (skip if seeking treat)
+    if (comp.state !== 'seek') {
     comp.stateTimer -= dt;
     if (comp.stateTimer <= 0) {
       const roll = Math.random();
@@ -255,6 +331,7 @@ class PixelArena {
       comp.frame = 0;
       comp.frameTimer = 0;
     }
+    } // end if not seeking
 
     // Move
     comp.x += comp.vx * dt;
@@ -364,9 +441,15 @@ class PixelArena {
     this.ctx.textAlign = 'center';
     this.ctx.fillText(comp.name, comp.x + dw / 2, comp.y - 10);
 
-    // Crown indicator
-    this.ctx.font = '16px serif';
-    this.ctx.fillText('👑', comp.x + dw / 2, comp.y - 26);
+    // Crown indicator (or emoji if reacting)
+    if (this.companionEmoji) {
+      const emojiScale = 1 + Math.sin(performance.now() * 0.005) * 0.15;
+      this.ctx.font = (20 * emojiScale) + 'px serif';
+      this.ctx.fillText(this.companionEmoji.emoji, comp.x + dw / 2, comp.y - 28);
+    } else {
+      this.ctx.font = '16px serif';
+      this.ctx.fillText('👑', comp.x + dw / 2, comp.y - 26);
+    }
   }
 
   _drawSpirit(spirit) {
@@ -433,8 +516,29 @@ class PixelArena {
     if (this.companion) this._updateCompanion(this.companion, dt);
     for (const spirit of this.spirits) this._updateSpirit(spirit, dt);
 
+    // Update treat age
+    for (const treat of this.treats) {
+      treat.age += dt;
+      treat.bouncePhase += dt * 0.005;
+    }
+    // Remove old treats (30 seconds)
+    this.treats = this.treats.filter(t => t.age < 30000);
+
     // Draw
     this._drawGround();
+
+    // Draw treats on ground
+    for (const treat of this.treats) {
+      const bounce = Math.sin(treat.bouncePhase) * 2;
+      this.ctx.font = '24px serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(treat.emoji, treat.x + 14, treat.y + 14 + bounce);
+      // Small shadow
+      this.ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      this.ctx.beginPath();
+      this.ctx.ellipse(treat.x + 14, treat.y + 22, 8, 3, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
 
     // Collect all entities for Y-sort depth ordering
     const entities = [];

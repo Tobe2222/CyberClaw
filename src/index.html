@@ -107,6 +107,20 @@
         <button class="carousel-arrow carousel-left" onclick="carouselPrev()">‹</button>
         <button class="carousel-arrow carousel-right" onclick="carouselNext()">›</button>
 
+        <!-- Feed button (bottom left, next to bg) -->
+        <button id="arena-feed-btn" onclick="toggleFeedMenu()" title="Feed companion">🍖</button>
+        <div id="feed-menu" class="feed-menu hidden">
+          <div class="feed-menu-title">🍖 Treats</div>
+          <div class="feed-treats-grid">
+            <div class="feed-treat" draggable="true" data-treat="apple" title="Apple — Restores 5 HP">🍎</div>
+            <div class="feed-treat" draggable="true" data-treat="meat" title="Meat — Restores 10 HP">🍖</div>
+            <div class="feed-treat" draggable="true" data-treat="fish" title="Fish — +5 XP bonus">🐟</div>
+            <div class="feed-treat" draggable="true" data-treat="cake" title="Cake — Party mood!">🍰</div>
+            <div class="feed-treat" draggable="true" data-treat="cookie" title="Cookie — Quick snack">🍪</div>
+            <div class="feed-treat" draggable="true" data-treat="berry" title="Berry — Mana boost">🫐</div>
+          </div>
+        </div>
+
         <!-- Background selector (bottom left) -->
         <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
 

@@ -2313,3 +2313,64 @@ window.sendChat = async function() {
 // Apply settings on load
 applySettings();
 
+// ═══════════════════════════════════════════════════════════
+//  FEED SYSTEM — drag treats onto arena
+// ═══════════════════════════════════════════════════════════
+
+window.toggleFeedMenu = function() {
+  const menu = document.getElementById('feed-menu');
+  if (menu) menu.classList.toggle('hidden');
+};
+
+// Close feed menu when clicking elsewhere
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('feed-menu');
+  const btn = document.getElementById('arena-feed-btn');
+  if (menu && !menu.contains(e.target) && e.target !== btn) {
+    menu.classList.add('hidden');
+  }
+});
+
+// Drag from treat items
+const TREAT_EMOJIS = {
+  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐'
+};
+
+document.querySelectorAll('.feed-treat').forEach(function(el) {
+  el.addEventListener('dragstart', function(e) {
+    e.dataTransfer.setData('text/plain', el.dataset.treat);
+    e.dataTransfer.effectAllowed = 'move';
+    // Close menu after starting drag
+    setTimeout(function() {
+      var menu = document.getElementById('feed-menu');
+      if (menu) menu.classList.add('hidden');
+    }, 100);
+  });
+});
+
+// Drop zone: the arena container
+const arenaContainer = document.getElementById('pixel-arena-container');
+if (arenaContainer) {
+  arenaContainer.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  arenaContainer.addEventListener('drop', function(e) {
+    e.preventDefault();
+    const treatType = e.dataTransfer.getData('text/plain');
+    if (!treatType || !TREAT_EMOJIS[treatType]) return;
+
+    // Convert mouse position to canvas coordinates
+    const arena = window.pixelArena;
+    if (!arena || !arena.canvas) return;
+
+    const rect = arena.canvas.getBoundingClientRect();
+    const canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
+    const canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
+
+    // Drop the treat on the arena
+    arena.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+  });
+}
+
