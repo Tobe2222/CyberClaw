@@ -1925,9 +1925,9 @@ window.confirmEquip = async function(skillName, agentId) {
   searchEquipment();
 };
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 //  SETTINGS
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 const SETTINGS_KEY = 'cyberclaw-settings';
 const DEFAULT_SETTINGS = {
@@ -1944,29 +1944,37 @@ const DEFAULT_SETTINGS = {
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
-    return Object.assign({}, DEFAULT_SETTINGS, saved);
+    return Object.assign({}, DEFAULT_SETTINGS, saved || {});
   } catch { return Object.assign({}, DEFAULT_SETTINGS); }
 }
 
 function saveSettings() {
   const s = loadSettings();
+  s.theme = document.body.classList.contains('theme-light') ? 'light' : 'dark';
   const langEl = document.getElementById('settings-voice-lang');
-  const autoEl = document.getElementById('settings-voice-autosend');
-  const hiveEl = document.getElementById('settings-hive-wss');
-  const discEl = document.getElementById('settings-discord-token');
-  const teleEl = document.getElementById('settings-telegram-token');
   if (langEl) s.voiceLang = langEl.value;
+  const autoEl = document.getElementById('settings-voice-autosend');
   if (autoEl) s.voiceAutoSend = autoEl.checked;
+  const hiveEl = document.getElementById('settings-hive-wss');
   if (hiveEl) s.hiveWss = hiveEl.value.trim();
+  const discEl = document.getElementById('settings-discord-token');
   if (discEl) s.discordToken = discEl.value.trim();
+  const teleEl = document.getElementById('settings-telegram-token');
   if (teleEl) s.telegramToken = teleEl.value.trim();
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function applySettings() {
+  const s = loadSettings();
+  // Theme
+  if (s.theme === 'light') document.body.classList.add('theme-light');
+  else document.body.classList.remove('theme-light');
 }
 
 window.openSettings = function() {
   const s = loadSettings();
   document.getElementById('settings-overlay').classList.remove('hidden');
-  // Populate
+  // Populate fields
   const langEl = document.getElementById('settings-voice-lang');
   if (langEl) langEl.value = s.voiceLang;
   const autoEl = document.getElementById('settings-voice-autosend');
@@ -1980,16 +1988,17 @@ window.openSettings = function() {
   const teleEl = document.getElementById('settings-telegram-token');
   if (teleEl) teleEl.value = s.telegramToken || '';
   // Theme buttons
-  document.getElementById('theme-dark-btn').classList.toggle('active', s.theme === 'dark');
+  document.getElementById('theme-dark-btn').classList.toggle('active', s.theme !== 'light');
   document.getElementById('theme-light-btn').classList.toggle('active', s.theme === 'light');
-  // Gateway status
-  const gwEl = document.getElementById('settings-gateway-status');
-  if (gwEl) gwEl.textContent = typeof cyberclaw !== 'undefined' ? '✅ Connected' : '❌ Not found';
   // Data path
   try {
-    const dataPath = document.getElementById('settings-data-path');
-    if (dataPath) dataPath.textContent = require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw');
-  } catch {}
+    const { app } = require('electron').remote || {};
+    const p = app ? app.getPath('userData') : __dirname;
+    document.getElementById('settings-data-path').textContent = p;
+  } catch { document.getElementById('settings-data-path').textContent = __dirname; }
+  // Gateway status
+  const gwEl = document.getElementById('settings-gateway-status');
+  if (gwEl) gwEl.textContent = typeof cyberclaw !== 'undefined' ? '🟢 Connected' : '🔴 Not connected';
 };
 
 window.closeSettings = function(e) {
@@ -1997,28 +2006,37 @@ window.closeSettings = function(e) {
   document.getElementById('settings-overlay').classList.add('hidden');
 };
 
-// ─── Theme ───
 window.setTheme = function(theme) {
-  const s = loadSettings();
-  s.theme = theme;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-  applyTheme(theme);
-  document.getElementById('theme-dark-btn').classList.toggle('active', theme === 'dark');
+  if (theme === 'light') document.body.classList.add('theme-light');
+  else document.body.classList.remove('theme-light');
+  document.getElementById('theme-dark-btn').classList.toggle('active', theme !== 'light');
   document.getElementById('theme-light-btn').classList.toggle('active', theme === 'light');
+  saveSettings();
 };
 
-function applyTheme(theme) {
-  document.body.classList.toggle('theme-light', theme === 'light');
-}
+window.openDataDir = function() {
+  try {
+    const { shell } = require('electron');
+    const { app } = require('electron').remote || require('@electron/remote');
+    shell.openPath(app.getPath('userData'));
+  } catch (e) { console.error('Cannot open data dir:', e); }
+};
 
-// ─── Keybind capture ───
+window.resetSettings = function() {
+  if (!confirm('Reset all settings to defaults?')) return;
+  localStorage.removeItem(SETTINGS_KEY);
+  applySettings();
+  openSettings();
+};
+
+// Keybind capture
 let capturingKeybind = null;
-window.captureKeybind = function(type) {
+window.captureKeybind = function(which) {
   const btn = document.getElementById('settings-voice-keybind');
   if (capturingKeybind) { capturingKeybind = null; btn.classList.remove('capturing'); return; }
-  capturingKeybind = type;
+  capturingKeybind = which;
   btn.classList.add('capturing');
-  document.getElementById('voice-keybind-label').textContent = '...press a key...';
+  document.getElementById('voice-keybind-label').textContent = '...';
 };
 
 document.addEventListener('keydown', function(e) {
@@ -2034,11 +2052,12 @@ document.addEventListener('keydown', function(e) {
   capturingKeybind = null;
 }, true);
 
-// ─── Voice keybind listener ───
+// Global keybind for voice
 document.addEventListener('keydown', function(e) {
   if (capturingKeybind) return;
   // Don't trigger if typing in an input/textarea
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
   const s = loadSettings();
   if (e.code === s.voiceKeybind) {
     e.preventDefault();
@@ -2046,118 +2065,100 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-window.openDataDir = function() {
-  try {
-    const dataPath = require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw');
-    cyberclaw.window.openExternal('file://' + dataPath);
-  } catch {}
-};
-
-window.resetSettings = function() {
-  if (!confirm('Reset all settings to defaults?')) return;
-  localStorage.removeItem(SETTINGS_KEY);
-  openSettings();
-};
-
-// Apply saved theme on boot
-(function() {
-  const s = loadSettings();
-  applyTheme(s.theme);
-})();
-
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 //  VOICE INPUT (Web Speech API)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
-let recognition = null;
-let isRecording = false;
+let voiceRecognition = null;
+let voiceActive = false;
 
 window.toggleVoiceInput = function() {
-  if (isRecording) {
-    stopVoice();
-  } else {
-    startVoice();
-  }
+  if (voiceActive) { stopVoice(); return; }
+  startVoice();
 };
 
 function startVoice() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    addChatMsg('system', '⚠️ Voice input not supported in this browser.');
+    addChatMsg('system', '⚠️ Speech recognition not supported in this environment.');
     return;
   }
 
   const s = loadSettings();
-  recognition = new SpeechRecognition();
-  recognition.lang = s.voiceLang;
-  recognition.interimResults = true;
-  recognition.continuous = true;
-  recognition.maxAlternatives = 1;
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.lang = s.voiceLang || 'en-US';
+  voiceRecognition.interimResults = true;
+  voiceRecognition.continuous = true;
+  voiceRecognition.maxAlternatives = 1;
 
   const input = document.getElementById('chat-input');
   const btn = document.getElementById('chat-voice');
-  let finalTranscript = input.value;
+  let finalTranscript = '';
 
-  recognition.onstart = function() {
-    isRecording = true;
+  voiceRecognition.onstart = function() {
+    voiceActive = true;
     btn.classList.add('recording');
     btn.textContent = '⏹️';
     input.placeholder = 'Listening...';
   };
 
-  recognition.onresult = function(event) {
+  voiceRecognition.onresult = function(event) {
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       if (event.results[i].isFinal) {
-        finalTranscript += (finalTranscript ? ' ' : '') + event.results[i][0].transcript;
+        finalTranscript += event.results[i][0].transcript;
       } else {
         interim += event.results[i][0].transcript;
       }
     }
-    input.value = finalTranscript + (interim ? ' ' + interim : '');
+    input.value = finalTranscript + interim;
   };
 
-  recognition.onerror = function(event) {
+  voiceRecognition.onerror = function(event) {
     if (event.error !== 'aborted') {
       addChatMsg('system', '⚠️ Voice error: ' + event.error);
     }
     stopVoice();
   };
 
-  recognition.onend = function() {
-    isRecording = false;
+  voiceRecognition.onend = function() {
+    // Only auto-restart if still active (continuous mode can end unexpectedly)
+    if (voiceActive) {
+      // Recognition ended but user didn't stop — check auto-send
+    }
+    voiceActive = false;
     btn.classList.remove('recording');
     btn.textContent = '🎤';
     input.placeholder = 'Type a message...';
-    // Auto-send if enabled
     if (s.voiceAutoSend && input.value.trim()) {
       window.sendChat();
     }
   };
 
-  recognition.start();
+  finalTranscript = input.value; // Preserve existing text
+  voiceRecognition.start();
 }
 
 function stopVoice() {
-  if (recognition) {
-    recognition.stop();
-    recognition = null;
+  if (voiceRecognition) {
+    voiceActive = false;
+    voiceRecognition.stop();
+    voiceRecognition = null;
   }
-  isRecording = false;
   const btn = document.getElementById('chat-voice');
   if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤'; }
   document.getElementById('chat-input').placeholder = 'Type a message...';
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 //  IMAGE PASTE & ATTACH
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
-let pendingImage = null; // { dataUrl, file }
+let pendingImage = null; // { dataUrl, filename }
 
-// Paste from clipboard
+// Paste images from clipboard
 document.addEventListener('paste', function(e) {
-  const items = (e.clipboardData || {}).items;
+  const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
   for (let i = 0; i < items.length; i++) {
     if (items[i].type.indexOf('image') !== -1) {
@@ -2165,95 +2166,124 @@ document.addEventListener('paste', function(e) {
       const blob = items[i].getAsFile();
       const reader = new FileReader();
       reader.onload = function(ev) {
-        setImageAttachment(ev.target.result, blob);
+        setImageAttachment(ev.target.result, blob.name || 'pasted-image.png');
       };
       reader.readAsDataURL(blob);
-      break;
+      return;
     }
   }
 });
 
-// Pick file via dialog
-window.pickImageAttachment = function() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.onchange = function() {
-    if (!input.files || !input.files[0]) return;
-    const file = input.files[0];
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-      setImageAttachment(ev.target.result, file);
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-};
+// Drag & drop images
+const chatArea = document.getElementById('view-chat');
+if (chatArea) {
+  chatArea.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  chatArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        setImageAttachment(ev.target.result, files[0].name);
+      };
+      reader.readAsDataURL(files[0]);
+    }
+  });
+}
 
-function setImageAttachment(dataUrl, file) {
-  pendingImage = { dataUrl, file };
+function setImageAttachment(dataUrl, filename) {
+  pendingImage = { dataUrl, filename };
   const preview = document.getElementById('chat-image-preview');
   const img = document.getElementById('chat-preview-img');
-  img.src = dataUrl;
-  preview.classList.remove('hidden');
+  if (preview && img) {
+    img.src = dataUrl;
+    preview.classList.remove('hidden');
+  }
 }
 
 window.clearImageAttachment = function() {
   pendingImage = null;
   const preview = document.getElementById('chat-image-preview');
-  preview.classList.add('hidden');
-  document.getElementById('chat-preview-img').src = '';
+  if (preview) preview.classList.add('hidden');
 };
 
-// Override sendChat to include image
+window.pickImageAttachment = function() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = function() {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        setImageAttachment(ev.target.result, input.files[0].name);
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+  };
+  input.click();
+};
+
+// Patch sendChat to include image
 const _originalSendChat = window.sendChat;
 window.sendChat = async function() {
   if (pendingImage) {
     const input = document.getElementById('chat-input');
-    const message = input.value.trim();
-    const imageData = pendingImage.dataUrl;
+    const message = (input.value || '').trim();
+    const imgData = pendingImage;
     clearImageAttachment();
 
-    if (!message && !imageData) return;
+    if (!message && !imgData) return;
     if (chatBusy || agentOrder.length === 0) return;
 
     const agent = agents[agentOrder[focusIndex]];
     if (!agent) return;
 
     // Show user message with image
-    const userHtml = (message ? message : '') +
-      '<br><img class="chat-msg-image" src="' + imageData + '" onclick="window.open(this.src)" />';
-    addChatMsg('user', userHtml, agent.name);
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-msg user';
+    let html = '<div class="msg-bubble">';
+    if (message) html += '<span class="msg-text">' + message + '</span>';
+    html += '<br><img class="chat-msg-image" src="' + imgData.dataUrl + '" alt="' + imgData.filename + '" />';
+    html += '</div>';
+    msgDiv.innerHTML = html;
+    document.getElementById('chat-messages').appendChild(msgDiv);
+    document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
     input.value = '';
 
-    const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
+    // Send to agent with image context
+    const mainAgentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
     if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
-    // Build message with image context
-    let fullMessage = message || 'What do you see in this image?';
-    fullMessage += '\n[Image attached: data URL, ' + Math.round(imageData.length / 1024) + 'KB]';
+    let fullMessage = (message || 'Describe this image') + '\n[Image attached: ' + imgData.filename + ']';
 
     chatBusy = true;
     document.getElementById('chat-send').disabled = true;
     const typingId = addChatMsg('typing', agent.name + ' is thinking...');
 
     try {
-      const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
+      const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage, { image: imgData.dataUrl });
       removeChatMsg(typingId);
       if (result.ok) {
         const leader = agents[mainAgentId];
-        addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && leader.emoji);
       } else {
-        addChatMsg('error', 'Error: ' + (result.error || 'Failed'));
+        addChatMsg('error', 'Error: ' + (result.error || 'Failed to get response'));
       }
     } catch (err) {
       removeChatMsg(typingId);
       addChatMsg('error', 'Error: ' + err.message);
     }
+
     chatBusy = false;
     document.getElementById('chat-send').disabled = false;
     input.focus();
-  } else {
-    return _originalSendChat();
+    return;
   }
+
+  // No image — use original sendChat
+  return _originalSendChat();
 };
+
+// Apply settings on load
+applySettings();
+
