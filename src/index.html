@@ -22,6 +22,7 @@
       </button>
     </div>
     <div class="titlebar-controls">
+      <button class="tb-btn tb-settings" onclick="openSettings()" title="Settings">⚙️</button>
       <button class="tb-btn tb-min" onclick="cyberclaw.window.minimize()">─</button>
       <button class="tb-btn tb-max" onclick="cyberclaw.window.maximize()">☐</button>
       <button class="tb-btn tb-close" onclick="cyberclaw.window.close()">✕</button>
@@ -142,8 +143,14 @@
           </div>
           <div id="chat-input-area">
             <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
+            <div id="chat-image-preview" class="chat-image-preview hidden">
+              <img id="chat-preview-img" src="" alt="preview" />
+              <button class="chat-preview-remove" onclick="clearImageAttachment()" title="Remove image">✕</button>
+            </div>
             <div id="chat-input-row">
+              <button id="chat-attach" onclick="pickImageAttachment()" title="Attach image">📎</button>
               <input type="text" id="chat-input" placeholder="Type a message..." />
+              <button id="chat-voice" onclick="toggleVoiceInput()" title="Voice input">🎤</button>
               <button id="chat-send" onclick="sendChat()">⚔️</button>
             </div>
           </div>
@@ -251,6 +258,102 @@
         </div>
       </div>
     </aside>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-overlay" class="modal-overlay hidden" onclick="closeSettings(event)">
+    <div class="modal-panel settings-panel" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="rune-icon">⚙️</span> SETTINGS
+        <button class="modal-close" onclick="closeSettings()">✕</button>
+      </div>
+      <div class="settings-content">
+        <!-- Appearance -->
+        <div class="settings-section">
+          <div class="settings-section-title">🎨 Appearance</div>
+          <div class="settings-row">
+            <span class="settings-label">Theme</span>
+            <div class="settings-toggle-group">
+              <button class="settings-toggle-btn active" id="theme-dark-btn" onclick="setTheme('dark')">🌙 Dark</button>
+              <button class="settings-toggle-btn" id="theme-light-btn" onclick="setTheme('light')">☀️ Light</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Voice -->
+        <div class="settings-section">
+          <div class="settings-section-title">🎤 Voice Input</div>
+          <div class="settings-row">
+            <span class="settings-label">Language</span>
+            <select id="settings-voice-lang" class="settings-select" onchange="saveSettings()">
+              <option value="en-US">English (US)</option>
+              <option value="en-GB">English (UK)</option>
+              <option value="nb-NO">Norsk Bokmål</option>
+              <option value="nn-NO">Norsk Nynorsk</option>
+              <option value="sv-SE">Svenska</option>
+              <option value="da-DK">Dansk</option>
+              <option value="de-DE">Deutsch</option>
+              <option value="fr-FR">Français</option>
+              <option value="es-ES">Español</option>
+              <option value="ja-JP">日本語</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Voice keybind</span>
+            <button class="settings-keybind-btn" id="settings-voice-keybind" onclick="captureKeybind('voice')">
+              <span id="voice-keybind-label">V</span>
+              <span class="keybind-hint">Click to change</span>
+            </button>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Auto-send after voice</span>
+            <label class="settings-switch">
+              <input type="checkbox" id="settings-voice-autosend" onchange="saveSettings()" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- API Connections -->
+        <div class="settings-section">
+          <div class="settings-section-title">🔗 API Connections</div>
+          <div class="settings-row">
+            <span class="settings-label">OpenClaw Gateway</span>
+            <span class="settings-value" id="settings-gateway-status">—</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">HiveServer WSS</span>
+            <input type="text" class="settings-input" id="settings-hive-wss" placeholder="wss://cyberhive.no:8443/hive" onchange="saveSettings()" />
+          </div>
+        </div>
+
+        <!-- Agent Platforms -->
+        <div class="settings-section">
+          <div class="settings-section-title">📡 Agent Platforms</div>
+          <div class="settings-row">
+            <span class="settings-label">Discord</span>
+            <input type="text" class="settings-input" id="settings-discord-token" placeholder="Bot token (optional)" onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Telegram</span>
+            <input type="text" class="settings-input" id="settings-telegram-token" placeholder="Bot token (optional)" onchange="saveSettings()" />
+          </div>
+        </div>
+
+        <!-- Data -->
+        <div class="settings-section">
+          <div class="settings-section-title">📦 Data</div>
+          <div class="settings-row">
+            <span class="settings-label">Data directory</span>
+            <span class="settings-value settings-path" id="settings-data-path">—</span>
+          </div>
+          <div class="settings-row">
+            <button class="settings-action-btn" onclick="openDataDir()">📂 Open data folder</button>
+            <button class="settings-action-btn danger" onclick="resetSettings()">🗑️ Reset to defaults</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Companion Sprite Generator -->
