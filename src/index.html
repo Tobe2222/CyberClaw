@@ -314,29 +314,72 @@
           </div>
         </div>
 
-        <!-- API Connections -->
+        <!-- LLM Connections -->
         <div class="settings-section">
-          <div class="settings-section-title">🔗 API Connections</div>
+          <div class="settings-section-title">🧠 LLM Providers</div>
           <div class="settings-row">
             <span class="settings-label">OpenClaw Gateway</span>
             <span class="settings-value" id="settings-gateway-status">—</span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">HiveServer WSS</span>
-            <input type="text" class="settings-input" id="settings-hive-wss" placeholder="wss://cyberhive.no:8443/hive" onchange="saveSettings()" />
+            <span class="settings-label">Default Model</span>
+            <select id="settings-default-model" class="settings-select" onchange="saveSettings()">
+              <option value="">Use OpenClaw default</option>
+              <optgroup label="Anthropic">
+                <option value="anthropic/claude-opus-4">Claude Opus 4</option>
+                <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                <option value="openai/o1">o1</option>
+              </optgroup>
+              <optgroup label="Google">
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              </optgroup>
+              <optgroup label="Local">
+                <option value="ollama/llama3">Ollama — Llama 3</option>
+                <option value="ollama/mistral">Ollama — Mistral</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Anthropic API Key</span>
+            <input type="password" class="settings-input" id="settings-key-anthropic" placeholder="sk-ant-..." onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">OpenAI API Key</span>
+            <input type="password" class="settings-input" id="settings-key-openai" placeholder="sk-..." onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Google AI Key</span>
+            <input type="password" class="settings-input" id="settings-key-google" placeholder="AIza..." onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Ollama URL</span>
+            <input type="text" class="settings-input" id="settings-ollama-url" placeholder="http://localhost:11434" onchange="saveSettings()" />
           </div>
         </div>
 
-        <!-- Agent Platforms -->
+        <!-- Agent Channels -->
         <div class="settings-section">
-          <div class="settings-section-title">📡 Agent Platforms</div>
-          <div class="settings-row">
-            <span class="settings-label">Discord</span>
-            <input type="text" class="settings-input" id="settings-discord-token" placeholder="Bot token (optional)" onchange="saveSettings()" />
+          <div class="settings-section-title">📡 Agent Channels</div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">
+            Connect your companion to messaging platforms via OpenClaw.
           </div>
           <div class="settings-row">
-            <span class="settings-label">Telegram</span>
-            <input type="text" class="settings-input" id="settings-telegram-token" placeholder="Bot token (optional)" onchange="saveSettings()" />
+            <span class="settings-label">Discord Bot Token</span>
+            <input type="password" class="settings-input" id="settings-discord-token" placeholder="Bot token" onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Telegram Bot Token</span>
+            <input type="password" class="settings-input" id="settings-telegram-token" placeholder="123456:ABC..." onchange="saveSettings()" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">WhatsApp</span>
+            <button class="settings-action-btn" id="settings-wa-btn" onclick="setupWhatsApp()">📱 Connect WhatsApp</button>
           </div>
         </div>
 

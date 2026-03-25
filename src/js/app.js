@@ -1936,7 +1936,11 @@ const DEFAULT_SETTINGS = {
   voiceKeybind: 'KeyV',
   voiceKeybindLabel: 'V',
   voiceAutoSend: false,
-  hiveWss: '',
+  defaultModel: '',
+  keyAnthropic: '',
+  keyOpenai: '',
+  keyGoogle: '',
+  ollamaUrl: '',
   discordToken: '',
   telegramToken: ''
 };
@@ -1955,8 +1959,16 @@ function saveSettings() {
   if (langEl) s.voiceLang = langEl.value;
   const autoEl = document.getElementById('settings-voice-autosend');
   if (autoEl) s.voiceAutoSend = autoEl.checked;
-  const hiveEl = document.getElementById('settings-hive-wss');
-  if (hiveEl) s.hiveWss = hiveEl.value.trim();
+  const modelEl = document.getElementById('settings-default-model');
+  if (modelEl) s.defaultModel = modelEl.value;
+  const antEl = document.getElementById('settings-key-anthropic');
+  if (antEl) s.keyAnthropic = antEl.value.trim();
+  const oaiEl = document.getElementById('settings-key-openai');
+  if (oaiEl) s.keyOpenai = oaiEl.value.trim();
+  const gooEl = document.getElementById('settings-key-google');
+  if (gooEl) s.keyGoogle = gooEl.value.trim();
+  const ollEl = document.getElementById('settings-ollama-url');
+  if (ollEl) s.ollamaUrl = ollEl.value.trim();
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) s.discordToken = discEl.value.trim();
   const teleEl = document.getElementById('settings-telegram-token');
@@ -1981,8 +1993,16 @@ window.openSettings = function() {
   if (autoEl) autoEl.checked = s.voiceAutoSend;
   const keybindLabel = document.getElementById('voice-keybind-label');
   if (keybindLabel) keybindLabel.textContent = s.voiceKeybindLabel || 'V';
-  const hiveEl = document.getElementById('settings-hive-wss');
-  if (hiveEl) hiveEl.value = s.hiveWss || '';
+  const modelEl = document.getElementById('settings-default-model');
+  if (modelEl) modelEl.value = s.defaultModel || '';
+  const antEl = document.getElementById('settings-key-anthropic');
+  if (antEl) antEl.value = s.keyAnthropic || '';
+  const oaiEl = document.getElementById('settings-key-openai');
+  if (oaiEl) oaiEl.value = s.keyOpenai || '';
+  const gooEl = document.getElementById('settings-key-google');
+  if (gooEl) gooEl.value = s.keyGoogle || '';
+  const ollEl = document.getElementById('settings-ollama-url');
+  if (ollEl) ollEl.value = s.ollamaUrl || '';
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) discEl.value = s.discordToken || '';
   const teleEl = document.getElementById('settings-telegram-token');
@@ -2020,6 +2040,12 @@ window.openDataDir = function() {
     const { app } = require('electron').remote || require('@electron/remote');
     shell.openPath(app.getPath('userData'));
   } catch (e) { console.error('Cannot open data dir:', e); }
+};
+
+window.setupWhatsApp = function() {
+  addChatMsg('system', '📱 WhatsApp connection is configured through OpenClaw. Run `openclaw configure --section whatsapp` in the terminal tab.');
+  closeSettings();
+  switchTermTab('terminal');
 };
 
 window.resetSettings = function() {
