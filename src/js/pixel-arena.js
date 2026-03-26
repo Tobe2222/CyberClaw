@@ -275,8 +275,10 @@ class PixelArena {
       emoji: emoji || '🍖',
       scale: 1,
       age: 0,
-      bouncePhase: 0
+      bouncePhase: 0,
+      graceTimer: 1500 // companion can't eat for 1.5 seconds (so treat is visible)
     });
+    console.log('[Arena] Treat dropped:', treatType, 'at', Math.round(canvasX), Math.round(canvasY), '— total treats:', this.treats.length);
   }
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
@@ -290,17 +292,18 @@ class PixelArena {
       comp.frame = (comp.frame + 1) % animData.frames;
     }
 
-    // Check for nearby treats — companion seeks food
-    if (this.treats.length > 0) {
+    // Check for nearby treats — companion seeks food (only after grace period)
+    const edibleTreats = this.treats.filter(t => t.graceTimer <= 0);
+    if (edibleTreats.length > 0) {
       const fw = (comp.data.frameSize[0] || 32) * comp.scale;
       const fh = (comp.data.frameSize[1] || 32) * comp.scale;
       const compCX = comp.x + fw / 2;
       const compCY = comp.y + fh / 2;
 
-      // Find nearest treat
+      // Find nearest edible treat
       let nearest = null;
       let nearDist = Infinity;
-      for (const treat of this.treats) {
+      for (const treat of edibleTreats) {
         const dx = (treat.x + 14) - compCX;
         const dy = (treat.y + 14) - compCY;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -310,6 +313,7 @@ class PixelArena {
       if (nearest) {
         if (nearDist < 30) {
           // Eat the treat!
+          const eatenType = nearest.type;
           this.treats = this.treats.filter(t => t !== nearest);
           comp.state = 'idle';
           comp.animation = 'idle';
@@ -320,8 +324,10 @@ class PixelArena {
           this.companionEmoji = { emoji: '😋', timer: 2500 };
           // After eating, show hearts
           setTimeout(() => { this.companionEmoji = { emoji: '❤️', timer: 1500 }; }, 2500);
-          // Happiness boost (bubble handled by promptCompanionReaction in app.js)
+          // Happiness boost
           if (window.adjustHappiness) window.adjustHappiness(5);
+          // Prompt companion reaction for eating
+          if (window.promptCompanionEat) window.promptCompanionEat(eatenType);
         } else {
           // Walk toward treat
           comp.state = 'seek';
@@ -570,13 +576,14 @@ class PixelArena {
     if (this.companion) this._updateCompanion(this.companion, dt);
     for (const spirit of this.spirits) this._updateSpirit(spirit, dt);
 
-    // Update treat age
+    // Update treat age and grace timer
     for (const treat of this.treats) {
       treat.age += dt;
       treat.bouncePhase += dt * 0.005;
+      if (treat.graceTimer > 0) treat.graceTimer -= dt;
     }
-    // Remove old treats (30 seconds)
-    this.treats = this.treats.filter(t => t.age < 30000);
+    // Remove old treats (60 seconds)
+    this.treats = this.treats.filter(t => t.age < 60000);
 
     // Draw
     this._drawGround();

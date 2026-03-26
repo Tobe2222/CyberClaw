@@ -2460,8 +2460,13 @@ window.toggleFeedMenu = function() {
     menu.classList.toggle('hidden');
 
     if (wasHidden) {
-      // Prompt the agent about food
-      promptCompanionReaction('*opens the treat menu* I\'m thinking about giving you some food! Are you hungry?');
+      // Show excitement eyes on arena immediately (no delay)
+      var arena = window.pixelArena;
+      if (arena) {
+        arena.companionEmoji = { emoji: '🤩', timer: 3000 };
+      }
+      // Then prompt the agent for a natural response
+      promptCompanionReaction('The user just opened the treat menu. Are you hungry? Give a short excited reaction.');
     }
 
     // Clear selection if closing
@@ -2622,6 +2627,12 @@ function promptCompanionReaction(promptText) {
     if (arena && arena.showBubble) arena.showBubble(msg, 10000);
   });
 }
+
+// Companion reacts when eating a treat (called from pixel-arena.js)
+window.promptCompanionEat = function(treatType) {
+  var name = TREAT_NAMES[treatType] || 'a treat';
+  promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
+};
 
 // Setup after arena is ready
 function setupArenaDrop() { setupArenaClick(); }
