@@ -215,6 +215,10 @@ function buildCarousel() {
 
   // Create shared pixel arena
   pixelArena = new PixelArena(container);
+  window.pixelArena = pixelArena; // expose globally for feed/bubble system
+
+  // Setup drop zone now that canvas exists
+  if (typeof setupArenaDrop === 'function') setupArenaDrop();
 
   // Restore background
   applyBackground(currentBgId);
@@ -2324,31 +2328,23 @@ window.selectModel = function(which) {
   if (!agent) return;
 
   if (which === 'primary') {
-    // Use primary model
     agent.activeModel = agent.model;
     agent.usingFallback = false;
   } else if (which === 'fallback' && agent.fallbackModels && agent.fallbackModels.length) {
-    // Use fallback model
     agent.activeModel = agent.fallbackModels[0];
     agent.usingFallback = true;
   }
 
-  // Update arrow indicators
-  var primaryArrow = document.getElementById('inspect-arrow-primary');
-  var fallbackArrow = document.getElementById('inspect-arrow-fallback');
+  // Update visual state — use model-active class (matches components.css)
   var primaryRow = document.getElementById('inspect-model-primary');
   var fallbackRow = document.getElementById('inspect-model-fallback');
 
   if (which === 'primary') {
-    if (primaryArrow) primaryArrow.textContent = '▶';
-    if (fallbackArrow) fallbackArrow.textContent = '';
-    if (primaryRow) primaryRow.classList.add('active');
-    if (fallbackRow) fallbackRow.classList.remove('active');
+    if (primaryRow) { primaryRow.classList.add('model-active'); }
+    if (fallbackRow) { fallbackRow.classList.remove('model-active'); fallbackRow.style.opacity = '0.5'; }
   } else {
-    if (primaryArrow) primaryArrow.textContent = '';
-    if (fallbackArrow) fallbackArrow.textContent = '▶';
-    if (primaryRow) primaryRow.classList.remove('active');
-    if (fallbackRow) fallbackRow.classList.add('active');
+    if (primaryRow) { primaryRow.classList.remove('model-active'); }
+    if (fallbackRow) { fallbackRow.classList.add('model-active'); fallbackRow.style.opacity = '1'; }
   }
 
   // Show bubble on arena
