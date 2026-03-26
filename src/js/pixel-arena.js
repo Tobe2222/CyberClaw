@@ -229,18 +229,20 @@ class PixelArena {
     const bubble = document.createElement('div');
     bubble.className = 'arena-speech-bubble';
     bubble.textContent = text;
-    this.container.style.position = 'relative';
-    this.container.appendChild(bubble);
+    // Use the canvas parent — don't change container positioning
+    const parent = this.canvas.parentElement || this.container;
+    parent.appendChild(bubble);
     this.bubbleEl = bubble;
 
     // Position above companion
     this._updateBubblePosition();
 
-    const dur = durationMs || 3000;
+    const dur = durationMs || 10000;
     this.bubbleTimer = setTimeout(() => {
       if (bubble.parentNode) {
-        bubble.style.animation = 'bubble-fade 0.5s ease-out forwards';
-        setTimeout(() => { if (bubble.parentNode) bubble.remove(); }, 500);
+        bubble.style.opacity = '0';
+        bubble.style.transition = 'opacity 0.8s ease-out';
+        setTimeout(() => { if (bubble.parentNode) bubble.remove(); }, 800);
       }
       this.bubbleEl = null;
       this.bubbleTimer = null;
@@ -251,11 +253,15 @@ class PixelArena {
     if (!this.bubbleEl || !this.companion) return;
     const comp = this.companion;
     const rect = this.canvas.getBoundingClientRect();
+    const parentRect = (this.canvas.parentElement || this.container).getBoundingClientRect();
     const scale = rect.width / this.width;
     const fw = (comp.data.frameSize[0] || 32) * comp.scale;
-    const bx = (comp.x + fw / 2) * scale - 40;
-    const by = (comp.y) * scale - 45;
-    this.bubbleEl.style.left = Math.max(5, Math.min(bx, rect.width - 160)) + 'px';
+    // Position relative to parent, accounting for canvas offset within parent
+    const offsetX = rect.left - parentRect.left;
+    const offsetY = rect.top - parentRect.top;
+    const bx = offsetX + (comp.x + fw / 2) * scale - 40;
+    const by = offsetY + (comp.y) * scale - 50;
+    this.bubbleEl.style.left = Math.max(5, Math.min(bx, parentRect.width - 180)) + 'px';
     this.bubbleEl.style.top = Math.max(5, by) + 'px';
   }
 
