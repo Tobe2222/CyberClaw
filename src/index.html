@@ -112,12 +112,12 @@
         <div id="feed-menu" class="feed-menu hidden">
           <div class="feed-menu-title">🍖 Treats</div>
           <div class="feed-treats-grid">
-            <div class="feed-treat" data-treat="apple" title="Apple — click then click arena to place">🍎</div>
-            <div class="feed-treat" data-treat="meat" title="Meat — click then click arena to place">🍖</div>
-            <div class="feed-treat" data-treat="fish" title="Fish — click then click arena to place">🐟</div>
-            <div class="feed-treat" data-treat="cake" title="Cake — click then click arena to place">🍰</div>
-            <div class="feed-treat" data-treat="cookie" title="Cookie — click then click arena to place">🍪</div>
-            <div class="feed-treat" data-treat="berry" title="Berry — click then click arena to place">🫐</div>
+            <div class="feed-treat" draggable="true" data-treat="apple" title="Click or drag onto arena">🍎</div>
+            <div class="feed-treat" draggable="true" data-treat="meat" title="Click or drag onto arena">🍖</div>
+            <div class="feed-treat" draggable="true" data-treat="fish" title="Click or drag onto arena">🐟</div>
+            <div class="feed-treat" draggable="true" data-treat="cake" title="Click or drag onto arena">🍰</div>
+            <div class="feed-treat" draggable="true" data-treat="cookie" title="Click or drag onto arena">🍪</div>
+            <div class="feed-treat" draggable="true" data-treat="berry" title="Click or drag onto arena">🫐</div>
           </div>
         </div>
 
@@ -193,19 +193,9 @@
           <span id="inspect-class">Code Architect</span>
         </div>
 
-        <!-- Health & Mana -->
+        <!-- Happiness -->
         <div class="inspect-section">
-          <div class="section-title">Vitals</div>
-          <div class="stat-bar-lg">
-            <span class="stat-label-lg">HP</span>
-            <div class="bar-track-lg"><div class="bar-fill hp" id="inspect-hp" style="width:100%"></div></div>
-            <span class="stat-val-lg" id="inspect-hp-val">100/100</span>
-          </div>
-          <div class="stat-bar-lg">
-            <span class="stat-label-lg">MP</span>
-            <div class="bar-track-lg"><div class="bar-fill mp" id="inspect-mp" style="width:85%"></div></div>
-            <span class="stat-val-lg" id="inspect-mp-val">85/100</span>
-          </div>
+          <div class="section-title">Mood</div>
           <div class="stat-bar-lg">
             <span class="stat-label-lg">😊</span>
             <div class="bar-track-lg"><div class="bar-fill happiness" id="inspect-happiness" style="width:70%"></div></div>
