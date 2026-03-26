@@ -217,8 +217,8 @@ function buildCarousel() {
   pixelArena = new PixelArena(container);
   window.pixelArena = pixelArena; // expose globally for feed/bubble system
 
-  // Setup drop zone now that canvas exists
-  if (typeof setupArenaDrop === 'function') setupArenaDrop();
+  // Setup drop zone on container (only once — container survives rebuilds)
+  if (typeof setupArenaDrop === 'function') setupArenaDrop(); // no-op after first call
 
   // Restore background
   applyBackground(currentBgId);
@@ -2531,70 +2531,59 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
   if (window.adjustHappiness) window.adjustHappiness(10);
 }
 
-// Click on arena canvas to place the selected treat + drag-drop support
-function setupArenaClick() {
-  var a = window.pixelArena;
-  if (!a || !a.canvas) return;
+// Companion reacts when eating a treat (called from pixel-arena.js)
+window.promptCompanionEat = function(treatType) {
+  var name = TREAT_NAMES[treatType] || 'a treat';
+  promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
+};
 
-  // Click to place
-  a.canvas.addEventListener('click', function(e) {
-    if (!selectedTreat) return;
-    var cur = window.pixelArena; // always use current instance
-    if (!cur || !cur.canvas) return;
+// ── Drop zone: attach to the CONTAINER div (survives arena rebuilds) ──
+// The container div never gets destroyed — only the canvas inside it is replaced.
+var _arenaDropReady = false;
+function setupArenaDrop() {
+  if (_arenaDropReady) return;
+  var container = document.getElementById('pixel-arena-container');
+  if (!container) return;
+  _arenaDropReady = true;
 
-    var rect = cur.canvas.getBoundingClientRect();
-    var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
-    var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
-
-    placeTreatOnArena(canvasX, canvasY, selectedTreat.type);
-
-    // Clear selection
-    cur.canvas.style.cursor = 'pointer';
-    selectedTreat = null;
-    document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
-  });
-
-  // Drag-and-drop onto canvas
-  a.canvas.addEventListener('dragover', function(e) {
+  // Drag-and-drop onto container (permanent element)
+  container.addEventListener('dragover', function(e) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = 'move';
   });
-  a.canvas.addEventListener('drop', function(e) {
+  container.addEventListener('drop', function(e) {
     e.preventDefault();
     var treatType = e.dataTransfer.getData('text/plain');
     if (!treatType || !TREAT_EMOJIS[treatType]) return;
-    var cur = window.pixelArena;
-    if (!cur || !cur.canvas) return;
 
-    var rect = cur.canvas.getBoundingClientRect();
-    var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
-    var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
+    var arena = window.pixelArena;
+    if (!arena || !arena.canvas) return;
+
+    var rect = arena.canvas.getBoundingClientRect();
+    var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
+    var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
 
     placeTreatOnArena(canvasX, canvasY, treatType);
   });
 
-  // Also listen on the container
-  var container = document.getElementById('pixel-arena-container');
-  if (container) {
-    container.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    });
-    container.addEventListener('drop', function(e) {
-      e.preventDefault();
-      var treatType = e.dataTransfer.getData('text/plain');
-      if (!treatType || !TREAT_EMOJIS[treatType]) return;
-      var cur = window.pixelArena;
-      if (!cur || !cur.canvas) return;
+  // Click-to-place onto container
+  container.addEventListener('click', function(e) {
+    if (!selectedTreat) return;
+    var arena = window.pixelArena;
+    if (!arena || !arena.canvas) return;
 
-      var rect = cur.canvas.getBoundingClientRect();
-      var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
-      var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
+    var rect = arena.canvas.getBoundingClientRect();
+    var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
+    var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
 
-      placeTreatOnArena(canvasX, canvasY, treatType);
-    });
-  }
+    placeTreatOnArena(canvasX, canvasY, selectedTreat.type);
+
+    selectedTreat = null;
+    document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
+  });
 }
+setupArenaDrop();
+setTimeout(setupArenaDrop, 3000);
 
 // Prompt the companion and show response in both chat + bubble
 function promptCompanionReaction(promptText) {
@@ -2603,30 +2592,24 @@ function promptCompanionReaction(promptText) {
   var agent = agents[agentId];
   if (!agent) return;
 
-  // Build a short prompt — keep responses chill, not over the top
   var systemPrompt = '[You are a companion creature. Reply in 1 short sentence. No actions/roleplay (no asterisks). Max 1 emoji. Be natural, not hyper.] ' + promptText;
 
   chatBusy = true;
   cyberclaw.chat.sendMessage(agentId, systemPrompt).then(function(result) {
     chatBusy = false;
     if (result && result.ok && result.reply) {
-      // Clean up the reply — strip any JSON artifacts or extra whitespace
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
 
-      // Show in chat
       addChatMsg('agent', reply, agent.name, agent.emoji);
-      // Show as bubble on arena
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
-        // Truncate for bubble (max 80 chars)
         var bubbleText = reply.length > 80 ? reply.substring(0, 77) + '...' : reply;
         arena.showBubble(bubbleText, 10000);
       }
     }
   }).catch(function(err) {
     chatBusy = false;
-    // Fallback if agent can't respond
     var fallbacks = ['Yum! 😋', 'Delicious! ❤️', 'More please! 🤤', 'Nom nom nom! 🍖'];
     var msg = fallbacks[Math.floor(Math.random() * fallbacks.length)];
     addChatMsg('agent', msg, agent.name, agent.emoji);
@@ -2634,15 +2617,3 @@ function promptCompanionReaction(promptText) {
     if (arena && arena.showBubble) arena.showBubble(msg, 10000);
   });
 }
-
-// Companion reacts when eating a treat (called from pixel-arena.js)
-window.promptCompanionEat = function(treatType) {
-  var name = TREAT_NAMES[treatType] || 'a treat';
-  promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
-};
-
-// Setup after arena is ready
-function setupArenaDrop() { setupArenaClick(); }
-setupArenaDrop();
-setTimeout(setupArenaDrop, 3000);
-
