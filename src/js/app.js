@@ -1365,8 +1365,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const oldOrder = [...agentOrder];
     await loadAgents();
 
-    // Only rebuild carousel DOM if agents changed
-    const orderChanged = agentOrder.length !== oldOrder.length || agentOrder.some((id, i) => id !== oldOrder[i]);
+    // Only rebuild carousel DOM if REAL agents changed (ignore subagent churn)
+    const realOld = oldOrder.filter(id => !id.startsWith('subagent-'));
+    const realNew = agentOrder.filter(id => !id.startsWith('subagent-'));
+    const orderChanged = realNew.length !== realOld.length || realNew.some((id, i) => id !== realOld[i]);
     if (orderChanged) {
       const newIndex = agentOrder.indexOf(oldFocusId);
       focusIndex = newIndex >= 0 ? newIndex : 0;
