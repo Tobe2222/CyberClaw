@@ -320,9 +320,8 @@ class PixelArena {
           this.companionEmoji = { emoji: '😋', timer: 2500 };
           // After eating, show hearts
           setTimeout(() => { this.companionEmoji = { emoji: '❤️', timer: 1500 }; }, 2500);
-          // Speech bubble + happiness
-          this.showBubble('Delicious! ❤️', 2000);
-          if (window.adjustHappiness) window.adjustHappiness(10);
+          // Happiness boost (bubble handled by promptCompanionReaction in app.js)
+          if (window.adjustHappiness) window.adjustHappiness(5);
         } else {
           // Walk toward treat
           comp.state = 'seek';

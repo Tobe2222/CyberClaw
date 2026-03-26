@@ -2431,87 +2431,135 @@ setTimeout(updateHappinessBar, 1000);
 //  FEED SYSTEM — drag treats onto arena
 // ═══════════════════════════════════════════════════════════
 
+// ── Treat emojis and selected treat state ──
+var TREAT_EMOJIS = {
+  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐'
+};
+var TREAT_NAMES = {
+  apple: 'an apple', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries'
+};
+var selectedTreat = null; // { type, emoji }
+
 window.toggleFeedMenu = function() {
   var menu = document.getElementById('feed-menu');
   if (menu) {
     var wasHidden = menu.classList.contains('hidden');
     menu.classList.toggle('hidden');
 
-    // Show speech bubble when opening feed menu
     if (wasHidden) {
-      var arena = window.pixelArena;
-      if (arena && arena.showBubble) {
-        var hungry = ['I\'m hungry! 🤤', 'Ooh, treats! 😍', 'Feed me! 🍖', 'Is that food? 👀', 'Snack time! 🎉'];
-        arena.showBubble(hungry[Math.floor(Math.random() * hungry.length)], 2500);
-      }
+      // Prompt the agent about food
+      promptCompanionReaction('*opens the treat menu* I\'m thinking about giving you some food! Are you hungry?');
+    }
+
+    // Clear selection if closing
+    if (!wasHidden) {
+      selectedTreat = null;
+      document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
+      var canvas = window.pixelArena && window.pixelArena.canvas;
+      if (canvas) canvas.style.cursor = 'pointer';
     }
   }
 };
 
-// Close feed menu when clicking elsewhere
-document.addEventListener('click', function(e) {
-  const menu = document.getElementById('feed-menu');
-  const btn = document.getElementById('arena-feed-btn');
-  if (menu && !menu.contains(e.target) && e.target !== btn) {
-    menu.classList.add('hidden');
-  }
-});
-
-// Drag from treat items
-const TREAT_EMOJIS = {
-  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐'
-};
-
+// Click treat to select it, then click arena to place it
 document.querySelectorAll('.feed-treat').forEach(function(el) {
-  el.addEventListener('dragstart', function(e) {
-    e.dataTransfer.setData('text/plain', el.dataset.treat);
-    e.dataTransfer.effectAllowed = 'move';
-    // Close menu after starting drag
-    setTimeout(function() {
-      var menu = document.getElementById('feed-menu');
-      if (menu) menu.classList.add('hidden');
-    }, 100);
+  el.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var type = el.dataset.treat;
+    if (!type || !TREAT_EMOJIS[type]) return;
+
+    // Toggle selection
+    if (selectedTreat && selectedTreat.type === type) {
+      selectedTreat = null;
+      el.classList.remove('selected');
+      var canvas = window.pixelArena && window.pixelArena.canvas;
+      if (canvas) canvas.style.cursor = 'pointer';
+      return;
+    }
+
+    // Select this treat
+    document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
+    el.classList.add('selected');
+    selectedTreat = { type: type, emoji: TREAT_EMOJIS[type] };
+
+    // Change cursor on arena canvas to indicate placement mode
+    var canvas = window.pixelArena && window.pixelArena.canvas;
+    if (canvas) canvas.style.cursor = 'crosshair';
+
+    // Close menu
+    var menu = document.getElementById('feed-menu');
+    if (menu) menu.classList.add('hidden');
   });
 });
 
-// Drop zone: the arena container AND canvas (canvas intercepts drag events)
-function setupArenaDrop() {
-  var targets = [
-    document.getElementById('pixel-arena-container'),
-  ];
-  // Also catch the canvas itself once it's created
+// Click on arena canvas to place the selected treat
+function setupArenaClick() {
   var arena = window.pixelArena;
-  if (arena && arena.canvas) targets.push(arena.canvas);
+  if (!arena || !arena.canvas) return;
 
-  targets.forEach(function(el) {
-    if (!el) return;
-    el.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    });
-    el.addEventListener('drop', function(e) {
-      e.preventDefault();
-      var treatType = e.dataTransfer.getData('text/plain');
-      if (!treatType || !TREAT_EMOJIS[treatType]) return;
+  arena.canvas.addEventListener('click', function(e) {
+    if (!selectedTreat) return;
 
-      var a = window.pixelArena;
-      if (!a || !a.canvas) return;
+    var rect = arena.canvas.getBoundingClientRect();
+    var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
+    var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
 
-      var rect = a.canvas.getBoundingClientRect();
-      var canvasX = (e.clientX - rect.left) * (a.width / rect.width);
-      var canvasY = (e.clientY - rect.top) * (a.height / rect.height);
+    // Drop the treat on the arena
+    arena.dropTreat(canvasX, canvasY, selectedTreat.type, selectedTreat.emoji);
 
-      a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+    // Prompt the companion naturally
+    promptCompanionReaction('*places ' + TREAT_NAMES[selectedTreat.type] + ' on the ground near you* Here you go! Enjoy your treat!');
 
-      // Trigger speech bubble
-      if (a.showBubble) a.showBubble('Yum! 😋');
+    // Increase happiness
+    if (window.adjustHappiness) window.adjustHappiness(10);
 
-      // Increase happiness
-      if (window.adjustHappiness) window.adjustHappiness(10);
-    });
+    // Clear selection
+    arena.canvas.style.cursor = 'pointer';
+    selectedTreat = null;
+    document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
   });
 }
-// Run setup now and again after arena initializes
+
+// Prompt the companion and show response in both chat + bubble
+function promptCompanionReaction(promptText) {
+  var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+  if (!agentId) return;
+  var agent = agents[agentId];
+  if (!agent) return;
+
+  // Send as a background prompt (not shown as user message)
+  var systemPrompt = '[System: The user is interacting with you through the CyberClaw companion app. ' +
+    'Respond in character as their companion pet/creature. Keep your reply SHORT (1-2 sentences max). ' +
+    'Be cute, funny, and expressive. Use emojis. This is a playful interaction, not a serious conversation.]\n\n' +
+    promptText;
+
+  chatBusy = true;
+  cyberclaw.chat.sendMessage(agentId, systemPrompt, { hidden: true }).then(function(result) {
+    chatBusy = false;
+    if (result.ok && result.reply) {
+      // Show in chat
+      addChatMsg('agent', result.reply, agent.name, agent.emoji);
+      // Show as bubble on arena
+      var arena = window.pixelArena;
+      if (arena && arena.showBubble) {
+        // Truncate for bubble (max 60 chars)
+        var bubbleText = result.reply.length > 60 ? result.reply.substring(0, 57) + '...' : result.reply;
+        arena.showBubble(bubbleText, 10000);
+      }
+    }
+  }).catch(function() {
+    chatBusy = false;
+    // Fallback if agent can't respond
+    var fallbacks = ['Yum! 😋', 'Delicious! ❤️', 'More please! 🤤', 'Nom nom nom! 🍖'];
+    var msg = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    addChatMsg('agent', msg, agent.name, agent.emoji);
+    var arena = window.pixelArena;
+    if (arena && arena.showBubble) arena.showBubble(msg, 10000);
+  });
+}
+
+// Setup after arena is ready
+function setupArenaDrop() { setupArenaClick(); }
 setupArenaDrop();
 setTimeout(setupArenaDrop, 3000);
 
