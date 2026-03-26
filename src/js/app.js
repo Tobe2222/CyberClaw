@@ -2527,27 +2527,28 @@ function promptCompanionReaction(promptText) {
   var agent = agents[agentId];
   if (!agent) return;
 
-  // Send as a background prompt (not shown as user message)
-  var systemPrompt = '[System: The user is interacting with you through the CyberClaw companion app. ' +
-    'Respond in character as their companion pet/creature. Keep your reply SHORT (1-2 sentences max). ' +
-    'Be cute, funny, and expressive. Use emojis. This is a playful interaction, not a serious conversation.]\n\n' +
-    promptText;
+  // Build a short prompt that tells the agent to respond in character
+  var systemPrompt = '[Respond in character as a companion pet. Keep it SHORT — 1 to 2 sentences max. Be cute and expressive. Use emojis.] ' + promptText;
 
   chatBusy = true;
-  cyberclaw.chat.sendMessage(agentId, systemPrompt, { hidden: true }).then(function(result) {
+  cyberclaw.chat.sendMessage(agentId, systemPrompt).then(function(result) {
     chatBusy = false;
-    if (result.ok && result.reply) {
+    if (result && result.ok && result.reply) {
+      // Clean up the reply — strip any JSON artifacts or extra whitespace
+      var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
+      if (!reply) reply = result.reply.trim();
+
       // Show in chat
-      addChatMsg('agent', result.reply, agent.name, agent.emoji);
+      addChatMsg('agent', reply, agent.name, agent.emoji);
       // Show as bubble on arena
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
-        // Truncate for bubble (max 60 chars)
-        var bubbleText = result.reply.length > 60 ? result.reply.substring(0, 57) + '...' : result.reply;
+        // Truncate for bubble (max 80 chars)
+        var bubbleText = reply.length > 80 ? reply.substring(0, 77) + '...' : reply;
         arena.showBubble(bubbleText, 10000);
       }
     }
-  }).catch(function() {
+  }).catch(function(err) {
     chatBusy = false;
     // Fallback if agent can't respond
     var fallbacks = ['Yum! 😋', 'Delicious! ❤️', 'More please! 🤤', 'Nom nom nom! 🍖'];

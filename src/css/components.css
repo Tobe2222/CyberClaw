@@ -489,7 +489,9 @@
   font-size: 10px;
 }
 
-.msg-text { color: var(--text-primary); }
+.msg-text { color: var(--text-primary); user-select: text; cursor: text; }
+#chat-messages { user-select: text; cursor: text; }
+.chat-msg { user-select: text; }
 
 /* ----- Quest Log ----- */
 /* Quest add button & form */
