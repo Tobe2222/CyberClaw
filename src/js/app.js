@@ -221,7 +221,10 @@ function buildCarousel() {
   window.pixelArena = pixelArena; // expose globally for feed/bubble system
 
   // Restore treats from previous arena
-  if (savedTreats.length > 0) pixelArena.treats = savedTreats;
+  if (savedTreats.length > 0) {
+    pixelArena.treats = savedTreats;
+    console.log('[Arena] Restored', savedTreats.length, 'treats to new arena:', pixelArena._debugId);
+  }
 
   // Setup drop zone now that canvas exists
   if (typeof setupArenaDrop === 'function') setupArenaDrop();
