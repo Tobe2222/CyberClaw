@@ -206,6 +206,9 @@ async function loadAgents() {
 // Shared 2D Pixel Arena — Companion + Spirits
 // ---------------------------------------------------------------------------
 function buildCarousel() {
+  // Preserve treats across arena rebuilds
+  var savedTreats = (pixelArena && pixelArena.treats) ? pixelArena.treats.slice() : [];
+
   // Dispose old arena
   if (pixelArena) { pixelArena.dispose(); pixelArena = null; }
 
@@ -216,6 +219,9 @@ function buildCarousel() {
   // Create shared pixel arena
   pixelArena = new PixelArena(container);
   window.pixelArena = pixelArena; // expose globally for feed/bubble system
+
+  // Restore treats from previous arena
+  if (savedTreats.length > 0) pixelArena.treats = savedTreats;
 
   // Setup drop zone now that canvas exists
   if (typeof setupArenaDrop === 'function') setupArenaDrop();
