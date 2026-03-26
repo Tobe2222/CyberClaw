@@ -466,7 +466,16 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
           } else {
             try {
               const parsed = JSON.parse(stdout);
-              resolve({ ok: true, reply: parsed.reply || parsed.message || parsed.text || stdout });
+              // Extract reply from various response formats:
+              // 1. OpenClaw agent --json: { result: { payloads: [{ text: "..." }] } }
+              // 2. Simple: { reply: "..." } or { message: "..." } or { text: "..." }
+              let reply = null;
+              if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
+                reply = parsed.result.payloads[0].text;
+              }
+              if (!reply) reply = parsed.reply || parsed.message || parsed.text;
+              if (!reply && typeof parsed === 'string') reply = parsed;
+              resolve({ ok: true, reply: reply || stdout.trim() });
             } catch {
               resolve({ ok: true, reply: stdout.trim() });
             }
