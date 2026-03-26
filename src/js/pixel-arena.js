@@ -44,7 +44,9 @@ class PixelArena {
     this.onSelect = null; // callback(agentId) when entity clicked
 
     // Treats system
-    this.treats = []; // { x, y, emoji, type, scale, age }
+    // Use global treat store so treats survive arena rebuilds
+    if (!window._arenaTreats) window._arenaTreats = [];
+    this.treats = window._arenaTreats;
     this.companionEmoji = null; // { emoji, timer }
 
     // Speech bubble
@@ -271,7 +273,7 @@ class PixelArena {
   // ── TREATS ───────────────────────────────────────────────────
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
-    this.treats.push({
+    window._arenaTreats.push({
       x: canvasX - 14,
       y: canvasY - 14,
       type: treatType,
@@ -281,7 +283,8 @@ class PixelArena {
       bouncePhase: 0,
       graceTimer: 2000
     });
-    console.log('[Arena] Treat dropped:', treatType, 'at', Math.round(canvasX), Math.round(canvasY), '— total treats:', this.treats.length, '— arena id:', this._debugId);
+    this.treats = window._arenaTreats; // ensure sync
+    console.log('[Arena] Treat dropped:', treatType, 'at', Math.round(canvasX), Math.round(canvasY), '— total treats:', this.treats.length);
   }
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
@@ -317,7 +320,8 @@ class PixelArena {
         if (nearDist < 30) {
           // Eat the treat!
           const eatenType = nearest.type;
-          this.treats = this.treats.filter(t => t !== nearest);
+          const eatIdx = this.treats.indexOf(nearest);
+          if (eatIdx >= 0) this.treats.splice(eatIdx, 1);
           comp.state = 'idle';
           comp.animation = 'idle';
           comp.vx = 0;
@@ -509,9 +513,6 @@ class PixelArena {
       const emojiScale = 1 + Math.sin(performance.now() * 0.005) * 0.15;
       this.ctx.font = (20 * emojiScale) + 'px serif';
       this.ctx.fillText(this.companionEmoji.emoji, comp.x + dw / 2, comp.y - 28);
-    } else {
-      this.ctx.font = '16px serif';
-      this.ctx.fillText('👑', comp.x + dw / 2, comp.y - 26);
     }
   }
 
@@ -585,8 +586,10 @@ class PixelArena {
       treat.bouncePhase += dt * 0.005;
       if (treat.graceTimer > 0) treat.graceTimer -= dt;
     }
-    // Remove old treats (60 seconds)
-    this.treats = this.treats.filter(t => t.age < 60000);
+    // Remove old treats (60 seconds) — mutate in place to keep global ref
+    for (let i = this.treats.length - 1; i >= 0; i--) {
+      if (this.treats[i].age >= 60000) this.treats.splice(i, 1);
+    }
 
     // Draw
     this._drawGround();
