@@ -2520,57 +2520,60 @@ document.querySelectorAll('.feed-treat').forEach(function(el) {
   });
 });
 
-// Place a treat on the arena at given position
-function placeTreatOnArena(arena, canvasX, canvasY, treatType) {
-  arena.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+// Place a treat on the arena at given position — ALWAYS use window.pixelArena (current instance)
+function placeTreatOnArena(canvasX, canvasY, treatType) {
+  var a = window.pixelArena;
+  if (!a) return;
+  a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
   promptCompanionReaction('I just gave you ' + TREAT_NAMES[treatType] + '. What do you think?');
   if (window.adjustHappiness) window.adjustHappiness(10);
 }
 
 // Click on arena canvas to place the selected treat + drag-drop support
 function setupArenaClick() {
-  var arena = window.pixelArena;
-  if (!arena || !arena.canvas) return;
-  if (arena.canvas._treatListenersSet) return; // prevent duplicate listeners
-  arena.canvas._treatListenersSet = true;
+  var a = window.pixelArena;
+  if (!a || !a.canvas) return;
 
   // Click to place
-  arena.canvas.addEventListener('click', function(e) {
+  a.canvas.addEventListener('click', function(e) {
     if (!selectedTreat) return;
+    var cur = window.pixelArena; // always use current instance
+    if (!cur || !cur.canvas) return;
 
-    var rect = arena.canvas.getBoundingClientRect();
-    var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
-    var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
+    var rect = cur.canvas.getBoundingClientRect();
+    var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
+    var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
 
-    placeTreatOnArena(arena, canvasX, canvasY, selectedTreat.type);
+    placeTreatOnArena(canvasX, canvasY, selectedTreat.type);
 
     // Clear selection
-    arena.canvas.style.cursor = 'pointer';
+    cur.canvas.style.cursor = 'pointer';
     selectedTreat = null;
     document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
   });
 
   // Drag-and-drop onto canvas
-  arena.canvas.addEventListener('dragover', function(e) {
+  a.canvas.addEventListener('dragover', function(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   });
-  arena.canvas.addEventListener('drop', function(e) {
+  a.canvas.addEventListener('drop', function(e) {
     e.preventDefault();
     var treatType = e.dataTransfer.getData('text/plain');
     if (!treatType || !TREAT_EMOJIS[treatType]) return;
+    var cur = window.pixelArena;
+    if (!cur || !cur.canvas) return;
 
-    var rect = arena.canvas.getBoundingClientRect();
-    var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
-    var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
+    var rect = cur.canvas.getBoundingClientRect();
+    var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
+    var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
 
-    placeTreatOnArena(arena, canvasX, canvasY, treatType);
+    placeTreatOnArena(canvasX, canvasY, treatType);
   });
 
-  // Also listen on the container for drops that miss the canvas edge
+  // Also listen on the container
   var container = document.getElementById('pixel-arena-container');
-  if (container && !container._treatListenersSet) {
-    container._treatListenersSet = true;
+  if (container) {
     container.addEventListener('dragover', function(e) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
@@ -2579,12 +2582,14 @@ function setupArenaClick() {
       e.preventDefault();
       var treatType = e.dataTransfer.getData('text/plain');
       if (!treatType || !TREAT_EMOJIS[treatType]) return;
+      var cur = window.pixelArena;
+      if (!cur || !cur.canvas) return;
 
-      var rect = arena.canvas.getBoundingClientRect();
-      var canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
-      var canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
+      var rect = cur.canvas.getBoundingClientRect();
+      var canvasX = (e.clientX - rect.left) * (cur.width / rect.width);
+      var canvasY = (e.clientY - rect.top) * (cur.height / rect.height);
 
-      placeTreatOnArena(arena, canvasX, canvasY, treatType);
+      placeTreatOnArena(canvasX, canvasY, treatType);
     });
   }
 }
