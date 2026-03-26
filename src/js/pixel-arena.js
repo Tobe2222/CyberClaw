@@ -44,6 +44,10 @@ class PixelArena {
     this.treats = []; // { x, y, emoji, type, scale, age }
     this.companionEmoji = null; // { emoji, timer }
 
+    // Speech bubble
+    this.bubbleEl = null;
+    this.bubbleTimer = null;
+
     this._resize();
     this._generateGrass();
     this._initResize();
@@ -213,6 +217,48 @@ class PixelArena {
     this.spirits = this.spirits.filter(s => s.id !== agentId);
   }
 
+  // ── SPEECH BUBBLE ────────────────────────────────────────────
+
+  showBubble(text, durationMs) {
+    if (this.bubbleEl) {
+      this.bubbleEl.remove();
+      this.bubbleEl = null;
+    }
+    if (this.bubbleTimer) clearTimeout(this.bubbleTimer);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'arena-speech-bubble';
+    bubble.textContent = text;
+    this.container.style.position = 'relative';
+    this.container.appendChild(bubble);
+    this.bubbleEl = bubble;
+
+    // Position above companion
+    this._updateBubblePosition();
+
+    const dur = durationMs || 3000;
+    this.bubbleTimer = setTimeout(() => {
+      if (bubble.parentNode) {
+        bubble.style.animation = 'bubble-fade 0.5s ease-out forwards';
+        setTimeout(() => { if (bubble.parentNode) bubble.remove(); }, 500);
+      }
+      this.bubbleEl = null;
+      this.bubbleTimer = null;
+    }, dur);
+  }
+
+  _updateBubblePosition() {
+    if (!this.bubbleEl || !this.companion) return;
+    const comp = this.companion;
+    const rect = this.canvas.getBoundingClientRect();
+    const scale = rect.width / this.width;
+    const fw = (comp.data.frameSize[0] || 32) * comp.scale;
+    const bx = (comp.x + fw / 2) * scale - 40;
+    const by = (comp.y) * scale - 45;
+    this.bubbleEl.style.left = Math.max(5, Math.min(bx, rect.width - 160)) + 'px';
+    this.bubbleEl.style.top = Math.max(5, by) + 'px';
+  }
+
   // ── TREATS ───────────────────────────────────────────────────
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
@@ -268,6 +314,9 @@ class PixelArena {
           this.companionEmoji = { emoji: '😋', timer: 2500 };
           // After eating, show hearts
           setTimeout(() => { this.companionEmoji = { emoji: '❤️', timer: 1500 }; }, 2500);
+          // Speech bubble + happiness
+          this.showBubble('Delicious! ❤️', 2000);
+          if (window.adjustHappiness) window.adjustHappiness(10);
         } else {
           // Walk toward treat
           comp.state = 'seek';
@@ -554,6 +603,9 @@ class PixelArena {
       if (ent.type === 'companion') this._drawCompanion(ent.obj);
       else this._drawSpirit(ent.obj);
     }
+
+    // Update speech bubble position
+    if (this.bubbleEl) this._updateBubblePosition();
 
     this.animId = requestAnimationFrame(() => this._animate());
   }

@@ -624,6 +624,49 @@
 }
 .inspect-edit-btn:hover { background: rgba(255,153,0,0.2); border-color: var(--orange); }
 
+/* ---- Clickable model rows ---- */
+.model-selectable { cursor: pointer; transition: all 0.15s; border-radius: 4px; }
+.model-selectable:hover { background: rgba(255,153,0,0.1); }
+.model-selectable.active { border-left: 2px solid var(--orange); }
+
+/* ---- Learn Skill button ---- */
+.learn-skill-btn {
+  width: 100%; margin-top: 8px; padding: 6px 10px;
+  background: rgba(0,212,255,0.08); border: 1px dashed var(--border-mid);
+  color: var(--cyan); border-radius: 6px; cursor: pointer;
+  font-size: 11px; font-family: var(--font-mono);
+  transition: all 0.2s; text-align: center;
+}
+.learn-skill-btn:hover { border-color: var(--cyan-dim); background: rgba(0,212,255,0.15); border-style: solid; }
+
+/* ---- Happiness bar ---- */
+.bar-fill.happiness {
+  background: linear-gradient(90deg, #f97316, #facc15);
+}
+
+/* ---- Speech bubble on arena ---- */
+.arena-speech-bubble {
+  position: absolute; z-index: 20; pointer-events: none;
+  background: rgba(10,10,14,0.9); border: 1px solid var(--border-mid);
+  border-radius: 10px; padding: 6px 12px; max-width: 200px;
+  font-size: 12px; color: var(--text-primary); font-family: var(--font-mono);
+  animation: bubble-pop 0.3s ease-out;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.arena-speech-bubble::after {
+  content: ''; position: absolute; bottom: -6px; left: 20px;
+  border-left: 6px solid transparent; border-right: 6px solid transparent;
+  border-top: 6px solid var(--border-mid);
+}
+@keyframes bubble-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes bubble-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
 /* ---- Feed button & menu ---- */
 #arena-feed-btn {
   position: absolute; bottom: 12px; left: 52px; z-index: 10;

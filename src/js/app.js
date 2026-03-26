@@ -2314,12 +2314,142 @@ window.sendChat = async function() {
 applySettings();
 
 // ═══════════════════════════════════════════════════════════
+//  MODEL SELECTION — click to switch active model
+// ═══════════════════════════════════════════════════════════
+
+window.selectModel = function(which) {
+  var agentId = agentOrder[focusIndex];
+  if (!agentId) return;
+  var agent = agents[agentId];
+  if (!agent) return;
+
+  if (which === 'primary') {
+    // Use primary model
+    agent.activeModel = agent.model;
+    agent.usingFallback = false;
+  } else if (which === 'fallback' && agent.fallbackModels && agent.fallbackModels.length) {
+    // Use fallback model
+    agent.activeModel = agent.fallbackModels[0];
+    agent.usingFallback = true;
+  }
+
+  // Update arrow indicators
+  var primaryArrow = document.getElementById('inspect-arrow-primary');
+  var fallbackArrow = document.getElementById('inspect-arrow-fallback');
+  var primaryRow = document.getElementById('inspect-model-primary');
+  var fallbackRow = document.getElementById('inspect-model-fallback');
+
+  if (which === 'primary') {
+    if (primaryArrow) primaryArrow.textContent = '▶';
+    if (fallbackArrow) fallbackArrow.textContent = '';
+    if (primaryRow) primaryRow.classList.add('active');
+    if (fallbackRow) fallbackRow.classList.remove('active');
+  } else {
+    if (primaryArrow) primaryArrow.textContent = '';
+    if (fallbackArrow) fallbackArrow.textContent = '▶';
+    if (primaryRow) primaryRow.classList.remove('active');
+    if (fallbackRow) fallbackRow.classList.add('active');
+  }
+
+  // Show bubble on arena
+  var arena = window.pixelArena;
+  if (arena && arena.showBubble) {
+    var name = which === 'primary' ? agent.model : formatModelName(agent.fallbackModels[0]);
+    arena.showBubble('🧠 Switching to ' + name + '!', 2500);
+  }
+
+  addChatMsg('system', '🧠 Model switched to: ' + (which === 'primary' ? agent.model : formatModelName(agent.fallbackModels[0])));
+};
+
+// ═══════════════════════════════════════════════════════════
+//  LEARN NEW SKILL — prompt the agent
+// ═══════════════════════════════════════════════════════════
+
+window.learnNewSkill = function() {
+  var agentId = agentOrder[focusIndex];
+  if (!agentId) return;
+  var agent = agents[agentId];
+  if (!agent) return;
+
+  // Show bubble
+  var arena = window.pixelArena;
+  if (arena && arena.showBubble) {
+    arena.showBubble('📚 Ooh, new skill? Let\'s go!', 3000);
+  }
+
+  // Switch to chat tab and send a prompt
+  switchTermTab('chat');
+  var input = document.getElementById('chat-input');
+  if (input) {
+    input.value = 'I want to teach you a new skill! Can you guide me through the process of creating a custom skill for you?';
+    window.sendChat();
+  }
+};
+
+// ═══════════════════════════════════════════════════════════
+//  HAPPINESS SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+var HAPPINESS_KEY = 'cyberclaw-happiness';
+var happiness = 70; // default
+
+// Load happiness
+try {
+  var savedH = localStorage.getItem(HAPPINESS_KEY);
+  if (savedH !== null) happiness = parseInt(savedH) || 70;
+} catch(e) {}
+
+function updateHappinessBar() {
+  var bar = document.getElementById('inspect-happiness');
+  var val = document.getElementById('inspect-happiness-val');
+  if (bar) bar.style.width = happiness + '%';
+  if (val) val.textContent = happiness + '/100';
+
+  // Change color based on level
+  if (bar) {
+    if (happiness > 70) bar.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)';
+    else if (happiness > 40) bar.style.background = 'linear-gradient(90deg, #f97316, #facc15)';
+    else bar.style.background = 'linear-gradient(90deg, #ef4444, #f97316)';
+  }
+}
+
+window.adjustHappiness = function(amount) {
+  happiness = Math.max(0, Math.min(100, happiness + amount));
+  try { localStorage.setItem(HAPPINESS_KEY, String(happiness)); } catch(e) {}
+  updateHappinessBar();
+};
+
+// Happiness decays over time — lose 1 point every 5 minutes
+setInterval(function() {
+  if (happiness > 0) {
+    happiness = Math.max(0, happiness - 1);
+    try { localStorage.setItem(HAPPINESS_KEY, String(happiness)); } catch(e) {}
+    updateHappinessBar();
+  }
+}, 300000); // 5 minutes
+
+// Update bar on load
+setTimeout(updateHappinessBar, 1000);
+
+// ═══════════════════════════════════════════════════════════
 //  FEED SYSTEM — drag treats onto arena
 // ═══════════════════════════════════════════════════════════
 
 window.toggleFeedMenu = function() {
-  const menu = document.getElementById('feed-menu');
-  if (menu) menu.classList.toggle('hidden');
+  var menu = document.getElementById('feed-menu');
+  if (menu) {
+    var wasHidden = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden');
+
+    // Show speech bubble when opening feed menu
+    if (wasHidden) {
+      var arena = window.pixelArena;
+      if (arena && arena.showBubble) {
+        var hungry = ['I\'m hungry! 🤤', 'Ooh, treats! 😍', 'Feed me! 🍖', 'Is that food? 👀', 'Snack time! 🎉'];
+        arena.showBubble(hungry[Math.floor(Math.random() * hungry.length)], 2500);
+      }
+    }
+  }
 };
 
 // Close feed menu when clicking elsewhere
@@ -2348,29 +2478,44 @@ document.querySelectorAll('.feed-treat').forEach(function(el) {
   });
 });
 
-// Drop zone: the arena container
-const arenaContainer = document.getElementById('pixel-arena-container');
-if (arenaContainer) {
-  arenaContainer.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  });
+// Drop zone: the arena container AND canvas (canvas intercepts drag events)
+function setupArenaDrop() {
+  var targets = [
+    document.getElementById('pixel-arena-container'),
+  ];
+  // Also catch the canvas itself once it's created
+  var arena = window.pixelArena;
+  if (arena && arena.canvas) targets.push(arena.canvas);
 
-  arenaContainer.addEventListener('drop', function(e) {
-    e.preventDefault();
-    const treatType = e.dataTransfer.getData('text/plain');
-    if (!treatType || !TREAT_EMOJIS[treatType]) return;
+  targets.forEach(function(el) {
+    if (!el) return;
+    el.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    el.addEventListener('drop', function(e) {
+      e.preventDefault();
+      var treatType = e.dataTransfer.getData('text/plain');
+      if (!treatType || !TREAT_EMOJIS[treatType]) return;
 
-    // Convert mouse position to canvas coordinates
-    const arena = window.pixelArena;
-    if (!arena || !arena.canvas) return;
+      var a = window.pixelArena;
+      if (!a || !a.canvas) return;
 
-    const rect = arena.canvas.getBoundingClientRect();
-    const canvasX = (e.clientX - rect.left) * (arena.width / rect.width);
-    const canvasY = (e.clientY - rect.top) * (arena.height / rect.height);
+      var rect = a.canvas.getBoundingClientRect();
+      var canvasX = (e.clientX - rect.left) * (a.width / rect.width);
+      var canvasY = (e.clientY - rect.top) * (a.height / rect.height);
 
-    // Drop the treat on the arena
-    arena.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+      a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+
+      // Trigger speech bubble
+      if (a.showBubble) a.showBubble('Yum! 😋');
+
+      // Increase happiness
+      if (window.adjustHappiness) window.adjustHappiness(10);
+    });
   });
 }
+// Run setup now and again after arena initializes
+setupArenaDrop();
+setTimeout(setupArenaDrop, 3000);
 

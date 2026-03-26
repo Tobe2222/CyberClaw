@@ -206,6 +206,11 @@
             <div class="bar-track-lg"><div class="bar-fill mp" id="inspect-mp" style="width:85%"></div></div>
             <span class="stat-val-lg" id="inspect-mp-val">85/100</span>
           </div>
+          <div class="stat-bar-lg">
+            <span class="stat-label-lg">😊</span>
+            <div class="bar-track-lg"><div class="bar-fill happiness" id="inspect-happiness" style="width:70%"></div></div>
+            <span class="stat-val-lg" id="inspect-happiness-val">70/100</span>
+          </div>
         </div>
 
         <!-- Level & XP -->
@@ -225,9 +230,9 @@
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Equipment (Skills/Tools) — hidden for spirits -->
+        <!-- Learn Skill — hidden for spirits -->
         <div class="inspect-section" id="inspect-equipment-section">
-          <div class="section-title">Equipment <button class="equip-search-btn" onclick="toggleEquipSearch()" title="Find new skills">🔍</button></div>
+          <div class="section-title">Skills <button class="equip-search-btn" onclick="toggleEquipSearch()" title="Search skills">🔍</button></div>
           <div id="equip-search-panel" class="equip-search hidden">
             <input type="text" id="equip-search-input" placeholder="Search skills..." oninput="searchEquipment()" />
             <div id="equip-search-results" class="equip-results"></div>
@@ -235,6 +240,7 @@
           <div class="gear-grid" id="inspect-gear">
             <!-- Populated dynamically from installed skills -->
           </div>
+          <button class="learn-skill-btn" onclick="learnNewSkill()" title="Teach your companion a new skill">📚 Learn New Skill</button>
         </div>
 
         <!-- Spacer to push Channel + Model to bottom -->
@@ -253,12 +259,12 @@
         <div class="inspect-section">
           <div class="section-title">Model</div>
           <div class="model-stack" id="inspect-model-stack">
-            <div class="model-row" id="inspect-model-primary">
+            <div class="model-row model-selectable" id="inspect-model-primary" onclick="selectModel('primary')" title="Click to use this model">
               <span class="model-arrow" id="inspect-arrow-primary">▶</span>
               <span class="model-row-name" id="inspect-model-name">Claude Opus 4</span>
               <span class="model-row-provider" id="inspect-provider">Anthropic</span>
             </div>
-            <div class="model-row model-row-fallback" id="inspect-model-fallback" style="display:none">
+            <div class="model-row model-row-fallback model-selectable" id="inspect-model-fallback" style="display:none" onclick="selectModel('fallback')" title="Click to use this model">
               <span class="model-arrow" id="inspect-arrow-fallback">▶</span>
               <span class="model-row-name" id="inspect-fallback-name">—</span>
               <span class="model-row-provider" id="inspect-fallback-provider">—</span>
