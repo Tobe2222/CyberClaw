@@ -12,8 +12,6 @@ try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyber
 
 class PixelArena {
   constructor(containerId) {
-    this._debugId = Math.random().toString(36).slice(2, 6);
-    console.log('[Arena] NEW PixelArena created, id:', this._debugId);
 
     this.container = typeof containerId === 'string'
       ? document.getElementById(containerId)
@@ -284,7 +282,6 @@ class PixelArena {
       graceTimer: 2000
     });
     this.treats = window._arenaTreats; // ensure sync
-    console.log('[Arena] Treat dropped:', treatType, 'at', Math.round(canvasX), Math.round(canvasY), '— total treats:', this.treats.length);
   }
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
@@ -595,11 +592,6 @@ class PixelArena {
     this._drawGround();
 
     // Draw treats on ground
-    if (this.treats.length > 0 && !this._treatLogThrottle) {
-      console.log('[Arena] Drawing', this.treats.length, 'treats, arena:', this._debugId);
-      this._treatLogThrottle = true;
-      setTimeout(() => { this._treatLogThrottle = false; }, 2000);
-    }
     for (const treat of this.treats) {
       const bounce = Math.sin(treat.bouncePhase) * 2;
       this.ctx.font = '24px serif';
@@ -634,7 +626,6 @@ class PixelArena {
   }
 
   dispose() {
-    console.log('[Arena] DISPOSE arena:', this._debugId, '— treats:', this.treats.length);
     if (this.animId) cancelAnimationFrame(this.animId);
     if (this.resizeObs) this.resizeObs.disconnect();
     if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
