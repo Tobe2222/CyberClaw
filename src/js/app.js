@@ -158,6 +158,7 @@ async function loadAgents() {
         if (cfg) {
           if (cfg.customName) agents[id].name = cfg.customName;
           if (cfg.focusSkills) agents[id].focusSkills = cfg.focusSkills;
+          if (cfg.traits) agents[id].traits = cfg.traits;
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
@@ -1318,6 +1319,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendChat(); }
   });
 
+  // Typing watcher — companion reacts if user types but doesn't send for 30s+
+  (function() {
+    var typingTimer = null;
+    var lastTypedLen = 0;
+    var typingComments = [
+      'Are you going to send that or what? 👀',
+      'I can see you typing over there...',
+      'Just hit send already, I\'m curious.',
+      'Taking your time with that one huh.',
+      'You deleted it again, didn\'t you.',
+    ];
+    document.getElementById('chat-input').addEventListener('input', function() {
+      var val = this.value.trim();
+      // Clear any existing timer
+      if (typingTimer) clearTimeout(typingTimer);
+      if (!val) { lastTypedLen = 0; return; }
+
+      lastTypedLen = val.length;
+      // Set timer — if still has content after 30s, react
+      typingTimer = setTimeout(function() {
+        var currentVal = document.getElementById('chat-input').value.trim();
+        if (currentVal.length > 3) { // still has content
+          var msg = typingComments[Math.floor(Math.random() * typingComments.length)];
+          var arena = window.pixelArena;
+          if (arena && arena.showBubble) arena.showBubble(msg, 8000);
+          // Also add to chat (no agent call — instant reaction)
+          var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+          var agent = agentId ? agents[agentId] : null;
+          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji);
+        }
+        typingTimer = null;
+      }, 30000);
+    });
+  })();
+
   debugLog('Reached boot messages section');
   // Boot messages in chat
   const msgs = document.getElementById('chat-messages');
@@ -1611,6 +1647,11 @@ function openCompanionForge(agentId) {
     }
     // Render gallery for picker
     renderPixelGallery();
+    // Load saved traits
+    const savedTraits = config?.traits || [];
+    document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
+      cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
+    });
   });
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
@@ -1690,6 +1731,7 @@ window.saveCompanion = async function() {
       spiritId: null,
       customName: newName || undefined,
       focusSkills: agent.focusSkills || [],
+      traits: getCheckedTraits(),
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
@@ -2611,7 +2653,12 @@ function promptCompanionReaction(promptText) {
   var agent = agents[agentId];
   if (!agent) return;
 
-  var systemPrompt = '[You are a companion creature. Reply in 1 short sentence. No actions/roleplay (no asterisks). Max 1 emoji. Be natural, not hyper.] ' + promptText;
+  var traitCtx = getTraitContext();
+  var userCtx = getUserContext();
+  var systemPrompt = '[You are a companion creature. Reply in 1 short sentence. No actions/roleplay (no asterisks). Max 1 emoji. Be natural, not hyper.' +
+    (traitCtx ? ' ' + traitCtx : '') +
+    (userCtx ? ' ' + userCtx : '') +
+    '] ' + promptText;
 
   chatBusy = true;
   cyberclaw.chat.sendMessage(agentId, systemPrompt).then(function(result) {
@@ -2635,6 +2682,38 @@ function promptCompanionReaction(promptText) {
     var arena = window.pixelArena;
     if (arena && arena.showBubble) arena.showBubble(msg, 10000);
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TRAIT HELPERS
+// ═══════════════════════════════════════════════════════════
+
+var TRAIT_DESCRIPTIONS = {
+  sassy: 'You are sassy and witty, with attitude and sharp comebacks.',
+  curious: 'You are curious and inquisitive, always asking follow-up questions.',
+  lazy: 'You are a bit lazy and easily distracted, reluctant but lovable.',
+  cheerful: 'You are upbeat and cheerful, always encouraging.',
+  foodobsessed: 'You are obsessed with food and snacks, you bring it up often.',
+  dramatic: 'You are dramatic and make everything sound like a big deal.',
+  stoic: 'You are calm, dry, and matter-of-fact.',
+  adventurous: 'You are adventurous and always want to go on quests.',
+};
+
+function getCheckedTraits() {
+  var traits = [];
+  document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
+    if (cb.checked) traits.push(cb.id.replace('trait-', ''));
+  });
+  return traits;
+}
+
+function getTraitContext() {
+  var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+  if (!agentId) return '';
+  var agent = agents[agentId];
+  var traits = agent.traits || [];
+  if (!traits.length) return '';
+  return traits.map(function(t) { return TRAIT_DESCRIPTIONS[t]; }).filter(Boolean).join(' ');
 }
 
 // ═══════════════════════════════════════════════════════════

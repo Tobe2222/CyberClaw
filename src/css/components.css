@@ -1664,3 +1664,41 @@
 .carousel-agent .pixel-sprite-canvas {
   image-rendering: pixelated;
 }
+
+/* ── Behaviour Traits ── */
+.forge-traits-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-dark);
+}
+.forge-traits-title {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.forge-traits-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.trait-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dark);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 11px;
+}
+.trait-toggle:hover { border-color: var(--border-mid); background: rgba(255,153,0,0.05); }
+.trait-toggle input[type=checkbox] { margin-top: 2px; accent-color: var(--orange); }
+.trait-toggle input[type=checkbox]:checked ~ .trait-label { color: var(--orange); }
+.trait-label { font-weight: 600; color: var(--text-primary); display: block; }
+.trait-desc { color: var(--text-muted); font-size: 10px; display: block; }
