@@ -100,6 +100,9 @@
         <!-- Shared 2D pixel arena (the whole arena view) -->
         <div id="pixel-arena-container"></div>
 
+        <!-- View companions button (top left) -->
+        <button id="arena-companions-btn" onclick="openCompanionsView()" title="View companions">🐾 Companions</button>
+
         <!-- Pop-out button -->
         <button id="arena-expand-btn" onclick="toggleArenaExpand()" title="Expand arena">⛶</button>
 
@@ -125,6 +128,17 @@
         <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
 
 
+      </div>
+
+      <!-- Companions view modal -->
+      <div id="companions-view-overlay" class="modal-overlay hidden" onclick="closeCompanionsView(event)">
+        <div class="modal-panel companions-view-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon">🐾</span> COMPANIONS
+            <button class="modal-close" onclick="closeCompanionsView()">✕</button>
+          </div>
+          <div id="companions-view-list" class="companions-view-list"></div>
+        </div>
       </div>
 
       <!-- Background selector modal -->
@@ -489,9 +503,35 @@
           <div id="pixel-gallery" class="pixel-companion-grid"></div>
         </div>
 
+        <!-- Model Selection -->
+        <div class="forge-traits-section">
+          <div class="forge-traits-title">🧠 Model</div>
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">Primary Model</span>
+            <select id="forge-model-primary" class="settings-select">
+              <optgroup label="Anthropic">
+                <option value="anthropic/claude-opus-4-6">Claude Opus 4</option>
+                <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4</option>
+                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Google">
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              </optgroup>
+              <optgroup label="Local">
+                <option value="ollama/llama3">Ollama — Llama 3</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
         <!-- Behaviour Traits -->
         <div class="forge-traits-section">
-          <div class="forge-traits-title">🧠 Behaviour Traits</div>
+          <div class="forge-traits-title">🎭 Behaviour Traits</div>
           <div class="forge-traits-grid" id="forge-traits-grid">
             <label class="trait-toggle"><input type="checkbox" id="trait-sassy"> <span class="trait-label">😏 Sassy</span><span class="trait-desc">Witty comebacks and attitude</span></label>
             <label class="trait-toggle"><input type="checkbox" id="trait-curious"> <span class="trait-label">🔍 Curious</span><span class="trait-desc">Asks questions and digs deeper</span></label>

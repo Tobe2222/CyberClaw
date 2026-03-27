@@ -159,6 +159,10 @@ async function loadAgents() {
           if (cfg.customName) agents[id].name = cfg.customName;
           if (cfg.focusSkills) agents[id].focusSkills = cfg.focusSkills;
           if (cfg.traits) agents[id].traits = cfg.traits;
+          if (cfg.primaryModel) {
+            agents[id].primaryModel = cfg.primaryModel;
+            agents[id].model = formatModelName(cfg.primaryModel);
+          }
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
@@ -1652,6 +1656,9 @@ function openCompanionForge(agentId) {
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
       cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
     });
+    // Load model
+    const modelEl = document.getElementById('forge-model-primary');
+    if (modelEl) modelEl.value = agent.primaryModel || 'anthropic/claude-opus-4-6';
   });
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
@@ -1732,12 +1739,19 @@ window.saveCompanion = async function() {
       customName: newName || undefined,
       focusSkills: agent.focusSkills || [],
       traits: getCheckedTraits(),
+      primaryModel: document.getElementById('forge-model-primary')?.value || agent.primaryModel,
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
     agent._pixelCompanionId = selectedPixelCompanion;
     agent._spiritId = null;
     if (newName) agent.name = newName;
+    agent.traits = getCheckedTraits();
+    const savedModel = document.getElementById('forge-model-primary')?.value;
+    if (savedModel) {
+      agent.primaryModel = savedModel;
+      agent.model = formatModelName(savedModel);
+    }
 
     buildCarousel();
     closeCompanionEditor();
@@ -2791,3 +2805,90 @@ setTimeout(function() {
   doStartupGreeting();
   scheduleIdleChatter();
 }, 2000);
+
+// ═══════════════════════════════════════════════════════════
+//  COMPANIONS VIEW
+// ═══════════════════════════════════════════════════════════
+
+window.openCompanionsView = function() {
+  var list = document.getElementById('companions-view-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  var TRAIT_LABELS = {
+    sassy: '😏 Sassy', curious: '🔍 Curious', lazy: '😴 Lazy',
+    cheerful: '🌟 Cheerful', foodobsessed: '🍖 Food-obsessed',
+    dramatic: '🎭 Dramatic', stoic: '🗿 Stoic', adventurous: '⚔️ Adventurous',
+  };
+
+  agentOrder.forEach(function(id) {
+    var agent = agents[id];
+    if (!agent || id.startsWith('subagent-')) return;
+
+    var card = document.createElement('div');
+    card.className = 'companion-card' + (agent.isMain ? ' is-main' : '');
+
+    // Avatar
+    var avatarHtml = '';
+    if (agent.avatar && agent.avatar.startsWith('data:')) {
+      avatarHtml = '<img class="companion-card-avatar" src="' + agent.avatar + '" alt="avatar">';
+    } else {
+      avatarHtml = '<div class="companion-card-avatar-placeholder">' + (agent.emoji || '🤖') + '</div>';
+    }
+
+    // Traits
+    var traits = agent.traits || [];
+    var traitTags = traits.map(function(t) {
+      return '<span class="companion-card-tag trait">' + (TRAIT_LABELS[t] || t) + '</span>';
+    }).join('');
+
+    // Skills
+    var skills = (agent.focusSkills || []).map(function(s) {
+      return '<span class="companion-card-tag">' + s + '</span>';
+    }).join('');
+
+    // Model
+    var model = agent.primaryModel ? formatModelName(agent.primaryModel) : agent.model || '—';
+
+    card.innerHTML = avatarHtml +
+      '<div class="companion-card-body">' +
+        '<div class="companion-card-name">' + agent.name + '</div>' +
+        '<div class="companion-card-role">' + (agent.isMain ? '⭐ Companion' : '✨ Spirit') + (agent.class ? ' — ' + agent.class : '') + '</div>' +
+        (traitTags ? '<div class="companion-card-details">' + traitTags + '</div>' : '') +
+        (skills ? '<div class="companion-card-details">' + skills + '</div>' : '') +
+        '<div class="companion-card-model">🧠 ' + model + '</div>' +
+        '<div class="companion-card-actions">' +
+          '<button class="companion-card-btn primary" onclick="editCompanionFromView(\'' + id + '\')">✏️ Edit</button>' +
+          '<button class="companion-card-btn" onclick="focusCompanionFromView(\'' + id + '\')">👁 Focus</button>' +
+        '</div>' +
+      '</div>';
+
+    list.appendChild(card);
+  });
+
+  document.getElementById('companions-view-overlay').classList.remove('hidden');
+};
+
+window.closeCompanionsView = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('companions-view-overlay').classList.add('hidden');
+};
+
+window.editCompanionFromView = function(agentId) {
+  window.closeCompanionsView();
+  setTimeout(function() {
+    var idx = agentOrder.indexOf(agentId);
+    if (idx >= 0) focusIndex = idx;
+    window.openCompanionEditor();
+  }, 150);
+};
+
+window.focusCompanionFromView = function(agentId) {
+  var idx = agentOrder.indexOf(agentId);
+  if (idx >= 0) {
+    focusIndex = idx;
+    updateCarousel();
+  }
+  window.closeCompanionsView();
+};
+

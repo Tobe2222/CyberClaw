@@ -802,3 +802,59 @@ body.theme-light #chat-messages { background: #f8f8fc; }
 body.theme-light #chat-input { background: #fff; color: #1a1a2e; }
 body.theme-light .chat-msg.user .msg-bubble { background: rgba(0,100,255,0.08); }
 body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06); }
+
+/* ── Companions view button ── */
+#arena-companions-btn {
+  position: absolute; top: 10px; left: 10px; z-index: 12;
+  background: rgba(10,10,14,0.85); border: 1px solid var(--border-mid);
+  color: var(--text-primary); font-size: 11px; font-family: var(--font-ui);
+  padding: 5px 10px; border-radius: 6px; cursor: pointer; letter-spacing: 0.05em;
+  transition: all 0.15s;
+}
+#arena-companions-btn:hover { border-color: var(--orange); color: var(--orange); }
+
+/* ── Companions view modal ── */
+.companions-view-panel { width: 560px; max-height: 70vh; overflow-y: auto; }
+.companions-view-list { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.companion-card {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border-dark);
+  border-radius: 8px; padding: 12px;
+  transition: border-color 0.15s;
+}
+.companion-card:hover { border-color: var(--border-mid); }
+.companion-card.is-main { border-color: var(--orange); }
+.companion-card-avatar {
+  width: 48px; height: 48px; border-radius: 6px;
+  background: var(--bg-dark); border: 1px solid var(--border-dark);
+  object-fit: contain; image-rendering: pixelated;
+  flex-shrink: 0;
+}
+.companion-card-avatar-placeholder {
+  width: 48px; height: 48px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center;
+  background: var(--bg-dark); border: 1px solid var(--border-dark);
+  font-size: 22px; flex-shrink: 0;
+}
+.companion-card-body { flex: 1; min-width: 0; }
+.companion-card-name {
+  font-family: var(--font-ui); font-size: 13px; font-weight: 700;
+  color: var(--text-primary); margin-bottom: 3px;
+}
+.companion-card-role { font-size: 10px; color: var(--orange); text-transform: uppercase; margin-bottom: 6px; }
+.companion-card-details { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.companion-card-tag {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border-dark);
+  color: var(--text-muted);
+}
+.companion-card-tag.trait { border-color: rgba(255,153,0,0.3); color: var(--orange); }
+.companion-card-model { font-size: 10px; color: var(--text-muted); }
+.companion-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+.companion-card-btn {
+  font-size: 10px; padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border-mid);
+  color: var(--text-secondary); font-family: var(--font-ui); transition: all 0.15s;
+}
+.companion-card-btn:hover { border-color: var(--orange); color: var(--orange); }
+.companion-card-btn.primary { border-color: var(--orange); color: var(--orange); }
