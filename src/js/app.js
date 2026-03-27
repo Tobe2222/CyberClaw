@@ -335,21 +335,29 @@ function startCameraLoop() {
 // Background selector
 // ---------------------------------------------------------------------------
 const BACKGROUNDS = [
-  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.55 },
-  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.35 },
-  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.50 },
+  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.55, season: 'summer', vibe: 'a warm sunny meadow full of flowers' },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.35, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
+  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.50, season: 'spring', vibe: 'a peaceful forest edge in spring' },
 ];
 
 let currentBgId = 'forest'; // default
 
-function applyBackground(bgId) {
+function applyBackground(bgId, react) {
   const bg = BACKGROUNDS.find(b => b.id === bgId);
   if (!bg || !pixelArena) return;
+  const isChange = currentBgId && currentBgId !== bgId;
   currentBgId = bgId;
   const bgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
   pixelArena.setBackground(bgPath);
   pixelArena.horizonLine = bg.horizon || 0.5;
   localStorage.setItem('cyberclaw-arena-bg', bgId);
+
+  // React to background change (not on initial load)
+  if (isChange && react !== false) {
+    setTimeout(function() {
+      promptCompanionReaction('The scenery just changed to ' + bg.vibe + '. Comment on the new surroundings in 1 sentence.');
+    }, 500);
+  }
 }
 
 function loadSavedBackground() {
@@ -1955,7 +1963,10 @@ const DEFAULT_SETTINGS = {
   keyGoogle: '',
   ollamaUrl: '',
   discordToken: '',
-  telegramToken: ''
+  telegramToken: '',
+  // User profile
+  userName: '',
+  userGender: '' // 'male', 'female', or ''
 };
 
 function loadSettings() {
@@ -1986,6 +1997,10 @@ function saveSettings() {
   if (discEl) s.discordToken = discEl.value.trim();
   const teleEl = document.getElementById('settings-telegram-token');
   if (teleEl) s.telegramToken = teleEl.value.trim();
+  const userNameEl = document.getElementById('settings-user-name');
+  if (userNameEl) s.userName = userNameEl.value.trim();
+  const userGenderEl = document.getElementById('settings-user-gender');
+  if (userGenderEl) s.userGender = userGenderEl.value;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 }
 
@@ -2020,6 +2035,10 @@ window.openSettings = function() {
   if (discEl) discEl.value = s.discordToken || '';
   const teleEl = document.getElementById('settings-telegram-token');
   if (teleEl) teleEl.value = s.telegramToken || '';
+  const userNameEl = document.getElementById('settings-user-name');
+  if (userNameEl) userNameEl.value = s.userName || '';
+  const userGenderEl = document.getElementById('settings-user-gender');
+  if (userGenderEl) userGenderEl.value = s.userGender || '';
   // Theme buttons
   document.getElementById('theme-dark-btn').classList.toggle('active', s.theme !== 'light');
   document.getElementById('theme-light-btn').classList.toggle('active', s.theme === 'light');
@@ -2617,3 +2636,79 @@ function promptCompanionReaction(promptText) {
     if (arena && arena.showBubble) arena.showBubble(msg, 10000);
   });
 }
+
+// ═══════════════════════════════════════════════════════════
+//  USER CONTEXT HELPER
+// ═══════════════════════════════════════════════════════════
+
+function getUserContext() {
+  var s = loadSettings();
+  var parts = [];
+  if (s.userName) parts.push('The user\'s name is ' + s.userName + '.');
+  if (s.userGender === 'male') parts.push('Address them as "sir" or use male pronouns.');
+  else if (s.userGender === 'female') parts.push('Address them as "miss" or use female pronouns.');
+  return parts.length ? parts.join(' ') : '';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STARTUP GREETING
+// ═══════════════════════════════════════════════════════════
+
+function doStartupGreeting() {
+  var now = new Date();
+  var hour = now.getHours();
+  var timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  var userCtx = getUserContext();
+  var prompt = '[You are a companion creature greeting your user when they open the app. ' +
+    'Give a short warm greeting appropriate for the ' + timeOfDay + '. ' +
+    'Mention something fun or upbeat about the day. 1-2 sentences max, max 1 emoji. ' +
+    (userCtx ? userCtx + ' ' : '') +
+    'No asterisks or roleplay actions.]';
+
+  setTimeout(function() {
+    promptCompanionReaction(prompt);
+  }, 4000); // wait for UI to fully load
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IDLE CHATTER — random comments every ~20 minutes
+// ═══════════════════════════════════════════════════════════
+
+var IDLE_PROMPTS = [
+  'Say something curious or funny about what might be lurking in the forest nearby.',
+  'Make a short observation about the weather or time of day.',
+  'Ask the user if they have any cool quests or tasks to work on today.',
+  'Make a playful comment about being bored and suggest something fun to do.',
+  'Say something quirky about being a digital creature living on a computer.',
+  'Make a short comment about food or treats (hint that you\'re hungry).',
+  'Ask the user what they\'re working on today in a curious way.',
+  'Say something random and funny about the forest or nature.',
+  'Make a light observation about the user seeming busy or quiet.',
+  'Say something about wanting to go on an adventure.',
+];
+
+function scheduleIdleChatter() {
+  // Random interval between 15 and 25 minutes
+  var minMs = 15 * 60 * 1000;
+  var maxMs = 25 * 60 * 1000;
+  var delay = minMs + Math.random() * (maxMs - minMs);
+
+  setTimeout(function() {
+    var userCtx = getUserContext();
+    var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
+    var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +
+      randomPrompt + ' Keep it to 1 short sentence, max 1 emoji, no asterisks. ' +
+      (userCtx ? userCtx : '') + ']';
+
+    promptCompanionReaction(fullPrompt);
+
+    // Schedule the next one
+    scheduleIdleChatter();
+  }, delay);
+}
+
+// Start greeting and idle chatter after boot
+setTimeout(function() {
+  doStartupGreeting();
+  scheduleIdleChatter();
+}, 2000);

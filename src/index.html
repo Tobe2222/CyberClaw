@@ -394,6 +394,24 @@
         </div>
 
         <!-- Data -->
+        <!-- User Profile -->
+        <div class="settings-section">
+          <div class="settings-section-title">👤 User Profile</div>
+          <div class="settings-row">
+            <span class="settings-label">Your name</span>
+            <input id="settings-user-name" class="settings-input" type="text" placeholder="Optional — helps companion address you" onchange="saveSettings()">
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Gender</span>
+            <select id="settings-user-gender" class="settings-select" onchange="saveSettings()">
+              <option value="">Prefer not to say</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+
         <div class="settings-section">
           <div class="settings-section-title">📦 Data</div>
           <div class="settings-row">
