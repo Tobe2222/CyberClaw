@@ -163,6 +163,7 @@ async function loadAgents() {
             agents[id].primaryModel = cfg.primaryModel;
             agents[id].model = formatModelName(cfg.primaryModel);
           }
+          if (cfg.secondaryModel) agents[id].secondaryModel = cfg.secondaryModel;
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
@@ -616,10 +617,11 @@ function updateInspect(agentId) {
   document.getElementById('inspect-model-name').textContent = agent.model;
   document.getElementById('inspect-provider').textContent = agent.provider;
 
-  if (agent.fallbackModels?.length) {
-    const fb = agent.fallbackModels[0];
-    const fbProvider = fb.split('/')[0] || '?';
-    document.getElementById('inspect-fallback-name').textContent = formatModelName(fb);
+  // Show secondary model (from forge) or fallback model (from discovery)
+  var secondary = agent.secondaryModel || (agent.fallbackModels?.length ? agent.fallbackModels[0] : '');
+  if (secondary) {
+    const fbProvider = secondary.split('/')[0] || '?';
+    document.getElementById('inspect-fallback-name').textContent = formatModelName(secondary);
     document.getElementById('inspect-fallback-provider').textContent = fbProvider.charAt(0).toUpperCase() + fbProvider.slice(1);
     fallbackRow.style.display = '';
   } else {
@@ -1188,6 +1190,11 @@ window.sendChat = async function() {
 
 let chatMsgId = 0;
 function addChatMsg(type, text, name, emoji) {
+  // System messages go to the Events tab
+  if (type === 'system') {
+    return addEventMsg(text);
+  }
+
   const msgs = document.getElementById('chat-messages');
   const div = document.createElement('div');
   const id = `chat-msg-${++chatMsgId}`;
@@ -1207,13 +1214,33 @@ function addChatMsg(type, text, name, emoji) {
     case 'error':
       div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
       break;
-    case 'system':
-      div.innerHTML = `<span class="msg-prefix">[SYS]</span><span class="msg-text">${escHtml(text)}</span>`;
-      break;
   }
 
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
+  return id;
+}
+
+let eventMsgId = 0;
+function addEventMsg(text) {
+  const evts = document.getElementById('event-messages');
+  if (!evts) return null;
+  const div = document.createElement('div');
+  const id = `event-msg-${++eventMsgId}`;
+  div.id = id;
+  div.className = 'chat-msg system';
+  var now = new Date();
+  var ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  div.innerHTML = '<span class="msg-prefix" style="color:var(--text-muted)">[' + ts + ']</span> <span class="msg-text">' + escHtml(text) + '</span>';
+  evts.appendChild(div);
+  evts.scrollTop = evts.scrollHeight;
+
+  // Flash the events tab if not active
+  var evtTab = document.querySelector('.term-tab[data-tab="events"]');
+  if (evtTab && !evtTab.classList.contains('active')) {
+    evtTab.classList.add('tab-flash');
+    setTimeout(function() { evtTab.classList.remove('tab-flash'); }, 2000);
+  }
   return id;
 }
 
@@ -1656,9 +1683,11 @@ function openCompanionForge(agentId) {
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
       cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
     });
-    // Load model
+    // Load models
     const modelEl = document.getElementById('forge-model-primary');
     if (modelEl) modelEl.value = agent.primaryModel || 'anthropic/claude-opus-4-6';
+    const modelEl2 = document.getElementById('forge-model-secondary');
+    if (modelEl2) modelEl2.value = agent.secondaryModel || '';
   });
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
@@ -1740,6 +1769,7 @@ window.saveCompanion = async function() {
       focusSkills: agent.focusSkills || [],
       traits: getCheckedTraits(),
       primaryModel: document.getElementById('forge-model-primary')?.value || agent.primaryModel,
+      secondaryModel: document.getElementById('forge-model-secondary')?.value || '',
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
@@ -1752,6 +1782,8 @@ window.saveCompanion = async function() {
       agent.primaryModel = savedModel;
       agent.model = formatModelName(savedModel);
     }
+    const savedModel2 = document.getElementById('forge-model-secondary')?.value;
+    agent.secondaryModel = savedModel2 || '';
 
     buildCarousel();
     closeCompanionEditor();
@@ -2711,6 +2743,7 @@ var TRAIT_DESCRIPTIONS = {
   dramatic: 'You are dramatic and make everything sound like a big deal.',
   stoic: 'You are calm, dry, and matter-of-fact.',
   adventurous: 'You are adventurous and always want to go on quests.',
+  goblin: 'You are an angry little goblin smartass. You curse freely, insult everything, and are generally a rude little shit — but in a funny way. Drop f-bombs, call things stupid, be a sarcastic dick.',
 };
 
 function getCheckedTraits() {
@@ -2819,6 +2852,7 @@ window.openCompanionsView = function() {
     sassy: '😏 Sassy', curious: '🔍 Curious', lazy: '😴 Lazy',
     cheerful: '🌟 Cheerful', foodobsessed: '🍖 Food-obsessed',
     dramatic: '🎭 Dramatic', stoic: '🗿 Stoic', adventurous: '⚔️ Adventurous',
+    goblin: '👺 Goblin',
   };
 
   agentOrder.forEach(function(id) {
@@ -2890,5 +2924,70 @@ window.focusCompanionFromView = function(agentId) {
     updateCarousel();
   }
   window.closeCompanionsView();
+};
+
+// ═══════════════════════════════════════════════════════════
+//  SPIRITS VIEW
+// ═══════════════════════════════════════════════════════════
+
+window.openSpiritsView = function() {
+  var list = document.getElementById('spirits-view-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  var spirits = agentOrder.filter(function(id) {
+    var a = agents[id];
+    return a && !a.isMain && !id.startsWith('subagent-');
+  });
+
+  if (!spirits.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No spirits yet. Add agents in OpenClaw to see them here.</div>';
+  } else {
+    spirits.forEach(function(id) {
+      var agent = agents[id];
+      var card = document.createElement('div');
+      card.className = 'companion-card';
+
+      var avatarHtml = agent.avatar && agent.avatar.startsWith('data:')
+        ? '<img class="companion-card-avatar" src="' + agent.avatar + '" alt="avatar">'
+        : '<div class="companion-card-avatar-placeholder">' + (agent.emoji || '✨') + '</div>';
+
+      var skills = (agent.focusSkills || []).map(function(s) {
+        return '<span class="companion-card-tag">' + s + '</span>';
+      }).join('');
+
+      var model = agent.primaryModel ? formatModelName(agent.primaryModel) : agent.model || '—';
+
+      card.innerHTML = avatarHtml +
+        '<div class="companion-card-body">' +
+          '<div class="companion-card-name">' + agent.name + '</div>' +
+          '<div class="companion-card-role">✨ Spirit' + (agent.class ? ' — ' + agent.class : '') + '</div>' +
+          (skills ? '<div class="companion-card-details">' + skills + '</div>' : '') +
+          '<div class="companion-card-model">🧠 ' + model + '</div>' +
+          '<div class="companion-card-actions">' +
+            '<button class="companion-card-btn primary" onclick="editSpiritFromView(\'' + id + '\')">✏️ Edit</button>' +
+            '<button class="companion-card-btn" onclick="focusCompanionFromView(\'' + id + '\')">👁 Focus</button>' +
+          '</div>' +
+        '</div>';
+
+      list.appendChild(card);
+    });
+  }
+
+  document.getElementById('spirits-view-overlay').classList.remove('hidden');
+};
+
+window.closeSpiritsView = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('spirits-view-overlay').classList.add('hidden');
+};
+
+window.editSpiritFromView = function(agentId) {
+  window.closeSpiritsView();
+  setTimeout(function() {
+    var idx = agentOrder.indexOf(agentId);
+    if (idx >= 0) focusIndex = idx;
+    window.openSpiritEditor();
+  }, 150);
 };
 

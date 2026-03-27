@@ -100,8 +100,9 @@
         <!-- Shared 2D pixel arena (the whole arena view) -->
         <div id="pixel-arena-container"></div>
 
-        <!-- View companions button (top left) -->
+        <!-- View companions/spirits buttons (top left) -->
         <button id="arena-companions-btn" onclick="openCompanionsView()" title="View companions">🐾 Companions</button>
+        <button id="arena-spirits-btn" onclick="openSpiritsView()" title="View spirits">✨ Spirits</button>
 
         <!-- Pop-out button -->
         <button id="arena-expand-btn" onclick="toggleArenaExpand()" title="Expand arena">⛶</button>
@@ -141,6 +142,17 @@
         </div>
       </div>
 
+      <!-- Spirits view modal -->
+      <div id="spirits-view-overlay" class="modal-overlay hidden" onclick="closeSpiritsView(event)">
+        <div class="modal-panel companions-view-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon">✨</span> SPIRITS
+            <button class="modal-close" onclick="closeSpiritsView()">✕</button>
+          </div>
+          <div id="spirits-view-list" class="companions-view-list"></div>
+        </div>
+      </div>
+
       <!-- Background selector modal -->
       <div id="bg-selector-overlay" class="modal-overlay hidden" onclick="closeBgSelector(event)">
         <div class="modal-panel bg-selector-panel" onclick="event.stopPropagation()">
@@ -161,10 +173,16 @@
           <button class="term-tab active" data-tab="chat" onclick="switchTermTab('chat')">
             <span class="tab-icon">💬</span> Chat
           </button>
+          <button class="term-tab" data-tab="events" onclick="switchTermTab('events')">
+            <span class="tab-icon">📜</span> Events
+          </button>
           <button class="term-tab-toggle" onclick="toggleTerminal()" title="Expand/Collapse">▼</button>
         </div>
         <div id="view-terminal" class="term-view">
           <div id="terminal-container"></div>
+        </div>
+        <div id="view-events" class="term-view">
+          <div id="event-messages"></div>
         </div>
         <div id="view-chat" class="term-view active">
           <div id="chat-messages">
@@ -505,10 +523,32 @@
 
         <!-- Model Selection -->
         <div class="forge-traits-section">
-          <div class="forge-traits-title">🧠 Model</div>
+          <div class="forge-traits-title">🧠 Models</div>
           <div class="settings-row" style="margin-bottom:6px;">
-            <span class="settings-label">Primary Model</span>
+            <span class="settings-label">Primary</span>
             <select id="forge-model-primary" class="settings-select">
+              <optgroup label="Anthropic">
+                <option value="anthropic/claude-opus-4-6">Claude Opus 4</option>
+                <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4</option>
+                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Google">
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              </optgroup>
+              <optgroup label="Local">
+                <option value="ollama/llama3">Ollama — Llama 3</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">Secondary</span>
+            <select id="forge-model-secondary" class="settings-select">
+              <option value="">None (primary only)</option>
               <optgroup label="Anthropic">
                 <option value="anthropic/claude-opus-4-6">Claude Opus 4</option>
                 <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4</option>
@@ -541,6 +581,7 @@
             <label class="trait-toggle"><input type="checkbox" id="trait-dramatic"> <span class="trait-label">🎭 Dramatic</span><span class="trait-desc">Makes everything a big deal</span></label>
             <label class="trait-toggle"><input type="checkbox" id="trait-stoic"> <span class="trait-label">🗿 Stoic</span><span class="trait-desc">Calm, dry, matter-of-fact</span></label>
             <label class="trait-toggle"><input type="checkbox" id="trait-adventurous"> <span class="trait-label">⚔️ Adventurous</span><span class="trait-desc">Always wants to go on quests</span></label>
+            <label class="trait-toggle"><input type="checkbox" id="trait-goblin"> <span class="trait-label">👺 Goblin</span><span class="trait-desc">Angry smartass, curses freely</span></label>
           </div>
         </div>
       </div>
