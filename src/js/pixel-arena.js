@@ -41,11 +41,16 @@ class PixelArena {
 
     this.onSelect = null; // callback(agentId) when entity clicked
 
-    // Treats system
+    // Treats system (food — gets eaten)
     // Use global treat store so treats survive arena rebuilds
     if (!window._arenaTreats) window._arenaTreats = [];
     this.treats = window._arenaTreats;
     this.companionEmoji = null; // { emoji, timer }
+
+    // Toys system (interactive — bounce physics)
+    if (!window._arenaToys) window._arenaToys = [];
+    this.toys = window._arenaToys;
+    this._draggedToy = null; // currently dragged toy
 
     // Speech bubble
     this.bubbleEl = null;
@@ -55,6 +60,7 @@ class PixelArena {
     this._generateGrass();
     this._initResize();
     this._initClick();
+    this._initToyDrag();
     this._animate();
   }
 
@@ -268,9 +274,26 @@ class PixelArena {
     this.bubbleEl.style.top = Math.max(5, by) + 'px';
   }
 
-  // ── TREATS ───────────────────────────────────────────────────
+  // ── TREATS & TOYS ─────────────────────────────────────────────
+
+  static TOY_TYPES = ['ball', 'yarn', 'stick', 'frisbee', 'bell', 'feather'];
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
+    // Route toys to the physics system
+    if (PixelArena.TOY_TYPES.includes(treatType)) {
+      window._arenaToys.push({
+        x: canvasX - 16, y: canvasY - 16,
+        vx: 0, vy: 0,
+        type: treatType,
+        emoji: emoji || '⚽',
+        radius: 16,
+        age: 0,
+        bouncePhase: 0,
+      });
+      this.toys = window._arenaToys;
+      return;
+    }
+    // Food treat — gets eaten
     window._arenaTreats.push({
       x: canvasX - 14,
       y: canvasY - 14,
@@ -281,7 +304,143 @@ class PixelArena {
       bouncePhase: 0,
       graceTimer: 2000
     });
-    this.treats = window._arenaTreats; // ensure sync
+    this.treats = window._arenaTreats;
+  }
+
+  _initToyDrag() {
+    const arena = this;
+    let dragging = null;
+    let dragOffX = 0, dragOffY = 0;
+    let lastMX = 0, lastMY = 0;
+    let lastDragTime = 0;
+
+    function canvasCoord(e) {
+      const rect = arena.canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (arena.width / rect.width),
+        y: (e.clientY - rect.top) * (arena.height / rect.height)
+      };
+    }
+
+    function findToy(mx, my) {
+      for (let i = arena.toys.length - 1; i >= 0; i--) {
+        const t = arena.toys[i];
+        const dx = mx - (t.x + t.radius);
+        const dy = my - (t.y + t.radius);
+        if (dx * dx + dy * dy < (t.radius + 8) * (t.radius + 8)) return t;
+      }
+      return null;
+    }
+
+    this.canvas.addEventListener('mousedown', function(e) {
+      const pos = canvasCoord(e);
+      const toy = findToy(pos.x, pos.y);
+      if (toy) {
+        dragging = toy;
+        arena._draggedToy = toy;
+        dragOffX = pos.x - toy.x;
+        dragOffY = pos.y - toy.y;
+        lastMX = pos.x; lastMY = pos.y;
+        lastDragTime = performance.now();
+        toy.vx = 0; toy.vy = 0;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    });
+
+    this.canvas.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      const pos = canvasCoord(e);
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastDragTime);
+      // Track velocity from drag movement
+      dragging.vx = (pos.x - lastMX) / elapsed * 0.8;
+      dragging.vy = (pos.y - lastMY) / elapsed * 0.8;
+      dragging.x = pos.x - dragOffX;
+      dragging.y = pos.y - dragOffY;
+      lastMX = pos.x; lastMY = pos.y;
+      lastDragTime = now;
+      e.preventDefault();
+    });
+
+    const stopDrag = function() {
+      if (dragging) {
+        // Clamp throw velocity
+        const maxV = 0.3;
+        if (dragging.vx > maxV) dragging.vx = maxV;
+        if (dragging.vx < -maxV) dragging.vx = -maxV;
+        if (dragging.vy > maxV) dragging.vy = maxV;
+        if (dragging.vy < -maxV) dragging.vy = -maxV;
+      }
+      dragging = null;
+      arena._draggedToy = null;
+    };
+    this.canvas.addEventListener('mouseup', stopDrag);
+    this.canvas.addEventListener('mouseleave', stopDrag);
+  }
+
+  // ── TOY PHYSICS ─────────────────────────────────────────────
+
+  _updateToys(dt) {
+    const friction = 0.997; // per-ms friction multiplier
+    const wallBounce = 0.7;
+    const margin = 5;
+
+    for (const toy of this.toys) {
+      if (toy === this._draggedToy) continue; // user is holding this
+
+      toy.age += dt;
+      toy.bouncePhase += dt * 0.004;
+
+      // Apply velocity
+      toy.x += toy.vx * dt;
+      toy.y += toy.vy * dt;
+
+      // Friction
+      const f = Math.pow(friction, dt);
+      toy.vx *= f;
+      toy.vy *= f;
+
+      // Stop when very slow
+      if (Math.abs(toy.vx) < 0.0005 && Math.abs(toy.vy) < 0.0005) {
+        toy.vx = 0; toy.vy = 0;
+      }
+
+      // Wall bounce
+      if (toy.x < margin) { toy.x = margin; toy.vx = Math.abs(toy.vx) * wallBounce; }
+      if (toy.x > this.width - toy.radius * 2 - margin) { toy.x = this.width - toy.radius * 2 - margin; toy.vx = -Math.abs(toy.vx) * wallBounce; }
+      if (toy.y < margin) { toy.y = margin; toy.vy = Math.abs(toy.vy) * wallBounce; }
+      if (toy.y > this.height - toy.radius * 2 - margin) { toy.y = this.height - toy.radius * 2 - margin; toy.vy = -Math.abs(toy.vy) * wallBounce; }
+
+      // Collide with spirits — knock them sideways
+      const toyCX = toy.x + toy.radius;
+      const toyCY = toy.y + toy.radius;
+      const toySpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
+      if (toySpeed > 0.01) {
+        for (const spirit of this.spirits) {
+          const sCX = spirit.x + spirit.size / 2;
+          const sCY = spirit.y + spirit.size / 2;
+          const dx = sCX - toyCX;
+          const dy = sCY - toyCY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const hitDist = toy.radius + spirit.size / 2;
+          if (dist < hitDist && dist > 0) {
+            // Knock the spirit away
+            const knockForce = toySpeed * 1.5;
+            spirit.vx += (dx / dist) * knockForce;
+            spirit.vy += (dy / dist) * knockForce;
+            // Slow the toy slightly
+            toy.vx *= 0.6;
+            toy.vy *= 0.6;
+          }
+        }
+      }
+    }
+
+    // Remove very old toys (5 minutes)
+    for (let i = this.toys.length - 1; i >= 0; i--) {
+      if (this.toys[i].age > 300000) this.toys.splice(i, 1);
+    }
   }
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
@@ -353,14 +512,68 @@ class PixelArena {
       }
     }
 
+    // Chase toys when no food treats around (and not seeking food)
+    if (comp.state !== 'seek' && this.toys.length > 0) {
+      const fw2 = (comp.data.frameSize[0] || 32) * comp.scale;
+      const fh2 = (comp.data.frameSize[1] || 32) * comp.scale;
+      const compCX2 = comp.x + fw2 / 2;
+      const compCY2 = comp.y + fh2 / 2;
+
+      // Find nearest stopped or slow-moving toy
+      let nearToy = null;
+      let nearToyDist = Infinity;
+      for (const toy of this.toys) {
+        if (toy === this._draggedToy) continue;
+        const dx = (toy.x + toy.radius) - compCX2;
+        const dy = (toy.y + toy.radius) - compCY2;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < nearToyDist) { nearToy = toy; nearToyDist = dist; }
+      }
+
+      if (nearToy) {
+        if (nearToyDist < 35) {
+          // Kick the toy!
+          const kickAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
+          const kickPower = 0.12 + Math.random() * 0.08;
+          nearToy.vx = Math.cos(kickAngle) * kickPower;
+          nearToy.vy = Math.sin(kickAngle) * kickPower;
+          comp.state = 'idle';
+          comp.animation = 'idle';
+          comp.vx = 0; comp.vy = 0;
+          comp.stateTimer = 800 + Math.random() * 1200; // pause after kick
+          this.companionEmoji = { emoji: '⚽', timer: 1500 };
+          if (window.adjustHappiness) window.adjustHappiness(3);
+        } else if (nearToyDist < 400) {
+          // Run toward the toy
+          const toySpeed = Math.sqrt(nearToy.vx * nearToy.vx + nearToy.vy * nearToy.vy);
+          // Only chase if toy is slow enough to catch
+          if (toySpeed < 0.08) {
+            comp.state = 'chase_toy';
+            comp.animation = comp.images['run'] ? 'run' : 'walk';
+            const dx = (nearToy.x + nearToy.radius) - compCX2;
+            const dy = (nearToy.y + nearToy.radius) - compCY2;
+            const chaseSpeed = 0.045;
+            comp.vx = (dx / nearToyDist) * chaseSpeed;
+            comp.vy = (dy / nearToyDist) * chaseSpeed;
+            if (Math.abs(dx) > Math.abs(dy)) {
+              comp.direction = dx < 0 ? 1 : 2;
+            } else {
+              comp.direction = dy < 0 ? 3 : 0;
+            }
+            comp.stateTimer = 200;
+          }
+        }
+      }
+    }
+
     // Update emoji timer
     if (this.companionEmoji) {
       this.companionEmoji.timer -= dt;
       if (this.companionEmoji.timer <= 0) this.companionEmoji = null;
     }
 
-    // AI state machine — mostly idle, sometimes wander (skip if seeking treat)
-    if (comp.state !== 'seek') {
+    // AI state machine — mostly idle, sometimes wander (skip if seeking treat or chasing toy)
+    if (comp.state !== 'seek' && comp.state !== 'chase_toy') {
     comp.stateTimer -= dt;
     if (comp.stateTimer <= 0) {
       const roll = Math.random();
@@ -576,6 +789,7 @@ class PixelArena {
     // Update
     if (this.companion) this._updateCompanion(this.companion, dt);
     for (const spirit of this.spirits) this._updateSpirit(spirit, dt);
+    this._updateToys(dt);
 
     // Update treat age and grace timer
     for (const treat of this.treats) {
@@ -601,6 +815,22 @@ class PixelArena {
       this.ctx.fillStyle = 'rgba(0,0,0,0.25)';
       this.ctx.beginPath();
       this.ctx.ellipse(treat.x + 16, treat.y + 26, 10, 4, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    // Draw toys on ground (physics objects)
+    for (const toy of this.toys) {
+      const spin = toy.bouncePhase * 2; // rotation effect from velocity
+      const speed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
+      const wobble = speed > 0.01 ? Math.sin(spin) * 3 : 0;
+      this.ctx.font = '31px serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(toy.emoji, toy.x + toy.radius + wobble, toy.y + toy.radius);
+      // Shadow — bigger when moving fast
+      const shadowSize = 10 + Math.min(speed * 100, 8);
+      this.ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      this.ctx.beginPath();
+      this.ctx.ellipse(toy.x + toy.radius, toy.y + toy.radius + 14, shadowSize, 4, 0, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
