@@ -341,9 +341,9 @@ function startCameraLoop() {
 // Background selector
 // ---------------------------------------------------------------------------
 const BACKGROUNDS = [
-  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.55, season: 'summer', vibe: 'a warm sunny meadow full of flowers' },
-  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.35, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
-  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.50, season: 'spring', vibe: 'a peaceful forest edge in spring' },
+  { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.30, season: 'summer', vibe: 'a warm sunny meadow full of flowers' },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.40, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
+  { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.30, season: 'spring', vibe: 'a peaceful forest edge in spring' },
 ];
 
 let currentBgId = 'forest'; // default
@@ -357,6 +357,9 @@ function applyBackground(bgId, react) {
   pixelArena.setBackground(bgPath);
   pixelArena.horizonLine = bg.horizon || 0.5;
   localStorage.setItem('cyberclaw-arena-bg', bgId);
+  // Update bg name label
+  var bgLabel = document.getElementById('arena-bg-label');
+  if (bgLabel) bgLabel.textContent = bg.label;
 
   // React to background change (not on initial load)
   if (isChange && react !== false) {

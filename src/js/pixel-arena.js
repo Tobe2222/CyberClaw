@@ -388,7 +388,7 @@ class PixelArena {
     const friction = 0.997; // per-ms ground friction multiplier
     const wallBounce = 0.7;
     const groundBounce = 0.55;
-    const gravity = 0.00025; // gravity pulls toys down when airborne
+    const gravity = 0.0008; // gravity pulls toys down when airborne
     const margin = 5;
     const horizonY = this.height * this.horizonLine;
     const groundBottom = this.height - margin;
@@ -411,9 +411,13 @@ class PixelArena {
         if (toy.y < horizonY) {
           // Dropped in the sky — map drop height to ground depth
           // Higher in sky → lands closer to horizon (further away)
-          const skyFraction = toy.y / horizonY; // 0 = top, 1 = horizon
-          toy.groundY = horizonY + (groundBottom - horizonY) * (1 - skyFraction) * 0.3;
+          // Lower in sky (near horizon) → lands further down on ground
+          const skyFraction = toy.y / Math.max(1, horizonY); // 0 = top of screen, 1 = horizon
+          // Map: top of sky → just below horizon, near horizon → middle of ground
+          const groundRange = groundBottom - horizonY - toy.radius * 2;
+          toy.groundY = horizonY + 10 + groundRange * (1 - skyFraction) * 0.6;
           toy.airborne = true;
+          toy.vy = 0; // start with zero vertical velocity, gravity does the rest
         } else {
           // Dropped on ground — stays where it is
           toy.groundY = toy.y;
@@ -604,9 +608,10 @@ class PixelArena {
 
       if (nearToy) {
         if (nearToyDist < 35) {
-          // Kick the toy!
-          const kickAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
-          const kickPower = 0.12 + Math.random() * 0.08;
+          // Kick the toy! Add randomness to direction
+          const baseAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
+          const kickAngle = baseAngle + (Math.random() - 0.5) * 1.4; // ±40° random spread
+          const kickPower = 0.10 + Math.random() * 0.12;
           nearToy.vx = Math.cos(kickAngle) * kickPower;
           nearToy.vy = Math.sin(kickAngle) * kickPower;
           nearToy.lastTouched = performance.now();
