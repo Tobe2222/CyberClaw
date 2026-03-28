@@ -727,16 +727,23 @@ class PixelArena {
           comp.stateTimer = 1000 + Math.random() * 1500;
           this.companionEmoji = { emoji: '⚽', timer: 2000 };
           if (window.adjustHappiness) window.adjustHappiness(3);
-        } else if (nearToyDist < 400) {
-          // Run toward the toy
+        } else {
+          // Chase the toy — speed depends on distance
           const toySpeed = Math.sqrt(nearToy.vx * nearToy.vx + nearToy.vy * nearToy.vy);
-          // Only chase if toy is slow enough to catch
-          if (toySpeed < 0.08) {
+          if (toySpeed < 0.10) {
             comp.state = 'chase_toy';
             comp.animation = comp.images['run'] ? 'run' : 'walk';
             const dx = (nearToy.x + nearToy.radius) - compCX2;
             const dy = (nearToy.y + nearToy.radius) - compCY2;
-            const chaseSpeed = 0.045;
+            // Run faster when far away, slow down when close
+            var chaseSpeed;
+            if (nearToyDist > 200) {
+              chaseSpeed = 0.09 + Math.random() * 0.03; // sprint
+            } else if (nearToyDist > 80) {
+              chaseSpeed = 0.055 + Math.random() * 0.02; // run
+            } else {
+              chaseSpeed = 0.035; // approach carefully
+            }
             comp.vx = (dx / nearToyDist) * chaseSpeed;
             comp.vy = (dy / nearToyDist) * chaseSpeed;
             if (Math.abs(dx) > Math.abs(dy)) {
@@ -744,7 +751,7 @@ class PixelArena {
             } else {
               comp.direction = dy < 0 ? 3 : 0;
             }
-            comp.stateTimer = 200;
+            comp.stateTimer = 150;
           }
         }
       }
@@ -756,19 +763,51 @@ class PixelArena {
       if (this.companionEmoji.timer <= 0) this.companionEmoji = null;
     }
 
-    // AI state machine — mostly idle, sometimes wander (skip if seeking treat or chasing toy)
+    // Track boredom — increases when idle with no toys
+    if (!comp.boredom) comp.boredom = 0;
+    var hasToys = this.toys.length > 0;
+
+    // AI state machine (skip if seeking treat or chasing toy)
     if (comp.state !== 'seek' && comp.state !== 'chase_toy') {
     comp.stateTimer -= dt;
     if (comp.stateTimer <= 0) {
+      // Boredom increases when idle without toys
+      if (comp.state === 'idle' && !hasToys) {
+        comp.boredom += 15 + Math.random() * 10;
+      } else if (hasToys) {
+        comp.boredom = Math.max(0, comp.boredom - 20);
+      }
+
       const roll = Math.random();
-      if (roll < 0.5) {
-        // Idle — stay center-ish
+
+      if (comp.boredom > 80 && !hasToys && Math.random() < 0.4) {
+        // BORED — run around excitedly, then ask to play
+        comp.state = 'bored_run';
+        comp.animation = comp.images['run'] ? 'run' : 'walk';
+        comp.direction = Math.floor(Math.random() * 4);
+        const speed = 0.07 + Math.random() * 0.04;
+        const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
+        comp.vx = dirs[comp.direction][0] * speed;
+        comp.vy = dirs[comp.direction][1] * speed;
+        comp.stateTimer = 1500 + Math.random() * 1500;
+        this.companionEmoji = { emoji: '🥺', timer: 2500 };
+        // Ask to play via chat bubble
+        if (this.showBubble) {
+          var playPhrases = [
+            "Play with me!", "I'm bored...", "Throw me a ball! ⚽",
+            "Let's play!", "Wanna play?", "I need a toy! 🎾"
+          ];
+          this.showBubble(playPhrases[Math.floor(Math.random() * playPhrases.length)], 4000);
+        }
+        comp.boredom = 0; // reset after expressing it
+      } else if (roll < 0.45) {
+        // Idle — chill in one spot
         comp.state = 'idle';
         comp.animation = 'idle';
         comp.vx = 0;
         comp.vy = 0;
         comp.stateTimer = 3000 + Math.random() * 5000;
-      } else if (roll < 0.85) {
+      } else if (roll < 0.75) {
         // Gentle walk
         comp.state = 'walk';
         comp.animation = 'walk';
@@ -777,17 +816,27 @@ class PixelArena {
         const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
-        comp.stateTimer = 2000 + Math.random() * 3000;
-      } else {
-        // Brief run
+        comp.stateTimer = 2000 + Math.random() * 4000;
+      } else if (roll < 0.90) {
+        // Run around — energetic burst
         comp.state = 'run';
         comp.animation = comp.images['run'] ? 'run' : 'walk';
         comp.direction = Math.floor(Math.random() * 4);
-        const speed = 0.04 + Math.random() * 0.02;
+        const speed = 0.06 + Math.random() * 0.04;
         const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
-        comp.stateTimer = 800 + Math.random() * 1200;
+        comp.stateTimer = 1000 + Math.random() * 2000;
+      } else {
+        // Excited zoomies — fast dash in a random direction
+        comp.state = 'run';
+        comp.animation = comp.images['run'] ? 'run' : 'walk';
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.08 + Math.random() * 0.05;
+        comp.vx = Math.cos(angle) * speed;
+        comp.vy = Math.sin(angle) * speed;
+        comp.direction = Math.abs(comp.vx) > Math.abs(comp.vy) ? (comp.vx > 0 ? 2 : 1) : (comp.vy > 0 ? 0 : 3);
+        comp.stateTimer = 600 + Math.random() * 800;
       }
       comp.frame = 0;
       comp.frameTimer = 0;
