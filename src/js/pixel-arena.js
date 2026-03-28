@@ -598,7 +598,7 @@ class PixelArena {
       const toy = this.toys[i];
       if (!toy.lastTouched) toy.lastTouched = now;
       const idleTime = now - toy.lastTouched;
-      if (idleTime > 20000) this.toys.splice(i, 1);
+      if (idleTime > 60000) this.toys.splice(i, 1);
     }
   }
 
