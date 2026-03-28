@@ -284,7 +284,7 @@ class PixelArena {
       var horizonY = this.height * this.horizonLine;
       var groundBottom = this.height - 5;
       var dropY = canvasY - 16;
-      var isAboveHorizon = dropY < horizonY;
+      var isAboveHorizon = dropY < horizonY + 20; // small buffer zone
       var groundY;
       if (isAboveHorizon) {
         // Map sky position to ground depth
@@ -404,19 +404,40 @@ class PixelArena {
     const friction = 0.997; // per-ms ground friction multiplier
     const wallBounce = 0.7;
     const groundBounce = 0.55;
-    const gravity = 0.0008; // gravity pulls toys down when airborne
+    const gravity = 0.00015; // gravity — tuned for ~1.5s visible fall
     const margin = 5;
     const horizonY = this.height * this.horizonLine;
     const groundBottom = this.height - margin;
 
     for (const toy of this.toys) {
-      if (toy === this._draggedToy) {
-        toy.lastTouched = performance.now(); // track interaction
-        continue;
+      var isDragged = (toy === this._draggedToy);
+      if (isDragged) {
+        toy.lastTouched = performance.now();
       }
 
       toy.age += dt;
       toy.bouncePhase += dt * 0.004;
+
+      // Skip physics for dragged toy (user controls position) but still do collisions below
+      if (isDragged) {
+        // Collide dragged toy with spirits
+        var dToyCX = toy.x + toy.radius;
+        var dToyCY = toy.y + toy.radius;
+        var dSpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
+        var dForce = Math.max(dSpeed, 0.06); // dragged = always strong push
+        for (var si = 0; si < this.spirits.length; si++) {
+          var sp = this.spirits[si];
+          var sdx = (sp.x + sp.size / 2) - dToyCX;
+          var sdy = (sp.y + sp.size / 2) - dToyCY;
+          var sdist = Math.sqrt(sdx * sdx + sdy * sdy);
+          var shitDist = toy.radius + sp.size / 2;
+          if (sdist < shitDist && sdist > 0) {
+            sp.vx += (sdx / sdist) * dForce;
+            sp.vy += (sdy / sdist) * dForce;
+          }
+        }
+        continue; // skip rest of physics
+      }
 
       // Airborne physics — gravity pulls down toward groundY
       if (toy.airborne) {
@@ -427,7 +448,7 @@ class PixelArena {
         // Hit the ground?
         if (toy.y >= toy.groundY) {
           toy.y = toy.groundY;
-          if (Math.abs(toy.vy) > 0.01) {
+          if (Math.abs(toy.vy) > 0.005) {
             // Bounce!
             toy.vy = -Math.abs(toy.vy) * groundBounce;
           } else {

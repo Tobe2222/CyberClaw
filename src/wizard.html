@@ -223,14 +223,15 @@
     <!-- Step 2: API Key -->
     <div class="step" id="step-2">
       <div class="step-header">🔑 API Key</div>
-      <div class="step-desc">Your companions need a model to think. Enter your Anthropic API key to get started.</div>
-      <div class="wizard-label">Anthropic API Key</div>
+      <div class="step-desc">Your companions need a model to think. You can enter your API key now or set it up later in Settings.</div>
+      <div class="wizard-label">Anthropic API Key (optional)</div>
       <input type="password" class="wizard-input" id="input-apikey" placeholder="sk-ant-api03-..." />
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:16px">
         Get one at <span style="color:var(--cyan)">console.anthropic.com</span> → API Keys
       </div>
       <div class="btn-row">
         <button class="wizard-btn" onclick="goStep(1)">Back</button>
+        <button class="wizard-btn" onclick="goStep(3)">Skip for now</button>
         <button class="wizard-btn primary" id="btn-apikey" onclick="saveApiKey()">Save & Continue</button>
       </div>
     </div>
