@@ -693,10 +693,10 @@
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
 }
 .feed-treat {
-  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card); border: 1px solid var(--border-dark);
-  border-radius: 6px; font-size: 22px; cursor: grab; transition: all 0.15s;
-  user-select: none;
+  width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+  background: #1a1a28; border: 1px solid var(--border-dark);
+  border-radius: 8px; font-size: 29px; cursor: grab; transition: all 0.15s;
+  user-select: none; opacity: 1;
 }
 .feed-treat:hover { border-color: var(--orange); background: rgba(255,153,0,0.1); transform: scale(1.1); }
 .feed-treat:active { transform: scale(0.95); }

@@ -594,13 +594,13 @@ class PixelArena {
     // Draw treats on ground
     for (const treat of this.treats) {
       const bounce = Math.sin(treat.bouncePhase) * 2;
-      this.ctx.font = '24px serif';
+      this.ctx.font = '31px serif';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText(treat.emoji, treat.x + 14, treat.y + 14 + bounce);
+      this.ctx.fillText(treat.emoji, treat.x + 16, treat.y + 16 + bounce);
       // Small shadow
-      this.ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      this.ctx.fillStyle = 'rgba(0,0,0,0.25)';
       this.ctx.beginPath();
-      this.ctx.ellipse(treat.x + 14, treat.y + 22, 8, 3, 0, 0, Math.PI * 2);
+      this.ctx.ellipse(treat.x + 16, treat.y + 26, 10, 4, 0, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
