@@ -289,6 +289,9 @@ class PixelArena {
         radius: 16,
         age: 0,
         bouncePhase: 0,
+        groundY: undefined, // set by physics on first update
+        airborne: false,
+        lastTouched: performance.now(),
       });
       this.toys = window._arenaToys;
       return;
@@ -382,40 +385,107 @@ class PixelArena {
   // ── TOY PHYSICS ─────────────────────────────────────────────
 
   _updateToys(dt) {
-    const friction = 0.997; // per-ms friction multiplier
+    const friction = 0.997; // per-ms ground friction multiplier
     const wallBounce = 0.7;
+    const groundBounce = 0.55;
+    const gravity = 0.00025; // gravity pulls toys down when airborne
     const margin = 5;
+    const horizonY = this.height * this.horizonLine;
+    const groundBottom = this.height - margin;
 
     for (const toy of this.toys) {
-      if (toy === this._draggedToy) continue; // user is holding this
+      if (toy === this._draggedToy) {
+        toy.lastTouched = performance.now(); // track interaction
+        continue;
+      }
 
       toy.age += dt;
       toy.bouncePhase += dt * 0.004;
 
-      // Apply velocity
-      toy.x += toy.vx * dt;
-      toy.y += toy.vy * dt;
-
-      // Friction
-      const f = Math.pow(friction, dt);
-      toy.vx *= f;
-      toy.vy *= f;
-
-      // Stop when very slow
-      if (Math.abs(toy.vx) < 0.0005 && Math.abs(toy.vy) < 0.0005) {
-        toy.vx = 0; toy.vy = 0;
+      // Ground plane: the toy's "floor Y" depends on depth
+      // If dropped near horizon → floor is near horizon (far away)
+      // If dropped near bottom → floor is near bottom (close)
+      // The groundY is set when the toy is first dropped or when it lands
+      if (toy.groundY === undefined) {
+        // Set ground level based on drop position
+        if (toy.y < horizonY) {
+          // Dropped in the sky — map drop height to ground depth
+          // Higher in sky → lands closer to horizon (further away)
+          const skyFraction = toy.y / horizonY; // 0 = top, 1 = horizon
+          toy.groundY = horizonY + (groundBottom - horizonY) * (1 - skyFraction) * 0.3;
+          toy.airborne = true;
+        } else {
+          // Dropped on ground — stays where it is
+          toy.groundY = toy.y;
+          toy.airborne = false;
+        }
       }
 
-      // Wall bounce
+      // Airborne physics — gravity pulls down toward groundY
+      if (toy.airborne) {
+        toy.vy += gravity * dt;
+        toy.x += toy.vx * dt;
+        toy.y += toy.vy * dt;
+
+        // Hit the ground?
+        if (toy.y >= toy.groundY) {
+          toy.y = toy.groundY;
+          if (Math.abs(toy.vy) > 0.01) {
+            // Bounce!
+            toy.vy = -Math.abs(toy.vy) * groundBounce;
+          } else {
+            // Settled on ground
+            toy.vy = 0;
+            toy.airborne = false;
+          }
+        }
+
+        // Horizontal friction even in air (slight air resistance)
+        toy.vx *= Math.pow(0.999, dt);
+      } else {
+        // On ground — normal 2D movement
+        toy.x += toy.vx * dt;
+        toy.y += toy.vy * dt;
+
+        // Ground friction
+        const f = Math.pow(friction, dt);
+        toy.vx *= f;
+        toy.vy *= f;
+
+        // Stop when very slow
+        if (Math.abs(toy.vx) < 0.0005 && Math.abs(toy.vy) < 0.0005) {
+          toy.vx = 0; toy.vy = 0;
+        }
+
+        // Keep toy on ground plane (below horizon)
+        if (toy.y < horizonY) {
+          toy.y = horizonY;
+          toy.vy = Math.abs(toy.vy) * 0.5;
+        }
+        if (toy.y > groundBottom - toy.radius * 2) {
+          toy.y = groundBottom - toy.radius * 2;
+          toy.vy = -Math.abs(toy.vy) * 0.5;
+        }
+      }
+
+      // Wall bounce (left/right always applies)
       if (toy.x < margin) { toy.x = margin; toy.vx = Math.abs(toy.vx) * wallBounce; }
-      if (toy.x > this.width - toy.radius * 2 - margin) { toy.x = this.width - toy.radius * 2 - margin; toy.vx = -Math.abs(toy.vx) * wallBounce; }
+      if (toy.x > this.width - toy.radius * 2 - margin) {
+        toy.x = this.width - toy.radius * 2 - margin;
+        toy.vx = -Math.abs(toy.vx) * wallBounce;
+      }
+      // Top wall (sky ceiling)
       if (toy.y < margin) { toy.y = margin; toy.vy = Math.abs(toy.vy) * wallBounce; }
-      if (toy.y > this.height - toy.radius * 2 - margin) { toy.y = this.height - toy.radius * 2 - margin; toy.vy = -Math.abs(toy.vy) * wallBounce; }
+
+      // Track last movement for timeout
+      const toySpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
+      if (toySpeed > 0.005 || toy.airborne) {
+        toy.lastTouched = performance.now();
+      }
 
       // Collide with spirits — knock them sideways
       const toyCX = toy.x + toy.radius;
       const toyCY = toy.y + toy.radius;
-      const toySpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
       if (toySpeed > 0.01) {
         for (const spirit of this.spirits) {
           const sCX = spirit.x + spirit.size / 2;
@@ -425,11 +495,9 @@ class PixelArena {
           const dist = Math.sqrt(dx * dx + dy * dy);
           const hitDist = toy.radius + spirit.size / 2;
           if (dist < hitDist && dist > 0) {
-            // Knock the spirit away
             const knockForce = toySpeed * 1.5;
             spirit.vx += (dx / dist) * knockForce;
             spirit.vy += (dy / dist) * knockForce;
-            // Slow the toy slightly
             toy.vx *= 0.6;
             toy.vy *= 0.6;
           }
@@ -437,9 +505,13 @@ class PixelArena {
       }
     }
 
-    // Remove very old toys (5 minutes)
+    // Remove toys idle for 20 seconds (not moving + not touched)
+    const now = performance.now();
     for (let i = this.toys.length - 1; i >= 0; i--) {
-      if (this.toys[i].age > 300000) this.toys.splice(i, 1);
+      const toy = this.toys[i];
+      if (!toy.lastTouched) toy.lastTouched = now;
+      const idleTime = now - toy.lastTouched;
+      if (idleTime > 20000) this.toys.splice(i, 1);
     }
   }
 
@@ -537,6 +609,8 @@ class PixelArena {
           const kickPower = 0.12 + Math.random() * 0.08;
           nearToy.vx = Math.cos(kickAngle) * kickPower;
           nearToy.vy = Math.sin(kickAngle) * kickPower;
+          nearToy.lastTouched = performance.now();
+          nearToy.airborne = false; // kick stays on ground
           comp.state = 'idle';
           comp.animation = 'idle';
           comp.vx = 0; comp.vy = 0;
