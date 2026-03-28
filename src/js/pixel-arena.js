@@ -281,19 +281,30 @@ class PixelArena {
   dropTreat(canvasX, canvasY, treatType, emoji) {
     // Route toys to the physics system
     if (PixelArena.TOY_TYPES.includes(treatType)) {
-      var horizonY = this.height * this.horizonLine;
-      var groundBottom = this.height - 5;
+      var H = this.height;
+      var horizonY = H * this.horizonLine; // pixels from top
+      var groundBottom = H - 10;
       var dropY = canvasY - 16;
-      var isAboveHorizon = dropY < horizonY + 20; // small buffer zone
-      var groundY;
-      if (isAboveHorizon) {
-        // Map sky position to ground depth
-        var skyFraction = dropY / Math.max(1, horizonY);
-        var groundRange = groundBottom - horizonY - 32;
-        groundY = horizonY + 10 + groundRange * (1 - skyFraction) * 0.6;
+      var groundRange = groundBottom - horizonY;
+
+      // Calculate landing position based on where the ball is dropped
+      // Higher drop (smaller y) → lands closer to horizon (further away in perspective)
+      // Lower drop (larger y) → lands closer to bottom (nearer in perspective)
+      var landingY, shouldFall;
+      if (dropY < horizonY) {
+        // Dropped in the sky
+        // skyRatio: 0 = top of screen, 1 = at horizon line
+        var skyRatio = dropY / Math.max(1, horizonY);
+        // skyRatio 0 (very top) → land just below horizon
+        // skyRatio 1 (at horizon) → land near bottom of ground
+        landingY = horizonY + 5 + groundRange * skyRatio * 0.85;
+        shouldFall = true;
       } else {
-        groundY = dropY;
+        // Dropped on or below the ground — no falling needed
+        landingY = dropY;
+        shouldFall = false;
       }
+
       window._arenaToys.push({
         x: canvasX - 16, y: dropY,
         vx: 0, vy: 0,
@@ -302,8 +313,9 @@ class PixelArena {
         radius: 16,
         age: 0,
         bouncePhase: 0,
-        groundY: groundY,
-        airborne: isAboveHorizon,
+        groundY: landingY,
+        airborne: shouldFall,
+        arcMode: false, // not a companion kick arc
         lastTouched: performance.now(),
       });
       this.toys = window._arenaToys;
@@ -440,7 +452,32 @@ class PixelArena {
       }
 
       // Airborne physics — gravity pulls down toward groundY
-      if (toy.airborne) {
+      // === ARC MODE: companion kicked ball into the air ===
+      if (toy.arcMode) {
+        // Parametric arc from start to target
+        toy.arcT += dt / toy.arcDuration;
+        if (toy.arcT >= 1) {
+          // Landed at target
+          toy.arcT = 1;
+          toy.x = toy.arcTargetX;
+          toy.y = toy.arcTargetY;
+          toy.arcMode = false;
+          toy.airborne = false;
+          toy.groundY = toy.arcTargetY;
+          toy.vx = (Math.random() - 0.5) * 0.02; // tiny bounce on landing
+          toy.vy = 0;
+        } else {
+          var t = toy.arcT;
+          // Linear interpolation for X and Y base
+          toy.x = toy.arcStartX + (toy.arcTargetX - toy.arcStartX) * t;
+          var baseY = toy.arcStartY + (toy.arcTargetY - toy.arcStartY) * t;
+          // Parabolic arc: peak at t=0.5, height = arcPeak
+          var arcOffset = -4 * toy.arcPeak * t * (1 - t);
+          toy.y = baseY + arcOffset;
+        }
+      }
+      // === FALLING MODE: dropped from sky, falls with gravity ===
+      else if (toy.airborne) {
         toy.vy += gravity * dt;
         toy.x += toy.vx * dt;
         toy.y += toy.vy * dt;
@@ -448,25 +485,25 @@ class PixelArena {
         // Hit the ground?
         if (toy.y >= toy.groundY) {
           toy.y = toy.groundY;
-          if (Math.abs(toy.vy) > 0.005) {
-            // Bounce!
+          if (Math.abs(toy.vy) > 0.008) {
+            // Bounce
             toy.vy = -Math.abs(toy.vy) * groundBounce;
           } else {
-            // Settled on ground
             toy.vy = 0;
             toy.airborne = false;
           }
         }
 
-        // Horizontal friction even in air (slight air resistance)
+        // Light air resistance
         toy.vx *= Math.pow(0.999, dt);
-      } else {
-        // On ground — normal 2D movement
+      }
+      // === GROUND MODE: normal 2D sliding ===
+      else {
         toy.x += toy.vx * dt;
         toy.y += toy.vy * dt;
 
         // Ground friction
-        const f = Math.pow(friction, dt);
+        var f = Math.pow(friction, dt);
         toy.vx *= f;
         toy.vy *= f;
 
@@ -475,14 +512,14 @@ class PixelArena {
           toy.vx = 0; toy.vy = 0;
         }
 
-        // Keep toy on ground plane (below horizon)
-        if (toy.y < horizonY) {
-          toy.y = horizonY;
-          toy.vy = Math.abs(toy.vy) * 0.5;
+        // Keep on ground plane
+        if (toy.y < horizonY + 5) {
+          toy.y = horizonY + 5;
+          toy.vy = Math.abs(toy.vy) * 0.3;
         }
         if (toy.y > groundBottom - toy.radius * 2) {
           toy.y = groundBottom - toy.radius * 2;
-          toy.vy = -Math.abs(toy.vy) * 0.5;
+          toy.vy = -Math.abs(toy.vy) * 0.3;
         }
       }
 
@@ -623,19 +660,29 @@ class PixelArena {
 
       if (nearToy) {
         if (nearToyDist < 35) {
-          // Kick the toy! Add randomness to direction
-          const baseAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
-          const kickAngle = baseAngle + (Math.random() - 0.5) * 1.4; // ±40° random spread
-          const kickPower = 0.10 + Math.random() * 0.12;
-          nearToy.vx = Math.cos(kickAngle) * kickPower;
-          nearToy.vy = Math.sin(kickAngle) * kickPower;
+          // Kick the toy into the air! Arc to a random ground position
+          var kickHorizon = this.height * this.horizonLine;
+          var kickTargetX = 30 + Math.random() * (this.width - 60);
+          var kickTargetY = kickHorizon + 10 + Math.random() * (this.height - kickHorizon - 30);
+          nearToy.arcMode = true;
+          nearToy.arcStartX = nearToy.x;
+          nearToy.arcStartY = nearToy.y;
+          nearToy.arcTargetX = kickTargetX;
+          nearToy.arcTargetY = kickTargetY;
+          nearToy.arcT = 0;
+          // Arc duration: 1-2 seconds depending on distance
+          var kickDist = Math.sqrt(Math.pow(kickTargetX - nearToy.x, 2) + Math.pow(kickTargetY - nearToy.y, 2));
+          nearToy.arcDuration = 800 + Math.min(kickDist * 3, 1200);
+          // Arc peak: higher for longer kicks
+          nearToy.arcPeak = 40 + Math.random() * 60 + kickDist * 0.15;
+          nearToy.airborne = true;
+          nearToy.vx = 0; nearToy.vy = 0;
           nearToy.lastTouched = performance.now();
-          nearToy.airborne = false; // kick stays on ground
           comp.state = 'idle';
           comp.animation = 'idle';
           comp.vx = 0; comp.vy = 0;
-          comp.stateTimer = 800 + Math.random() * 1200; // pause after kick
-          this.companionEmoji = { emoji: '⚽', timer: 1500 };
+          comp.stateTimer = 1200 + Math.random() * 1500; // watch it fly
+          this.companionEmoji = { emoji: '⚽', timer: 2000 };
           if (window.adjustHappiness) window.adjustHappiness(3);
         } else if (nearToyDist < 400) {
           // Run toward the toy
@@ -913,12 +960,14 @@ class PixelArena {
     }
 
     // Draw toys on ground (physics objects)
+    this.ctx.globalAlpha = 1;
     for (const toy of this.toys) {
-      const spin = toy.bouncePhase * 2; // rotation effect from velocity
+      const spin = toy.bouncePhase * 2;
       const speed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
       const wobble = speed > 0.01 ? Math.sin(spin) * 3 : 0;
       this.ctx.font = '31px serif';
       this.ctx.textAlign = 'center';
+      this.ctx.globalAlpha = 1; // force full opacity per toy
       this.ctx.fillText(toy.emoji, toy.x + toy.radius + wobble, toy.y + toy.radius);
       // Shadow — bigger when moving fast
       const shadowSize = 10 + Math.min(speed * 100, 8);
