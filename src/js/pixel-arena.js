@@ -804,10 +804,13 @@ class PixelArena {
     const margin = 20;
     const horizonY = this.height * this.horizonLine;
 
-    // Hard bounds — horizon on top, edges on sides
+    // Hard bounds — companion's feet can stand on the horizon line
+    // comp.y is top of sprite, so feet are at comp.y + fh
+    // Allow comp.y to go up to (horizonY - fh) so feet touch horizon
+    const minY = horizonY - fh;
     if (comp.x < margin) { comp.x = margin; comp.vx = Math.abs(comp.vx); comp.direction = 2; }
     if (comp.x > this.width - fw - margin) { comp.x = this.width - fw - margin; comp.vx = -Math.abs(comp.vx); comp.direction = 1; }
-    if (comp.y < horizonY) { comp.y = horizonY; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
+    if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
     if (comp.y > this.height - fh - margin) { comp.y = this.height - fh - margin; comp.vy = -Math.abs(comp.vy); comp.direction = 3; }
   }
 
@@ -1007,7 +1010,8 @@ class PixelArena {
     for (const toy of this.toys) {
       const spin = toy.bouncePhase * 2;
       const speed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
-      const wobble = speed > 0.01 ? Math.sin(spin) * 3 : 0;
+      // Only wobble on ground movement, not while falling
+      const wobble = (speed > 0.01 && !toy.airborne && !toy.arcMode) ? Math.sin(spin) * 3 : 0;
       this.ctx.save();
       this.ctx.globalAlpha = 1;
       this.ctx.font = '31px serif';
