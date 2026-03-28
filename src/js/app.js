@@ -2594,10 +2594,12 @@ setTimeout(updateHappinessBar, 1000);
 
 // ── Treat emojis and selected treat state ──
 var TREAT_EMOJIS = {
-  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐'
+  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐',
+  ball: '⚽', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
 };
 var TREAT_NAMES = {
-  apple: 'an apple', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries'
+  apple: 'an apple', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
+  ball: 'a ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
 var selectedTreat = null; // { type, emoji }
 
@@ -2682,9 +2684,11 @@ document.querySelectorAll('.feed-treat').forEach(function(el) {
     var canvas = window.pixelArena && window.pixelArena.canvas;
     if (canvas) canvas.style.cursor = 'crosshair';
 
-    // Close menu
-    var menu = document.getElementById('feed-menu');
-    if (menu) menu.classList.add('hidden');
+    // Close both menus
+    var feedMenu = document.getElementById('feed-menu');
+    var playMenu = document.getElementById('play-menu');
+    if (feedMenu) feedMenu.classList.add('hidden');
+    if (playMenu) playMenu.classList.add('hidden');
   });
 
   // Also support drag
@@ -2692,8 +2696,10 @@ document.querySelectorAll('.feed-treat').forEach(function(el) {
     e.dataTransfer.setData('text/plain', el.dataset.treat);
     e.dataTransfer.effectAllowed = 'move';
     setTimeout(function() {
-      var menu = document.getElementById('feed-menu');
-      if (menu) menu.classList.add('hidden');
+      var feedMenu = document.getElementById('feed-menu');
+      var playMenu = document.getElementById('play-menu');
+      if (feedMenu) feedMenu.classList.add('hidden');
+      if (playMenu) playMenu.classList.add('hidden');
     }, 100);
   });
 });
@@ -2770,7 +2776,7 @@ function promptCompanionReaction(promptText) {
 
   var traitCtx = getTraitContext();
   var userCtx = getUserContext();
-  var systemPrompt = '[You are a companion creature. Reply in 1 short sentence. No actions/roleplay (no asterisks). Max 1 emoji. Be natural, not hyper.' +
+  var systemPrompt = '[You are a companion creature. Reply in 1-2 short sentences. No actions/roleplay (no asterisks). Max 1 emoji. Be natural, not hyper.' +
     (traitCtx ? ' ' + traitCtx : '') +
     (userCtx ? ' ' + userCtx : '') +
     '] ' + promptText;
@@ -2785,7 +2791,7 @@ function promptCompanionReaction(promptText) {
       addChatMsg('agent', reply, agent.name, agent.emoji);
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
-        var bubbleText = reply.length > 80 ? reply.substring(0, 77) + '...' : reply;
+        var bubbleText = reply.length > 120 ? reply.substring(0, 117) + '...' : reply;
         arena.showBubble(bubbleText, 10000);
       }
     }
