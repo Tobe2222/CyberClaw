@@ -281,16 +281,29 @@ class PixelArena {
   dropTreat(canvasX, canvasY, treatType, emoji) {
     // Route toys to the physics system
     if (PixelArena.TOY_TYPES.includes(treatType)) {
+      var horizonY = this.height * this.horizonLine;
+      var groundBottom = this.height - 5;
+      var dropY = canvasY - 16;
+      var isAboveHorizon = dropY < horizonY;
+      var groundY;
+      if (isAboveHorizon) {
+        // Map sky position to ground depth
+        var skyFraction = dropY / Math.max(1, horizonY);
+        var groundRange = groundBottom - horizonY - 32;
+        groundY = horizonY + 10 + groundRange * (1 - skyFraction) * 0.6;
+      } else {
+        groundY = dropY;
+      }
       window._arenaToys.push({
-        x: canvasX - 16, y: canvasY - 16,
+        x: canvasX - 16, y: dropY,
         vx: 0, vy: 0,
         type: treatType,
         emoji: emoji || '⚽',
         radius: 16,
         age: 0,
         bouncePhase: 0,
-        groundY: undefined, // set by physics on first update
-        airborne: false,
+        groundY: groundY,
+        airborne: isAboveHorizon,
         lastTouched: performance.now(),
       });
       this.toys = window._arenaToys;
@@ -385,6 +398,9 @@ class PixelArena {
   // ── TOY PHYSICS ─────────────────────────────────────────────
 
   _updateToys(dt) {
+    // Always sync with global store (survives arena rebuilds)
+    this.toys = window._arenaToys || [];
+    
     const friction = 0.997; // per-ms ground friction multiplier
     const wallBounce = 0.7;
     const groundBounce = 0.55;
@@ -401,29 +417,6 @@ class PixelArena {
 
       toy.age += dt;
       toy.bouncePhase += dt * 0.004;
-
-      // Ground plane: the toy's "floor Y" depends on depth
-      // If dropped near horizon → floor is near horizon (far away)
-      // If dropped near bottom → floor is near bottom (close)
-      // The groundY is set when the toy is first dropped or when it lands
-      if (toy.groundY === undefined) {
-        // Set ground level based on drop position
-        if (toy.y < horizonY) {
-          // Dropped in the sky — map drop height to ground depth
-          // Higher in sky → lands closer to horizon (further away)
-          // Lower in sky (near horizon) → lands further down on ground
-          const skyFraction = toy.y / Math.max(1, horizonY); // 0 = top of screen, 1 = horizon
-          // Map: top of sky → just below horizon, near horizon → middle of ground
-          const groundRange = groundBottom - horizonY - toy.radius * 2;
-          toy.groundY = horizonY + 10 + groundRange * (1 - skyFraction) * 0.6;
-          toy.airborne = true;
-          toy.vy = 0; // start with zero vertical velocity, gravity does the rest
-        } else {
-          // Dropped on ground — stays where it is
-          toy.groundY = toy.y;
-          toy.airborne = false;
-        }
-      }
 
       // Airborne physics — gravity pulls down toward groundY
       if (toy.airborne) {
@@ -487,10 +480,11 @@ class PixelArena {
         toy.lastTouched = performance.now();
       }
 
-      // Collide with spirits — knock them sideways
+      // Collide with spirits — knock them sideways (any moving toy, including falling)
       const toyCX = toy.x + toy.radius;
       const toyCY = toy.y + toy.radius;
-      if (toySpeed > 0.01) {
+      if (toySpeed > 0.003 || toy.airborne) {
+        const effectiveSpeed = Math.max(toySpeed, 0.03); // minimum knock force
         for (const spirit of this.spirits) {
           const sCX = spirit.x + spirit.size / 2;
           const sCY = spirit.y + spirit.size / 2;
@@ -499,7 +493,7 @@ class PixelArena {
           const dist = Math.sqrt(dx * dx + dy * dy);
           const hitDist = toy.radius + spirit.size / 2;
           if (dist < hitDist && dist > 0) {
-            const knockForce = toySpeed * 1.5;
+            const knockForce = effectiveSpeed * 1.5;
             spirit.vx += (dx / dist) * knockForce;
             spirit.vy += (dy / dist) * knockForce;
             toy.vx *= 0.6;
