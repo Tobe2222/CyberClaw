@@ -805,8 +805,10 @@ class PixelArena {
     const horizonY = this.height * this.horizonLine;
 
     // Hard bounds — companion can clip into sides/bottom, walks ON the horizon
-    // Top: feet on the horizon line (comp.y + fh = horizonY)
-    const minY = horizonY - fh;
+    // Feet at comp.y + fh. For feet ON horizon: comp.y = horizonY - fh
+    // Shift down slightly so companion doesn't go too far into the trees
+    // Feet end up ~10% of sprite height below horizon (visually standing on it)
+    const minY = horizonY - fh * 0.90;
     // Bottom/sides: allow clipping — only bounce when center goes past edge
     const halfW = fw / 2;
     const halfH = fh / 2;
