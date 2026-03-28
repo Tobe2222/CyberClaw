@@ -844,11 +844,16 @@ class PixelArena {
     } // end if not seeking
 
     // Update facing direction to match actual velocity (prevents moonwalking)
-    if (Math.abs(comp.vx) > 0.001 || Math.abs(comp.vy) > 0.001) {
-      if (Math.abs(comp.vx) > Math.abs(comp.vy)) {
-        comp.direction = comp.vx > 0 ? 2 : 1; // right : left
-      } else {
-        comp.direction = comp.vy > 0 ? 0 : 3; // down : up
+    // Prefer left/right — side sprites look better for diagonal movement
+    var avx = Math.abs(comp.vx);
+    var avy = Math.abs(comp.vy);
+    if (avx > 0.001 || avy > 0.001) {
+      if (avx > 0.003) {
+        // Any meaningful horizontal movement → use left/right
+        comp.direction = comp.vx > 0 ? 2 : 1;
+      } else if (avy > 0.001) {
+        // Pure vertical movement only
+        comp.direction = comp.vy > 0 ? 0 : 3;
       }
     }
 
@@ -870,10 +875,10 @@ class PixelArena {
     // Bottom/sides: allow clipping — only bounce when center goes past edge
     const halfW = fw / 2;
     const halfH = fh / 2;
-    if (comp.x + halfW < 0) { comp.x = -halfW; comp.vx = Math.abs(comp.vx); comp.direction = 2; }
-    if (comp.x + halfW > this.width) { comp.x = this.width - halfW; comp.vx = -Math.abs(comp.vx); comp.direction = 1; }
-    if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
-    if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); comp.direction = 3; }
+    if (comp.x + halfW < 0) { comp.x = -halfW; comp.vx = Math.abs(comp.vx); }
+    if (comp.x + halfW > this.width) { comp.x = this.width - halfW; comp.vx = -Math.abs(comp.vx); }
+    if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); }
+    if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); }
   }
 
   _updateSpirit(spirit, dt) {
