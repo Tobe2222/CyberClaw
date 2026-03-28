@@ -342,7 +342,7 @@ function startCameraLoop() {
 // ---------------------------------------------------------------------------
 const BACKGROUNDS = [
   { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.30, season: 'summer', vibe: 'a warm sunny meadow full of flowers' },
-  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.40, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.65, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
   { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.30, season: 'spring', vibe: 'a peaceful forest edge in spring' },
 ];
 

@@ -291,17 +291,18 @@ class PixelArena {
       // Higher drop (smaller y) → lands closer to horizon (further away in perspective)
       // Lower drop (larger y) → lands closer to bottom (nearer in perspective)
       var landingY, shouldFall;
+      var minGround = horizonY + 20; // always land well below horizon
       if (dropY < horizonY) {
         // Dropped in the sky
         // skyRatio: 0 = top of screen, 1 = at horizon line
         var skyRatio = dropY / Math.max(1, horizonY);
         // skyRatio 0 (very top) → land just below horizon
         // skyRatio 1 (at horizon) → land near bottom of ground
-        landingY = horizonY + 5 + groundRange * skyRatio * 0.85;
+        landingY = minGround + (groundBottom - minGround) * skyRatio * 0.9;
         shouldFall = true;
       } else {
         // Dropped on or below the ground — no falling needed
-        landingY = dropY;
+        landingY = Math.max(dropY, minGround);
         shouldFall = false;
       }
 
@@ -478,19 +479,34 @@ class PixelArena {
       }
       // === FALLING MODE: dropped from sky, falls with gravity ===
       else if (toy.airborne) {
-        toy.vy += gravity * dt;
-        toy.x += toy.vx * dt;
-        toy.y += toy.vy * dt;
+        // Use a timed fall: smooth acceleration over ~1.5 seconds
+        if (toy.fallStartY === undefined) {
+          toy.fallStartY = toy.y;
+          toy.fallProgress = 0;
+          toy.fallDuration = 1200 + Math.random() * 400; // 1.2-1.6 sec
+          toy.bounceCount = 0;
+        }
+        toy.fallProgress += dt;
+        var t = Math.min(toy.fallProgress / toy.fallDuration, 1);
+        // Ease-in quadratic (accelerating fall, like real gravity)
+        var eased = t * t;
+        toy.y = toy.fallStartY + (toy.groundY - toy.fallStartY) * eased;
+        toy.x += toy.vx * dt; // horizontal drift if any
 
         // Hit the ground?
-        if (toy.y >= toy.groundY) {
+        if (t >= 1) {
           toy.y = toy.groundY;
-          if (Math.abs(toy.vy) > 0.008) {
-            // Bounce
-            toy.vy = -Math.abs(toy.vy) * groundBounce;
+          if (toy.bounceCount < 3) {
+            // Bounce back up
+            toy.bounceCount++;
+            var bounceHeight = (toy.groundY - toy.fallStartY) * 0.25 / toy.bounceCount;
+            toy.fallStartY = toy.groundY - bounceHeight;
+            toy.fallProgress = 0;
+            toy.fallDuration = 400 / toy.bounceCount;
           } else {
-            toy.vy = 0;
+            // Settled
             toy.airborne = false;
+            toy.fallStartY = undefined;
           }
         }
 
@@ -660,28 +676,40 @@ class PixelArena {
 
       if (nearToy) {
         if (nearToyDist < 35) {
-          // Kick the toy into the air! Arc to a random ground position
-          var kickHorizon = this.height * this.horizonLine;
-          var kickTargetX = 30 + Math.random() * (this.width - 60);
-          var kickTargetY = kickHorizon + 10 + Math.random() * (this.height - kickHorizon - 30);
-          nearToy.arcMode = true;
-          nearToy.arcStartX = nearToy.x;
-          nearToy.arcStartY = nearToy.y;
-          nearToy.arcTargetX = kickTargetX;
-          nearToy.arcTargetY = kickTargetY;
-          nearToy.arcT = 0;
-          // Arc duration: 1-2 seconds depending on distance
-          var kickDist = Math.sqrt(Math.pow(kickTargetX - nearToy.x, 2) + Math.pow(kickTargetY - nearToy.y, 2));
-          nearToy.arcDuration = 800 + Math.min(kickDist * 3, 1200);
-          // Arc peak: higher for longer kicks
-          nearToy.arcPeak = 40 + Math.random() * 60 + kickDist * 0.15;
-          nearToy.airborne = true;
-          nearToy.vx = 0; nearToy.vy = 0;
           nearToy.lastTouched = performance.now();
+          nearToy.fallStartY = undefined; // reset fall state
+
+          if (Math.random() < 0.5) {
+            // === GROUND KICK: fast push along ground ===
+            var baseAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
+            var kickAngle = baseAngle + (Math.random() - 0.5) * 1.4;
+            var kickPower = 0.10 + Math.random() * 0.12;
+            nearToy.vx = Math.cos(kickAngle) * kickPower;
+            nearToy.vy = Math.sin(kickAngle) * kickPower;
+            nearToy.arcMode = false;
+            nearToy.airborne = false;
+          } else {
+            // === ARC KICK: boot it into the air ===
+            var kickHorizon = this.height * this.horizonLine;
+            var kickTargetX = 30 + Math.random() * (this.width - 60);
+            var kickTargetY = kickHorizon + 20 + Math.random() * (this.height - kickHorizon - 40);
+            nearToy.arcMode = true;
+            nearToy.arcStartX = nearToy.x;
+            nearToy.arcStartY = nearToy.y;
+            nearToy.arcTargetX = kickTargetX;
+            nearToy.arcTargetY = kickTargetY;
+            nearToy.arcT = 0;
+            var kickDist = Math.sqrt(Math.pow(kickTargetX - nearToy.x, 2) + Math.pow(kickTargetY - nearToy.y, 2));
+            nearToy.arcDuration = 800 + Math.min(kickDist * 3, 1200);
+            nearToy.arcPeak = 40 + Math.random() * 60 + kickDist * 0.15;
+            nearToy.airborne = true;
+            nearToy.vx = 0; nearToy.vy = 0;
+          }
+
           comp.state = 'idle';
           comp.animation = 'idle';
           comp.vx = 0; comp.vy = 0;
-          comp.stateTimer = 1200 + Math.random() * 1500; // watch it fly
+          comp.stateTimer = 1000 + Math.random() * 1500;
           this.companionEmoji = { emoji: '⚽', timer: 2000 };
           if (window.adjustHappiness) window.adjustHappiness(3);
         } else if (nearToyDist < 400) {
@@ -965,9 +993,11 @@ class PixelArena {
       const spin = toy.bouncePhase * 2;
       const speed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
       const wobble = speed > 0.01 ? Math.sin(spin) * 3 : 0;
+      this.ctx.save();
+      this.ctx.globalAlpha = 1;
       this.ctx.font = '31px serif';
       this.ctx.textAlign = 'center';
-      this.ctx.globalAlpha = 1; // force full opacity per toy
+      this.ctx.fillStyle = '#ffffff';
       this.ctx.fillText(toy.emoji, toy.x + toy.radius + wobble, toy.y + toy.radius);
       // Shadow — bigger when moving fast
       const shadowSize = 10 + Math.min(speed * 100, 8);
@@ -975,6 +1005,7 @@ class PixelArena {
       this.ctx.beginPath();
       this.ctx.ellipse(toy.x + toy.radius, toy.y + toy.radius + 14, shadowSize, 4, 0, 0, Math.PI * 2);
       this.ctx.fill();
+      this.ctx.restore();
     }
 
     // Collect all entities for Y-sort depth ordering
