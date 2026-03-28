@@ -804,18 +804,16 @@ class PixelArena {
     const margin = 20;
     const horizonY = this.height * this.horizonLine;
 
-    // Hard bounds — companion occupies the full ground area
-    // Top: feet (bottom of sprite) can reach the horizon, not above it
-    //   comp.y + fh = horizonY → comp.y = horizonY - fh
-    //   Add a small offset so feet don't go INTO the trees
-    const minY = horizonY - fh + fh * 0.3; // feet stay ~30% of sprite height below horizon
-    // Bottom: feet can touch the very bottom of the screen
-    const maxY = this.height - fh;
-    // Sides: sprite can touch the edges
-    if (comp.x < 0) { comp.x = 0; comp.vx = Math.abs(comp.vx); comp.direction = 2; }
-    if (comp.x > this.width - fw) { comp.x = this.width - fw; comp.vx = -Math.abs(comp.vx); comp.direction = 1; }
+    // Hard bounds — companion can clip into sides/bottom, walks ON the horizon
+    // Top: feet on the horizon line (comp.y + fh = horizonY)
+    const minY = horizonY - fh;
+    // Bottom/sides: allow clipping — only bounce when center goes past edge
+    const halfW = fw / 2;
+    const halfH = fh / 2;
+    if (comp.x + halfW < 0) { comp.x = -halfW; comp.vx = Math.abs(comp.vx); comp.direction = 2; }
+    if (comp.x + halfW > this.width) { comp.x = this.width - halfW; comp.vx = -Math.abs(comp.vx); comp.direction = 1; }
     if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); comp.direction = 0; }
-    if (comp.y > maxY) { comp.y = maxY; comp.vy = -Math.abs(comp.vy); comp.direction = 3; }
+    if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); comp.direction = 3; }
   }
 
   _updateSpirit(spirit, dt) {
