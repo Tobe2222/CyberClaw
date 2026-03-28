@@ -659,11 +659,11 @@ class PixelArena {
           const speed = 0.035;
           comp.vx = (dx / nearDist) * speed;
           comp.vy = (dy / nearDist) * speed;
-          // Direction: 0=down, 1=left, 2=right, 3=up
+          // Direction: 0=down, 1=up, 2=left, 3=right
           if (Math.abs(dx) > Math.abs(dy)) {
-            comp.direction = dx < 0 ? 1 : 2;
+            comp.direction = dx < 0 ? 2 : 3;
           } else {
-            comp.direction = dy < 0 ? 3 : 0;
+            comp.direction = dy < 0 ? 1 : 0;
           }
           comp.stateTimer = 200; // keep seeking
         }
@@ -747,9 +747,9 @@ class PixelArena {
             comp.vx = (dx / nearToyDist) * chaseSpeed;
             comp.vy = (dy / nearToyDist) * chaseSpeed;
             if (Math.abs(dx) > Math.abs(dy)) {
-              comp.direction = dx < 0 ? 1 : 2;
+              comp.direction = dx < 0 ? 2 : 3;
             } else {
-              comp.direction = dy < 0 ? 3 : 0;
+              comp.direction = dy < 0 ? 1 : 0;
             }
             comp.stateTimer = 150;
           }
@@ -786,7 +786,7 @@ class PixelArena {
         comp.animation = comp.images['run'] ? 'run' : 'walk';
         comp.direction = Math.floor(Math.random() * 4);
         const speed = 0.07 + Math.random() * 0.04;
-        const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
+        const dirs = [[0, 1], [0, -1], [-1, 0], [1, 0]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
         comp.stateTimer = 1500 + Math.random() * 1500;
@@ -813,7 +813,7 @@ class PixelArena {
         comp.animation = 'walk';
         comp.direction = Math.floor(Math.random() * 4);
         const speed = 0.015 + Math.random() * 0.01;
-        const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
+        const dirs = [[0, 1], [0, -1], [-1, 0], [1, 0]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
         comp.stateTimer = 2000 + Math.random() * 4000;
@@ -823,7 +823,7 @@ class PixelArena {
         comp.animation = comp.images['run'] ? 'run' : 'walk';
         comp.direction = Math.floor(Math.random() * 4);
         const speed = 0.06 + Math.random() * 0.04;
-        const dirs = [[0, 1], [-1, 0], [1, 0], [0, -1]];
+        const dirs = [[0, 1], [0, -1], [-1, 0], [1, 0]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
         comp.stateTimer = 1000 + Math.random() * 2000;
@@ -835,7 +835,7 @@ class PixelArena {
         const speed = 0.08 + Math.random() * 0.05;
         comp.vx = Math.cos(angle) * speed;
         comp.vy = Math.sin(angle) * speed;
-        comp.direction = Math.abs(comp.vx) > Math.abs(comp.vy) ? (comp.vx > 0 ? 2 : 1) : (comp.vy > 0 ? 0 : 3);
+        comp.direction = Math.abs(comp.vx) > Math.abs(comp.vy) ? (comp.vx > 0 ? 3 : 2) : (comp.vy > 0 ? 0 : 1);
         comp.stateTimer = 600 + Math.random() * 800;
       }
       comp.frame = 0;
@@ -843,22 +843,17 @@ class PixelArena {
     }
     } // end if not seeking
 
-    // Update facing direction based on actual movement (prevents moonwalking)
-    // Track actual displacement, not just velocity — more reliable
-    if (!comp._prevX) { comp._prevX = comp.x; comp._prevY = comp.y; }
-    var movedX = comp.vx * dt;
-    var movedY = comp.vy * dt;
-    var amx = Math.abs(movedX);
-    var amy = Math.abs(movedY);
-    var moveMag = amx + amy;
-    // Only update direction if there's meaningful movement this frame
-    if (moveMag > 0.05) {
-      // Prefer left/right — side sprites look much better
-      // Use vertical ONLY when vertical is >2x horizontal movement
+    // Update facing direction based on actual velocity
+    // Sprite rows: 0=down, 1=up, 2=left, 3=right
+    var amx = Math.abs(comp.vx);
+    var amy = Math.abs(comp.vy);
+    if (amx > 0.002 || amy > 0.002) {
+      // Prefer left/right (side sprites look better for diagonal movement)
+      // Only use up/down when vertical is clearly dominant (>2x horizontal)
       if (amy > amx * 2.0) {
-        comp.direction = comp.vy > 0 ? 0 : 3; // down : up
-      } else if (amx > 0.02) {
-        comp.direction = comp.vx > 0 ? 2 : 1; // right : left
+        comp.direction = comp.vy > 0 ? 0 : 1; // down : up
+      } else {
+        comp.direction = comp.vx < 0 ? 2 : 3; // left : right
       }
     }
 
