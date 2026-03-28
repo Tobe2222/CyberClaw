@@ -843,6 +843,15 @@ class PixelArena {
     }
     } // end if not seeking
 
+    // Update facing direction to match actual velocity (prevents moonwalking)
+    if (Math.abs(comp.vx) > 0.001 || Math.abs(comp.vy) > 0.001) {
+      if (Math.abs(comp.vx) > Math.abs(comp.vy)) {
+        comp.direction = comp.vx > 0 ? 2 : 1; // right : left
+      } else {
+        comp.direction = comp.vy > 0 ? 0 : 3; // down : up
+      }
+    }
+
     // Move
     comp.x += comp.vx * dt;
     comp.y += comp.vy * dt;
