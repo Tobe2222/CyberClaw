@@ -400,6 +400,21 @@ class PixelArena {
         if (dragging.vx < -maxV) dragging.vx = -maxV;
         if (dragging.vy > maxV) dragging.vy = maxV;
         if (dragging.vy < -maxV) dragging.vy = -maxV;
+
+        // If released above the horizon, make it fall
+        var horizY = arena.height * arena.horizonLine;
+        if (dragging.y < horizY) {
+          var gBottom = arena.height - 10;
+          var minG = horizY + 20;
+          var skyR = dragging.y / Math.max(1, horizY);
+          dragging.groundY = minG + (gBottom - minG) * skyR * 0.9;
+          dragging.airborne = true;
+          dragging.arcMode = false;
+          // Reset fall state so the timed fall system kicks in fresh
+          dragging.fallStartY = undefined;
+          dragging.fallProgress = undefined;
+          dragging.bounceCount = undefined;
+        }
       }
       dragging = null;
       arena._draggedToy = null;
