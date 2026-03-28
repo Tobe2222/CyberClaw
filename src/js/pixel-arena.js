@@ -843,17 +843,22 @@ class PixelArena {
     }
     } // end if not seeking
 
-    // Update facing direction to match actual velocity (prevents moonwalking)
-    // Prefer left/right — side sprites look better for diagonal movement
-    var avx = Math.abs(comp.vx);
-    var avy = Math.abs(comp.vy);
-    if (avx > 0.001 || avy > 0.001) {
-      if (avx > 0.003) {
-        // Any meaningful horizontal movement → use left/right
-        comp.direction = comp.vx > 0 ? 2 : 1;
-      } else if (avy > 0.001) {
-        // Pure vertical movement only
-        comp.direction = comp.vy > 0 ? 0 : 3;
+    // Update facing direction based on actual movement (prevents moonwalking)
+    // Track actual displacement, not just velocity — more reliable
+    if (!comp._prevX) { comp._prevX = comp.x; comp._prevY = comp.y; }
+    var movedX = comp.vx * dt;
+    var movedY = comp.vy * dt;
+    var amx = Math.abs(movedX);
+    var amy = Math.abs(movedY);
+    var moveMag = amx + amy;
+    // Only update direction if there's meaningful movement this frame
+    if (moveMag > 0.05) {
+      // Prefer left/right — side sprites look much better
+      // Use vertical ONLY when vertical is >2x horizontal movement
+      if (amy > amx * 2.0) {
+        comp.direction = comp.vy > 0 ? 0 : 3; // down : up
+      } else if (amx > 0.02) {
+        comp.direction = comp.vx > 0 ? 2 : 1; // right : left
       }
     }
 
