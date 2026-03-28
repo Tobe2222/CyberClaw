@@ -673,6 +673,16 @@ window.hideQuestForm = function() {
   document.getElementById('quest-dir-input').value = '';
 };
 
+window.startQuestConversation = function() {
+  // Switch to chat tab and send a system-prompted message to the companion
+  switchTermTab('chat');
+  var input = document.getElementById('chat-input');
+  if (input) {
+    input.value = 'I want to create a new quest! Help me figure out what it should be — ask me what I want to work on, then create it for me. When we agree on the quest, respond with exactly this format on its own line: [CREATE_QUEST: name="Quest Name" desc="Description" dir="optional/path"]';
+    window.sendChat();
+  }
+};
+
 window.createQuest = async function() {
   const name = document.getElementById('quest-name-input').value.trim();
   if (!name) return;
@@ -985,7 +995,8 @@ function rebuildLeftPanel() {
   panel.innerHTML = `
     <div class="panel-header">
       <span class="rune-icon">📜</span> QUEST LOG
-      <button class="quest-add-btn" onclick="showQuestForm()" title="New Quest">+</button>
+      <button class="quest-add-btn" onclick="showQuestForm()" title="New Quest (manual)">+</button>
+      <button class="quest-add-btn" onclick="startQuestConversation()" title="Create quest with companion">🗣️</button>
     </div>
     <div class="quest-form hidden" id="quest-form">
       <input type="text" id="quest-name-input" placeholder="Quest name..." maxlength="60" />
@@ -1151,6 +1162,23 @@ window.sendChat = async function() {
       // Show response from party leader
       const leader = agents[mainAgentId];
       addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+
+      // Check for quest creation command in reply
+      if (result.reply) {
+        var questMatch = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
+        if (questMatch) {
+          var qName = questMatch[1];
+          var qDesc = questMatch[2] || '';
+          var qDir = questMatch[3] || '';
+          try {
+            await cyberclaw.quests.create({ name: qName, description: qDesc, directory: qDir || undefined });
+            addChatMsg('system', '📜 Quest created: ' + qName);
+            renderQuests();
+          } catch(qe) {
+            addChatMsg('system', '⚠️ Failed to create quest: ' + qe.message);
+          }
+        }
+      }
 
       // Drain happiness based on work done (longer reply = more effort)
       if (window.adjustHappiness && result.reply) {
@@ -2412,6 +2440,17 @@ window.sendChat = async function() {
       if (result.ok) {
         const leader = agents[mainAgentId];
         addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && leader.emoji);
+        // Check for quest creation command
+        if (result.reply) {
+          var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
+          if (qm) {
+            try {
+              await cyberclaw.quests.create({ name: qm[1], description: qm[2] || '', directory: qm[3] || undefined });
+              addChatMsg('system', '📜 Quest created: ' + qm[1]);
+              renderQuests();
+            } catch(qe) {}
+          }
+        }
         // Drain happiness from work
         if (window.adjustHappiness && result.reply) {
           const len = result.reply.length;
@@ -2586,6 +2625,36 @@ window.toggleFeedMenu = function() {
       if (canvas) canvas.style.cursor = 'pointer';
     }
   }
+};
+
+window.togglePlayMenu = function() {
+  var menu = document.getElementById('play-menu');
+  if (!menu) return;
+  var wasHidden = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden');
+  // Close feed menu if open
+  var feedMenu = document.getElementById('feed-menu');
+  if (feedMenu && !feedMenu.classList.contains('hidden')) feedMenu.classList.add('hidden');
+
+  if (wasHidden) {
+    var arena = window.pixelArena;
+    if (arena) arena.companionEmoji = { emoji: '🎾', timer: 3000 };
+    promptCompanionReaction('The user wants to play with you! They opened the toy box. Give a short excited reaction about playtime.');
+  }
+  if (!wasHidden) {
+    selectedTreat = null;
+    document.querySelectorAll('.feed-treat').forEach(function(t) { t.classList.remove('selected'); });
+    var canvas = window.pixelArena && window.pixelArena.canvas;
+    if (canvas) canvas.style.cursor = '';
+  }
+};
+
+// Also close play menu when opening feed menu
+var _origToggleFeed = window.toggleFeedMenu;
+window.toggleFeedMenu = function() {
+  var playMenu = document.getElementById('play-menu');
+  if (playMenu && !playMenu.classList.contains('hidden')) playMenu.classList.add('hidden');
+  _origToggleFeed();
 };
 
 // Click treat to select it, then click arena to place it

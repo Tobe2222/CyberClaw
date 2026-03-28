@@ -27,7 +27,7 @@
 
 /* Background selector button */
 #arena-bg-btn {
-  position: absolute; bottom: 8px; left: 8px; z-index: 100;
+  position: absolute; bottom: 8px; right: 8px; z-index: 100;
   background: rgba(0,0,0,0.6); border: 1px solid var(--border);
   color: var(--text-secondary); font-size: 14px; padding: 4px 8px;
   border-radius: 6px; cursor: pointer; transition: all 0.2s;
@@ -668,15 +668,16 @@
 }
 
 /* ---- Feed button & menu ---- */
-#arena-feed-btn {
-  position: absolute; bottom: 12px; left: 52px; z-index: 10;
+#arena-feed-btn, #arena-play-btn {
+  position: absolute; bottom: 12px; left: 8px; z-index: 10;
   background: rgba(0,0,0,0.6); border: 1px solid rgba(255,153,0,0.3);
   color: #ff9900; border-radius: 6px; padding: 4px 8px;
   cursor: pointer; font-size: 16px; transition: all 0.2s;
 }
-#arena-feed-btn:hover { background: rgba(255,153,0,0.15); border-color: var(--orange); }
+#arena-play-btn { left: 48px; }
+#arena-feed-btn:hover, #arena-play-btn:hover { background: rgba(255,153,0,0.15); border-color: var(--orange); }
 
-.feed-menu {
+.feed-menu, #play-menu {
   position: absolute; bottom: 48px; left: 12px; z-index: 15;
   background: rgba(10,10,14,0.95); border: 1px solid var(--border-mid);
   border-radius: 8px; padding: 8px; min-width: 160px;
@@ -813,7 +814,7 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
   padding: 5px 10px; border-radius: 6px; cursor: pointer; letter-spacing: 0.05em;
   transition: all 0.15s;
 }
-#arena-spirits-btn { left: auto; right: 10px; }
+#arena-spirits-btn { left: 120px; }
 #arena-companions-btn:hover, #arena-spirits-btn:hover { border-color: var(--orange); color: var(--orange); }
 
 /* ── Companions view modal ── */

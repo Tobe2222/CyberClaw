@@ -111,8 +111,10 @@
         <button class="carousel-arrow carousel-left" onclick="carouselPrev()">‹</button>
         <button class="carousel-arrow carousel-right" onclick="carouselNext()">›</button>
 
-        <!-- Feed button (bottom left, next to bg) -->
+        <!-- Feed button (bottom left) -->
         <button id="arena-feed-btn" onclick="toggleFeedMenu()" title="Feed companion">🍖</button>
+        <!-- Play button (next to feed) -->
+        <button id="arena-play-btn" onclick="togglePlayMenu()" title="Play with companion">🎾</button>
         <div id="feed-menu" class="feed-menu hidden">
           <div class="feed-menu-title">🍖 Treats</div>
           <div class="feed-treats-grid">
@@ -125,7 +127,20 @@
           </div>
         </div>
 
-        <!-- Background selector (bottom left) -->
+        <!-- Play menu -->
+        <div id="play-menu" class="feed-menu hidden">
+          <div class="feed-menu-title">🎾 Toys</div>
+          <div class="feed-treats-grid">
+            <div class="feed-treat" draggable="true" data-treat="ball" title="Click or drag onto arena">⚽</div>
+            <div class="feed-treat" draggable="true" data-treat="yarn" title="Click or drag onto arena">🧶</div>
+            <div class="feed-treat" draggable="true" data-treat="stick" title="Click or drag onto arena">🪵</div>
+            <div class="feed-treat" draggable="true" data-treat="frisbee" title="Click or drag onto arena">🥏</div>
+            <div class="feed-treat" draggable="true" data-treat="bell" title="Click or drag onto arena">🔔</div>
+            <div class="feed-treat" draggable="true" data-treat="feather" title="Click or drag onto arena">🪶</div>
+          </div>
+        </div>
+
+        <!-- Background selector (bottom right) -->
         <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
 
 
