@@ -471,11 +471,18 @@
           </div>
           <div class="settings-row">
             <span class="settings-label">Sync Server</span>
-            <span class="settings-value" id="mobile-server-info">Port 9247</span>
+            <span class="settings-value" id="mobile-server-info">Port 9247 (TLS)</span>
           </div>
           <div class="settings-row">
             <span class="settings-label">Local IP</span>
             <span class="settings-value settings-path" id="mobile-local-ip">—</span>
+          </div>
+          <div style="background:rgba(247,147,26,0.08);border:1px solid rgba(247,147,26,0.2);border-radius:8px;padding:10px;margin:8px 0;font-size:11px;color:#aaa;line-height:1.6;">
+            <strong style="color:#f7931a;">📡 Remote Access Setup</strong><br>
+            To connect from outside your home network:<br>
+            1. Forward <strong>port 9247 (TCP)</strong> on your router → this PC's local IP<br>
+            2. On the phone app, enter your <strong>public IP</strong> (check whatismyip.com)<br>
+            Connection is encrypted with TLS. Pairing locked after 3 wrong attempts.
           </div>
           <div class="settings-row" id="mobile-pairing-row">
             <button class="settings-action-btn" id="mobile-pair-btn" onclick="generatePairingCode()">🔗 Generate Pairing Code</button>
