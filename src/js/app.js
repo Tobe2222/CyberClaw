@@ -2284,22 +2284,27 @@ async function updateMobileStatus() {
       devicesList.textContent = 'None';
     }
 
-    // Local IP
+    // Local IP — prefer real LAN addresses (192.168.x, 10.x) over VPN/Tailscale
     const ipEl = document.getElementById('mobile-local-ip');
-    if (ipEl && ipEl.textContent === '—') {
-      try {
-        const os = require('os');
-        const nets = os.networkInterfaces();
-        for (const name of Object.keys(nets)) {
-          for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) {
-              ipEl.textContent = `${net.address}:9247`;
-              break;
+    try {
+      const os = require('os');
+      const nets = os.networkInterfaces();
+      let lanIp = null;
+      let anyIp = null;
+      for (const name of Object.keys(nets)) {
+        if (name.includes('tailscale') || name.includes('docker') || name.includes('br-') || name.includes('veth')) continue;
+        for (const net of nets[name]) {
+          if (net.family === 'IPv4' && !net.internal) {
+            if (!anyIp) anyIp = net.address;
+            if (net.address.startsWith('192.168.') || net.address.startsWith('10.') || net.address.startsWith('172.')) {
+              lanIp = net.address;
             }
           }
         }
-      } catch {}
-    }
+      }
+      const ip = lanIp || anyIp;
+      if (ip) ipEl.textContent = `${ip}:9247`;
+    } catch {}
   } catch {}
 }
 
