@@ -68,6 +68,9 @@ function saveQuests(quests) {
 }
 
 const { execSync, exec: execCb } = require('child_process');
+const SyncServer = require('./sync-server');
+
+let syncServer = null;
 
 function needsWizard() {
   // Show wizard if OpenClaw isn't installed or no agents configured
@@ -1077,13 +1080,53 @@ function cleanup() {
   chatPty = null;
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  // Start sync server for mobile companion app
+  syncServer = new SyncServer({
+    port: 9247,
+    mainWindow,
+    onChatMessage: (text, agentId, meta) => {
+      // Route mobile chat to the companion's chat PTY (same as desktop)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-chat', { text, agentId, meta });
+      }
+    },
+    onVoiceTranscript: (transcript, context, meta) => {
+      // Route voice transcript to the companion
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-voice', { transcript, context, meta });
+      }
+    }
+  });
+  syncServer.start();
+});
 
 app.on('before-quit', cleanup);
 
 app.on('window-all-closed', () => {
+  if (syncServer) syncServer.stop();
   cleanup();
   app.quit();
+});
+
+// Sync server IPC handlers
+ipcMain.handle('sync-status', () => {
+  return syncServer ? syncServer.getStatus() : { running: false };
+});
+
+ipcMain.handle('sync-generate-pairing', () => {
+  if (!syncServer) return null;
+  return syncServer.generatePairingCode();
+});
+
+ipcMain.handle('sync-broadcast-state', (e, state) => {
+  if (syncServer) syncServer.broadcastState(state);
+});
+
+ipcMain.handle('sync-broadcast-chat', (e, { agentId, text, isUser }) => {
+  if (syncServer) syncServer.broadcastChatMessage(agentId, text, isUser);
 });
 
 app.on('activate', () => {
