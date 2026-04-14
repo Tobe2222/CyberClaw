@@ -792,6 +792,11 @@
 .settings-action-btn.danger { color: #ff4444; border-color: rgba(255,68,68,0.3); background: rgba(255,68,68,0.05); }
 .settings-action-btn.danger:hover { border-color: #ff4444; background: rgba(255,68,68,0.15); }
 
+/* Mobile companion status */
+.conn-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.conn-dot.online { background: #4ade80; box-shadow: 0 0 4px #4ade80; }
+.conn-dot.offline { background: #555; }
+
 /* ---- Light Theme ---- */
 body.theme-light {
   --bg-darkest: #f0f0f5;

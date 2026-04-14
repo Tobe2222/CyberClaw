@@ -461,6 +461,39 @@
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">📱 Mobile Companion</div>
+          <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value" id="mobile-status">
+              <span class="conn-dot offline" id="mobile-status-dot"></span>
+              <span id="mobile-status-text">Not connected</span>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Sync Server</span>
+            <span class="settings-value" id="mobile-server-info">Port 9247</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Local IP</span>
+            <span class="settings-value settings-path" id="mobile-local-ip">—</span>
+          </div>
+          <div class="settings-row" id="mobile-pairing-row">
+            <button class="settings-action-btn" id="mobile-pair-btn" onclick="generatePairingCode()">🔗 Generate Pairing Code</button>
+          </div>
+          <div id="mobile-pairing-display" class="hidden" style="text-align:center;padding:12px 0;">
+            <div style="font-size:11px;color:#888;margin-bottom:6px;">Enter this code on your phone</div>
+            <div id="mobile-pairing-code" style="font-size:36px;font-weight:bold;color:#f7931a;letter-spacing:8px;font-family:monospace;">------</div>
+            <div style="font-size:11px;color:#666;margin-top:6px;">Expires in <span id="mobile-pairing-timer">5:00</span></div>
+          </div>
+          <div id="mobile-paired-devices" style="margin-top:8px;">
+            <div class="settings-row" style="flex-direction:column;align-items:flex-start;">
+              <span class="settings-label" style="margin-bottom:4px;">Paired Devices</span>
+              <div id="mobile-devices-list" style="color:#888;font-size:12px;">None</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">📦 Data</div>
           <div class="settings-row">
             <span class="settings-label">Data directory</span>

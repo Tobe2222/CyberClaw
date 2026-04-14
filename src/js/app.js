@@ -1226,6 +1226,18 @@ function addChatMsg(type, text, name, emoji) {
     return addEventMsg(text);
   }
 
+  // Broadcast to mobile companion app
+  if (type === 'agent' || type === 'user') {
+    try {
+      const { ipcRenderer } = require('electron');
+      ipcRenderer.invoke('sync-broadcast-chat', {
+        agentId: name || 'companion',
+        text: text,
+        isUser: type === 'user'
+      });
+    } catch {}
+  }
+
   const msgs = document.getElementById('chat-messages');
   const div = document.createElement('div');
   const id = `chat-msg-${++chatMsgId}`;
@@ -2205,6 +2217,134 @@ window.resetSettings = function() {
   applySettings();
   openSettings();
 };
+
+// ── Mobile Companion ──
+let pairingTimerInterval = null;
+
+window.generatePairingCode = async function() {
+  try {
+    const { ipcRenderer } = require('electron');
+    const code = await ipcRenderer.invoke('sync-generate-pairing');
+    if (!code) { alert('Sync server not running'); return; }
+
+    document.getElementById('mobile-pairing-display').classList.remove('hidden');
+    document.getElementById('mobile-pairing-code').textContent = code;
+    document.getElementById('mobile-pair-btn').textContent = '🔄 Regenerate Code';
+
+    // Countdown timer (5 minutes)
+    let remaining = 300;
+    if (pairingTimerInterval) clearInterval(pairingTimerInterval);
+    const timerEl = document.getElementById('mobile-pairing-timer');
+    pairingTimerInterval = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(pairingTimerInterval);
+        pairingTimerInterval = null;
+        document.getElementById('mobile-pairing-display').classList.add('hidden');
+        document.getElementById('mobile-pair-btn').textContent = '🔗 Generate Pairing Code';
+        document.getElementById('mobile-pairing-code').textContent = '------';
+        return;
+      }
+      const min = Math.floor(remaining / 60);
+      const sec = remaining % 60;
+      timerEl.textContent = `${min}:${String(sec).padStart(2, '0')}`;
+    }, 1000);
+  } catch (e) {
+    console.error('Pairing error:', e);
+  }
+};
+
+async function updateMobileStatus() {
+  try {
+    const { ipcRenderer } = require('electron');
+    const status = await ipcRenderer.invoke('sync-status');
+    if (!status) return;
+
+    const dot = document.getElementById('mobile-status-dot');
+    const text = document.getElementById('mobile-status-text');
+    const devicesList = document.getElementById('mobile-devices-list');
+
+    if (status.connectedDevices > 0) {
+      dot.className = 'conn-dot online';
+      text.textContent = `${status.connectedDevices} device${status.connectedDevices > 1 ? 's' : ''} connected`;
+    } else {
+      dot.className = 'conn-dot offline';
+      text.textContent = 'Not connected';
+    }
+
+    // Paired devices list
+    if (status.pairedDevices && status.pairedDevices.length > 0) {
+      devicesList.innerHTML = status.pairedDevices.map(d => {
+        const connected = status.devices.some(c => c.name === d.name);
+        const dot = connected ? '🟢' : '⚪';
+        const date = new Date(d.pairedAt).toLocaleDateString();
+        return `<div style="margin:2px 0;">${dot} ${d.name} <span style="color:#555;">(paired ${date})</span></div>`;
+      }).join('');
+    } else {
+      devicesList.textContent = 'None';
+    }
+
+    // Local IP
+    const ipEl = document.getElementById('mobile-local-ip');
+    if (ipEl && ipEl.textContent === '—') {
+      try {
+        const os = require('os');
+        const nets = os.networkInterfaces();
+        for (const name of Object.keys(nets)) {
+          for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) {
+              ipEl.textContent = `${net.address}:9247`;
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
+// Listen for mobile connection events
+try {
+  const { ipcRenderer } = require('electron');
+  ipcRenderer.on('mobile-connected', () => updateMobileStatus());
+  ipcRenderer.on('mobile-disconnected', () => updateMobileStatus());
+  ipcRenderer.on('mobile-paired', () => updateMobileStatus());
+
+  // Route mobile chat to companion
+  ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
+    // Display in chat and send to AI
+    addChatMsg('user', text);
+    if (typeof sendChatMessage === 'function') {
+      sendChatMessage(text);
+    }
+  });
+
+  ipcRenderer.on('mobile-voice', (e, { transcript, context, meta }) => {
+    // Voice transcript from mobile — show context and send to AI
+    const prompt = context
+      ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`
+      : transcript;
+    addChatMsg('user', `🎤 ${transcript}`);
+    if (typeof sendChatMessage === 'function') {
+      sendChatMessage(prompt);
+    }
+  });
+} catch {}
+
+// Update mobile status when settings open
+const _origOpenSettings = window.openSettings;
+window.openSettings = function() {
+  _origOpenSettings();
+  updateMobileStatus();
+};
+
+// Broadcast chat responses to mobile
+const _origAddChatMsg = window.addChatMsg || (typeof addChatMsg === 'function' ? addChatMsg : null);
+if (_origAddChatMsg) {
+  // Hook into addChatMsg to broadcast AI responses to mobile
+  const origFn = _origAddChatMsg;
+  // This is handled via IPC in main.js instead
+}
 
 // Keybind capture
 let capturingKeybind = null;
