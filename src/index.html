@@ -471,7 +471,7 @@
           </div>
           <div class="settings-row">
             <span class="settings-label">Sync Server</span>
-            <span class="settings-value" id="mobile-server-info">Port 9247 (TLS)</span>
+            <span class="settings-value" id="mobile-server-info">Port 9247</span>
           </div>
           <div class="settings-row">
             <span class="settings-label">Local IP</span>
@@ -482,7 +482,7 @@
             To connect from outside your home network:<br>
             1. Forward <strong>port 9247 (TCP)</strong> on your router → this PC's local IP<br>
             2. On the phone app, enter your <strong>public IP</strong> (check whatismyip.com)<br>
-            Connection is encrypted with TLS. Pairing locked after 3 wrong attempts.
+            Pairing is rate-limited (3 wrong codes → 5-min lockout).
           </div>
           <div class="settings-row" id="mobile-pairing-row">
             <button class="settings-action-btn" id="mobile-pair-btn" onclick="generatePairingCode()">🔗 Generate Pairing Code</button>

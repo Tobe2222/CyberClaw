@@ -123,26 +123,11 @@ class SyncServer {
   start() {
     if (this.wss) return;
 
-    const certs = this._ensureCerts();
-
-    if (certs) {
-      // Secure WSS server
-      this.httpsServer = https.createServer({
-        cert: certs.cert,
-        key: certs.key
-      });
-
-      this.wss = new WebSocket.Server({ server: this.httpsServer });
-
-      this.httpsServer.listen(this.port, '0.0.0.0', () => {
-        console.log(`[SyncServer] Secure WSS listening on wss://0.0.0.0:${this.port}`);
-      });
-    } else {
-      // Fallback: plain WS (local network only recommended)
-      this.wss = new WebSocket.Server({ port: this.port }, () => {
-        console.log(`[SyncServer] WARNING: Plain WS on ws://0.0.0.0:${this.port} (no TLS)`);
-      });
-    }
+    // Plain WS for maximum compatibility (Android rejects self-signed TLS certs)
+    // Security is handled by: pairing codes, HMAC tokens, rate limiting, auth timeout
+    this.wss = new WebSocket.Server({ port: this.port }, () => {
+      console.log(`[SyncServer] Listening on ws://0.0.0.0:${this.port}`);
+    });
 
     this.wss.on('connection', (ws, req) => {
       const clientId = crypto.randomBytes(8).toString('hex');
@@ -186,12 +171,11 @@ class SyncServer {
         console.error('[SyncServer] Client error:', err.message);
       });
 
-      // Send hello with TLS status
+      // Send hello
       this._send(ws, {
         type: 'hello',
         version: '1.0.0',
-        requiresAuth: true,
-        tls: !!certs
+        requiresAuth: true
       });
     });
 
@@ -208,10 +192,7 @@ class SyncServer {
       this.wss.close();
       this.wss = null;
     }
-    if (this.httpsServer) {
-      this.httpsServer.close();
-      this.httpsServer = null;
-    }
+
     this.clients.clear();
   }
 
@@ -390,7 +371,7 @@ class SyncServer {
     return {
       running: !!this.wss,
       port: this.port,
-      tls: !!this.httpsServer,
+
       connectedDevices: authenticated.length,
       devices: authenticated.map(c => ({ id: c.id, name: c.name })),
       pairedDevices: this.config.pairedDevices.map(d => ({ name: d.name, pairedAt: d.pairedAt })),
