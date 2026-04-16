@@ -136,18 +136,19 @@ class SyncServer {
         name: 'Unknown',
         authenticated: false,
         ip: req.socket.remoteAddress,
-        connectedAt: Date.now()
+        connectedAt: Date.now(),
+        authTimeout: null
       };
       this.clients.set(ws, clientInfo);
       console.log(`[SyncServer] Client connected: ${clientId} from ${clientInfo.ip}`);
 
-      // Auto-drop unauthenticated connections after 10 seconds
-      const authTimeout = setTimeout(() => {
+      // Auto-drop unauthenticated connections after 30 seconds
+      clientInfo.authTimeout = setTimeout(() => {
         if (!clientInfo.authenticated) {
           console.log(`[SyncServer] Dropping unauthenticated client: ${clientId}`);
           ws.close(4003, 'Authentication timeout');
         }
-      }, 10000);
+      }, 30000);
 
       ws.on('message', (data) => {
         try {
@@ -159,7 +160,7 @@ class SyncServer {
       });
 
       ws.on('close', () => {
-        clearTimeout(authTimeout);
+        if (clientInfo.authTimeout) clearTimeout(clientInfo.authTimeout);
         const info = this.clients.get(ws);
         console.log(`[SyncServer] Client disconnected: ${info?.id || 'unknown'}`);
         this.clients.delete(ws);
@@ -167,7 +168,7 @@ class SyncServer {
       });
 
       ws.on('error', (err) => {
-        clearTimeout(authTimeout);
+        if (clientInfo.authTimeout) clearTimeout(clientInfo.authTimeout);
         console.error('[SyncServer] Client error:', err.message);
       });
 
@@ -244,6 +245,7 @@ class SyncServer {
 
         client.authenticated = true;
         client.name = deviceInfo.name;
+        if (client.authTimeout) { clearTimeout(client.authTimeout); client.authTimeout = null; }
         this.pairingCode = null;
         this.pairingAttempts = 0;
 
@@ -275,6 +277,7 @@ class SyncServer {
         }
         client.authenticated = true;
         client.name = device.name;
+        if (client.authTimeout) { clearTimeout(client.authTimeout); client.authTimeout = null; }
         this._send(ws, { type: 'auth_result', success: true, name: device.name });
         this._notifyMainWindow('mobile-connected', { name: device.name });
         console.log(`[SyncServer] Device authenticated: ${device.name}`);
