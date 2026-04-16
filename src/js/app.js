@@ -2305,6 +2305,39 @@ async function updateMobileStatus() {
       const ip = lanIp || anyIp;
       if (ip) ipEl.textContent = `${ip}:9247`;
     } catch {}
+
+    // Fetch public IP
+    const pubEl = document.getElementById('mobile-public-ip');
+    if (pubEl) {
+      fetch('https://api.ipify.org?format=json')
+        .then(r => r.json())
+        .then(data => {
+          if (data.ip) {
+            pubEl.textContent = data.ip;
+            pubEl.onclick = () => {
+              require('electron').clipboard.writeText(data.ip);
+              pubEl.textContent = data.ip + ' ✓ copied';
+              setTimeout(() => { pubEl.textContent = data.ip; }, 2000);
+            };
+          }
+        })
+        .catch(() => {
+          // Try IPv6
+          fetch('https://api64.ipify.org?format=json')
+            .then(r => r.json())
+            .then(data => {
+              if (data.ip) {
+                pubEl.textContent = data.ip;
+                pubEl.onclick = () => {
+                  require('electron').clipboard.writeText(data.ip);
+                  pubEl.textContent = data.ip + ' ✓ copied';
+                  setTimeout(() => { pubEl.textContent = data.ip; }, 2000);
+                };
+              }
+            })
+            .catch(() => { pubEl.textContent = 'Could not detect'; });
+        });
+    }
   } catch {}
 }
 
