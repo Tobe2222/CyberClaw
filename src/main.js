@@ -1088,17 +1088,24 @@ app.whenReady().then(() => {
     port: 9247,
     mainWindow,
     onChatMessage: (text, agentId, meta) => {
-      // Route mobile chat to the companion's chat PTY (same as desktop)
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-chat', { text, agentId, meta });
       }
     },
     onVoiceTranscript: (transcript, context, meta) => {
-      // Route voice transcript to the companion
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-voice', { transcript, context, meta });
       }
-    }
+    },
+    onRequestChatHistory: (ws) => {
+      // Ask renderer for current chat history, then send to mobile client
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-request-chat-history', {});
+        // Store ws so IPC reply can find it
+        if (!syncServer._pendingHistoryWs) syncServer._pendingHistoryWs = [];
+        syncServer._pendingHistoryWs.push(ws);
+      }
+    },
   });
   syncServer.start();
 });
@@ -1127,6 +1134,18 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
 
 ipcMain.handle('sync-broadcast-chat', (e, { agentId, text, isUser }) => {
   if (syncServer) syncServer.broadcastChatMessage(agentId, text, isUser);
+});
+
+ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
+  if (syncServer) syncServer.broadcastTyping(active);
+});
+
+ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
+  if (!syncServer || !syncServer._pendingHistoryWs) return;
+  const pending = syncServer._pendingHistoryWs.splice(0);
+  for (const ws of pending) {
+    syncServer.sendChatHistory(ws, messages);
+  }
 });
 
 app.on('activate', () => {

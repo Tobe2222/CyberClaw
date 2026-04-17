@@ -1251,10 +1251,12 @@ window.sendChatMessage = async function(message) {
 
   chatBusy = true;
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
+  try { ipcRenderer.invoke('sync-broadcast-typing', { active: true }); } catch {}
 
   try {
     const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
     removeChatMsg(typingId);
+    try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
 
     if (result.ok) {
       const leader = agents[mainAgentId];
@@ -1264,6 +1266,7 @@ window.sendChatMessage = async function(message) {
     }
   } catch (err) {
     removeChatMsg(typingId);
+    try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
     addChatMsg('error', `Error: ${err.message}`);
   }
 
@@ -2398,6 +2401,24 @@ try {
   ipcRenderer.on('mobile-connected', () => updateMobileStatus());
   ipcRenderer.on('mobile-disconnected', () => updateMobileStatus());
   ipcRenderer.on('mobile-paired', () => updateMobileStatus());
+
+  ipcRenderer.on('mobile-request-chat-history', () => {
+    // Collect current chat messages from the DOM and send to mobile
+    const msgs = [];
+    document.querySelectorAll('.chat-msg').forEach(el => {
+      const type = el.classList.contains('user') ? 'user' : el.classList.contains('agent') ? 'agent' : null;
+      if (!type) return;
+      const textEl = el.querySelector('.msg-text');
+      if (!textEl) return;
+      msgs.push({
+        text: textEl.textContent,
+        isUser: type === 'user',
+        agentId: 'companion',
+        ts: Date.now() - msgs.length * 1000, // approximate
+      });
+    });
+    ipcRenderer.invoke('sync-send-chat-history', { messages: msgs.slice(-50) });
+  });
 
   // Route mobile chat to companion
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {

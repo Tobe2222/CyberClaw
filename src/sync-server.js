@@ -282,8 +282,13 @@ class SyncServer {
         this._notifyMainWindow('mobile-connected', { name: device.name });
         console.log(`[SyncServer] Device authenticated: ${device.name}`);
 
-        // Send current state on connect
+        // Send current state and request chat history for this client
         this._sendFullState(ws);
+        // Ask main window to send chat history to this client
+        this._notifyMainWindow('mobile-request-chat-history', { ws: null });
+        // Store ws reference so main can reply
+        client._wsForHistory = ws;
+        if (this.onRequestChatHistory) this.onRequestChatHistory(ws);
         break;
       }
 
@@ -307,6 +312,12 @@ class SyncServer {
             lookbackMinutes: msg.lookbackMinutes || 0
           });
         }
+        break;
+      }
+
+      case 'request_chat_history': {
+        if (!client.authenticated) return;
+        if (this.onRequestChatHistory) this.onRequestChatHistory(ws);
         break;
       }
 
@@ -339,6 +350,14 @@ class SyncServer {
 
   broadcastChatMessage(agentId, text, isUser = false) {
     this._broadcast({ type: 'chat_message', agentId, text, isUser, ts: Date.now() });
+  }
+
+  broadcastTyping(active) {
+    this._broadcast({ type: 'typing', active, ts: Date.now() });
+  }
+
+  sendChatHistory(ws, messages) {
+    this._send(ws, { type: 'chat_history', messages, ts: Date.now() });
   }
 
   broadcastArenaEvent(event) {
