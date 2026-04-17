@@ -1219,6 +1219,57 @@ window.sendChat = async function() {
   input.focus();
 };
 
+/**
+ * Send a chat message programmatically (used by mobile sync, voice, etc.)
+ * Unlike sendChat() which reads from the DOM input, this takes text directly.
+ */
+window.sendChatMessage = async function(message) {
+  if (!message || chatBusy || agentOrder.length === 0) return;
+
+  const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
+  if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
+
+  const agent = agents[mainAgentId];
+  if (!agent) return;
+
+  let fullMessage = message;
+
+  // Add quest context if active
+  if (activeQuestId) {
+    try {
+      const quests = await cyberclaw.quests.list();
+      const q = quests.find(q => q.id === activeQuestId);
+      if (q) {
+        let ctx = `[Active Quest: "${q.name}"`;
+        if (q.description) ctx += ` — ${q.description}`;
+        if (q.directory) ctx += ` | Project dir: ${q.directory}`;
+        ctx += `] `;
+        fullMessage = ctx + fullMessage;
+      }
+    } catch {}
+  }
+
+  chatBusy = true;
+  const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
+
+  try {
+    const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
+    removeChatMsg(typingId);
+
+    if (result.ok) {
+      const leader = agents[mainAgentId];
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+    } else {
+      addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
+    }
+  } catch (err) {
+    removeChatMsg(typingId);
+    addChatMsg('error', `Error: ${err.message}`);
+  }
+
+  chatBusy = false;
+};
+
 let chatMsgId = 0;
 function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
@@ -2350,21 +2401,19 @@ try {
 
   // Route mobile chat to companion
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
-    // Display in chat and send to AI
     addChatMsg('user', text);
-    if (typeof sendChatMessage === 'function') {
-      sendChatMessage(text);
+    if (typeof window.sendChatMessage === 'function') {
+      window.sendChatMessage(text);
     }
   });
 
   ipcRenderer.on('mobile-voice', (e, { transcript, context, meta }) => {
-    // Voice transcript from mobile — show context and send to AI
     const prompt = context
       ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`
       : transcript;
     addChatMsg('user', `🎤 ${transcript}`);
-    if (typeof sendChatMessage === 'function') {
-      sendChatMessage(prompt);
+    if (typeof window.sendChatMessage === 'function') {
+      window.sendChatMessage(prompt);
     }
   });
 } catch {}
