@@ -1261,6 +1261,8 @@ window.sendChatMessage = async function(message) {
     if (result.ok) {
       const leader = agents[mainAgentId];
       addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+      // Notify main process for mobile TTS response
+      try { ipcRenderer.send('mobile-tts-response', { text: result.reply }); } catch {}
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }

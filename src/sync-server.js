@@ -41,6 +41,7 @@ class SyncServer {
     this.mainWindow = options.mainWindow || null;
     this.onChatMessage = options.onChatMessage || null;
     this.onVoiceTranscript = options.onVoiceTranscript || null;
+    this.onAudioInput = options.onAudioInput || null;
 
     // Rate limiting for pairing
     this.pairingAttempts = 0;
@@ -303,6 +304,17 @@ class SyncServer {
         break;
       }
 
+      case 'audio_input': {
+        if (!client.authenticated) return;
+        if (this.onAudioInput) {
+          this.onAudioInput(msg.audioBase64, msg.mimeType || 'audio/wav', ws, {
+            source: 'mobile',
+            deviceName: client.name
+          });
+        }
+        break;
+      }
+
       case 'voice_transcript': {
         if (!client.authenticated) return;
         if (this.onVoiceTranscript) {
@@ -354,6 +366,10 @@ class SyncServer {
 
   broadcastTyping(active) {
     this._broadcast({ type: 'typing', active, ts: Date.now() });
+  }
+
+  sendAudioResponse(ws, audioBase64, mimeType = 'audio/mpeg') {
+    this._send(ws, { type: 'audio_response', audioBase64, mimeType });
   }
 
   sendChatHistory(ws, messages) {
