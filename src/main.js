@@ -71,85 +71,13 @@ const { execSync, exec: execCb } = require('child_process');
 const SyncServer = require('./sync-server');
 const httpsNode = require('https');
 const osNode = require('os');
+const localAI = require('./local-ai');
 
-// --- Audio helpers for mobile voice loop ---
-async function transcribeAudio(audioBase64, mimeType) {
-  let apiKey = '';
-  try {
-    apiKey = execSync('/home/humpsuu/.npm-global/bin/openclaw config get openai.apiKey 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
-  } catch {}
-  if (!apiKey) {
-    try {
-      const configPath = path.join(osNode.homedir(), '.openclaw', 'config.json');
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      apiKey = cfg?.openai?.apiKey || '';
-    } catch {}
-  }
-  if (!apiKey) throw new Error('No OpenAI API key configured');
-
-  const ext = mimeType.includes('wav') ? '.wav' : '.m4a';
-  const tmpFile = path.join(osNode.tmpdir(), `cyberclaw-audio-${Date.now()}${ext}`);
-  fs.writeFileSync(tmpFile, Buffer.from(audioBase64, 'base64'));
-
-  let FormDataLib;
-  try { FormDataLib = require('form-data'); } catch { throw new Error('form-data not available'); }
-
-  const form = new FormDataLib();
-  form.append('file', fs.createReadStream(tmpFile), { filename: `audio${ext}`, contentType: mimeType });
-  form.append('model', 'whisper-1');
-
-  return new Promise((resolve, reject) => {
-    const req = httpsNode.request({
-      hostname: 'api.openai.com',
-      path: '/v1/audio/transcriptions',
-      method: 'POST',
-      headers: { ...form.getHeaders(), 'Authorization': `Bearer ${apiKey}` }
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { fs.unlinkSync(tmpFile); } catch {}
-        try { resolve(JSON.parse(data).text || ''); } catch { reject(new Error(data)); }
-      });
-    });
-    req.on('error', reject);
-    form.pipe(req);
-  });
-}
-
-async function synthesizeSpeech(text, apiKey) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model: 'tts-1', input: text, voice: 'nova', response_format: 'mp3' });
-    const req = httpsNode.request({
-      hostname: 'api.openai.com',
-      path: '/v1/audio/speech',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'Content-Length': Buffer.byteLength(body) }
-    }, (res) => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-async function getOpenAIApiKey() {
-  let apiKey = '';
-  try {
-    apiKey = execSync('/home/humpsuu/.npm-global/bin/openclaw config get openai.apiKey 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
-  } catch {}
-  if (!apiKey) {
-    try {
-      const configPath = path.join(osNode.homedir(), '.openclaw', 'config.json');
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      apiKey = cfg?.openai?.apiKey || '';
-    } catch {}
-  }
-  return apiKey;
-}
+// --- Audio helpers for mobile voice loop (local, no API key) ---
+// Delegates to local-ai.js (whisper.cpp STT + piper TTS)
+// local-ai is initialized once the app window is ready (see createWindow)
+const transcribeAudio = (audioBase64, mimeType) => localAI.transcribeAudio(audioBase64, mimeType);
+const synthesizeSpeech = (text) => localAI.synthesizeSpeech(text);
 // --- End audio helpers ---
 
 let syncServer = null;
@@ -205,6 +133,10 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
+
+  // Init local AI with userData path and window reference for progress events
+  const { app } = require('electron');
+  localAI.init(app.getPath('userData'), mainWindow);
 }
 
 function switchToMainApp() {
@@ -1201,10 +1133,8 @@ app.whenReady().then(() => {
           // 3. Listen once for the AI response to synthesize TTS
           ipcMain.once('mobile-tts-response', async (event, { text }) => {
             try {
-              const apiKey = await getOpenAIApiKey();
-              if (!apiKey) return;
-              const audioBase64Out = await synthesizeSpeech(text, apiKey);
-              if (syncServer) syncServer.sendAudioResponse(ws, audioBase64Out, 'audio/mpeg');
+              const audioBase64Out = await synthesizeSpeech(text);
+              if (syncServer) syncServer.sendAudioResponse(ws, audioBase64Out, 'audio/wav');
             } catch (e) {
               console.error('[AudioLoop] TTS error:', e.message);
             }
