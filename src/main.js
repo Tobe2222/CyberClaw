@@ -1126,8 +1126,11 @@ app.whenReady().then(() => {
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (!transcript) return;
 
-        // 2. Send transcript back to mobile so user can review and manually send
+        // 2. Send transcript back to mobile for review / auto-send in focus mode
         if (syncServer) syncServer.sendTranscript(ws, transcript);
+
+        // 3. Mark that the next AI reply should be spoken back (TTS audio response)
+        syncServer._voiceReplyWs = ws;
       } catch (e) {
         console.error('[AudioLoop] transcription error:', e.message);
       }
@@ -1158,8 +1161,22 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
   if (syncServer) syncServer.broadcastState(state);
 });
 
-ipcMain.handle('sync-broadcast-chat', (e, { agentId, text, isUser }) => {
+ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
   if (syncServer) syncServer.broadcastChatMessage(agentId, text, isUser);
+  // If this AI reply follows a voice input, synthesize TTS and send audio back
+  if (!isUser && syncServer && syncServer._voiceReplyWs) {
+    const ws = syncServer._voiceReplyWs;
+    syncServer._voiceReplyWs = null;
+    try {
+      const audioBuffer = await synthesizeSpeech(text);
+      if (audioBuffer) {
+        const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+        syncServer.sendAudioResponse(ws, audioBase64, 'audio/mpeg');
+      }
+    } catch (e) {
+      console.error('[TTS] voice reply synthesis failed:', e.message);
+    }
+  }
 });
 
 ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
