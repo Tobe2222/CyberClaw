@@ -372,6 +372,10 @@ class SyncServer {
     this._send(ws, { type: 'audio_response', audioBase64, mimeType });
   }
 
+  sendTranscript(ws, transcript) {
+    this._send(ws, { type: 'voice_transcript_result', transcript });
+  }
+
   sendChatHistory(ws, messages) {
     this._send(ws, { type: 'chat_history', messages, ts: Date.now() });
   }

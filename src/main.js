@@ -1126,20 +1126,8 @@ app.whenReady().then(() => {
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (!transcript) return;
 
-        // 2. Send transcript as a mobile-chat to renderer (triggers LLM response)
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('mobile-chat', { text: transcript, agentId: 'companion', meta });
-
-          // 3. Listen once for the AI response to synthesize TTS
-          ipcMain.once('mobile-tts-response', async (event, { text }) => {
-            try {
-              const audioBase64Out = await synthesizeSpeech(text);
-              if (syncServer) syncServer.sendAudioResponse(ws, audioBase64Out, 'audio/wav');
-            } catch (e) {
-              console.error('[AudioLoop] TTS error:', e.message);
-            }
-          });
-        }
+        // 2. Send transcript back to mobile so user can review and manually send
+        if (syncServer) syncServer.sendTranscript(ws, transcript);
       } catch (e) {
         console.error('[AudioLoop] transcription error:', e.message);
       }
