@@ -1122,8 +1122,16 @@ app.whenReady().then(() => {
     },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
+        // Flash taskbar/dock to signal incoming voice message
+        if (mainWindow && !mainWindow.isFocused()) {
+          mainWindow.flashFrame(true);
+          mainWindow.once('focus', () => mainWindow.flashFrame(false));
+        }
+        if (mainWindow) mainWindow.webContents.send('mobile-voice-incoming', {});
+
         // 1. Transcribe audio via Whisper
         const transcript = await transcribeAudio(audioBase64, mimeType);
+        if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) return;
 
         // 2. Send transcript back to mobile for review / auto-send in focus mode
@@ -1133,6 +1141,7 @@ app.whenReady().then(() => {
         syncServer._voiceReplyWs = ws;
       } catch (e) {
         console.error('[AudioLoop] transcription error:', e.message);
+        if (syncServer) syncServer.sendTranscript(ws, '');
       }
     },
   });
