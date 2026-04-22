@@ -373,7 +373,19 @@ class SyncServer {
   }
 
   sendTranscript(ws, transcript) {
-    this._send(ws, { type: 'voice_transcript_result', transcript });
+    // Try the original ws first; if closed, find any authenticated client
+    const payload = { type: 'voice_transcript_result', transcript };
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this._send(ws, payload);
+    } else {
+      // Fallback: send to first authenticated client
+      for (const [clientWs, client] of this.clients) {
+        if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
+          this._send(clientWs, payload);
+          break;
+        }
+      }
+    }
   }
 
   sendChatHistory(ws, messages) {
