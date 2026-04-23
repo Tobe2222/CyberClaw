@@ -1122,6 +1122,9 @@ app.whenReady().then(() => {
     },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
+        // Immediately ack receipt so mobile can show "received at desktop"
+        if (syncServer) syncServer._send(ws, { type: 'voice_received' });
+
         // Flash taskbar/dock to signal incoming voice message
         if (mainWindow && !mainWindow.isFocused()) {
           mainWindow.flashFrame(true);
@@ -1132,7 +1135,10 @@ app.whenReady().then(() => {
         // 1. Transcribe audio via Whisper
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
-        if (!transcript) return;
+        if (!transcript) {
+          if (syncServer) syncServer.sendTranscript(ws, '');
+          return;
+        }
 
         // 2. Send transcript back to mobile for review / auto-send in focus mode
         if (syncServer) syncServer.sendTranscript(ws, transcript);
