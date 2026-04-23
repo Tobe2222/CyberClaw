@@ -1123,7 +1123,12 @@ app.whenReady().then(() => {
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
         // Immediately ack receipt so mobile can show "received at desktop"
-        if (syncServer) syncServer._send(ws, { type: 'voice_received' });
+        if (syncServer && ws && ws.readyState === 1) {
+          syncServer._send(ws, { type: 'voice_received' });
+          console.log('[Voice] Sent voice_received ack to mobile');
+        } else {
+          console.warn('[Voice] Could not send voice_received - syncServer or ws unavailable');
+        }
 
         // Flash taskbar/dock to signal incoming voice message
         if (mainWindow && !mainWindow.isFocused()) {
@@ -1133,21 +1138,24 @@ app.whenReady().then(() => {
         if (mainWindow) mainWindow.webContents.send('mobile-voice-incoming', {});
 
         // 1. Transcribe audio via Whisper
+        console.log('[Voice] Starting transcription...');
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) {
-          if (syncServer) syncServer.sendTranscript(ws, '');
+          console.warn('[Voice] Transcription returned empty result');
+          if (syncServer && ws) syncServer.sendTranscript(ws, '');
           return;
         }
 
+        console.log(`[Voice] Transcription complete: "${transcript.substring(0, 80)}"`);
         // 2. Send transcript back to mobile for review / auto-send in focus mode
-        if (syncServer) syncServer.sendTranscript(ws, transcript);
+        if (syncServer && ws) syncServer.sendTranscript(ws, transcript);
 
         // 3. Mark that the next AI reply should be spoken back (TTS audio response)
         syncServer._voiceReplyWs = ws;
       } catch (e) {
-        console.error('[AudioLoop] transcription error:', e.message);
-        if (syncServer) syncServer.sendTranscript(ws, '');
+        console.error('[Voice] Transcription error:', e.message);
+        if (syncServer && ws) syncServer.sendTranscript(ws, '');
       }
     },
   });
