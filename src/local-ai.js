@@ -413,29 +413,19 @@ async function transcribeAudio(audioBase64, mimeType) {
 }
 
 async function synthesizeSpeech(text) {
-  const { binaryPath, voiceOnnx } = await ensurePiper();
+  const { voiceOnnx } = await ensurePiper();
   const voiceJson = voiceOnnx.replace('.onnx', '.onnx.json');
   const tmpOut = path.join(os.tmpdir(), `cyberclaw-tts-${Date.now()}.wav`);
+  const piperScript = path.join(__dirname, 'piper-tts.py');
 
   try {
     await new Promise((resolve, reject) => {
-      const proc = require('child_process').spawn(binaryPath, [
-        '--model', voiceOnnx,
-        '--config', voiceJson,
-        '--output_file', tmpOut,
-        '--json-input'
-      ]);
-      
-      // Send as JSON line
-      const jsonInput = JSON.stringify({ text });
-      proc.stdin.write(jsonInput + '\n');
-      proc.stdin.end();
-      
-      proc.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Piper exited with code ${code}`));
-      });
-      proc.on('error', reject);
+      execFileAsync('python3', [piperScript, voiceOnnx, voiceJson, tmpOut, text])
+        .then(() => resolve())
+        .catch((err) => {
+          console.error('[synthesizeSpeech] Piper error:', err.message);
+          reject(new Error(`Piper TTS failed: ${err.message}`));
+        });
     });
 
     const audioData = fs.readFileSync(tmpOut);
