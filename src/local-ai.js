@@ -139,14 +139,21 @@ async function ensurePiper() {
     if (!fs.existsSync(dir)) return null;
     const direct = path.join(dir, binaryName);
     if (fs.existsSync(direct)) return direct;
-    for (const entry of fs.readdirSync(dir)) {
-      const full = path.join(dir, entry);
-      if (fs.statSync(full).isDirectory()) {
-        const found = path.join(full, binaryName);
-        if (fs.existsSync(found)) return found;
+    
+    // Search recursively
+    const searchRecursive = (searchDir) => {
+      for (const entry of fs.readdirSync(searchDir)) {
+        const full = path.join(searchDir, entry);
+        if (fs.statSync(full).isDirectory()) {
+          const found = path.join(full, binaryName);
+          if (fs.existsSync(found)) return found;
+          const recursive = searchRecursive(full);
+          if (recursive) return recursive;
+        }
       }
-    }
-    return null;
+      return null;
+    };
+    return searchRecursive(dir);
   };
 
   const voiceOnnx = path.join(piperDir, 'en_US-lessac-medium.onnx');
