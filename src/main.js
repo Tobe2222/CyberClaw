@@ -78,6 +78,15 @@ const localAI = require('./local-ai');
 // local-ai is initialized once the app window is ready (see createWindow)
 const transcribeAudio = (audioBase64, mimeType) => localAI.transcribeAudio(audioBase64, mimeType);
 const synthesizeSpeech = (text) => localAI.synthesizeSpeech(text);
+
+// Strip emojis and special symbols from text for TTS
+function stripEmojisForTTS(text) {
+  return text
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '') // Unicode emoji
+    .replace(/:[a-z0-9_+-]+:/gi, '') // Custom emoji syntax :emoji:
+    .replace(/\s+/g, ' ') // Clean up extra spaces
+    .trim();
+}
 // --- End audio helpers ---
 
 let syncServer = null;
@@ -1190,9 +1199,10 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
   if (!isUser && syncServer && syncServer._voiceReplyWs) {
     const ws = syncServer._voiceReplyWs;
     syncServer._voiceReplyWs = null;
-    console.log(`[TTS] Synthesizing voice response: "${text.substring(0, 60)}..."`);
+    const cleanText = stripEmojisForTTS(text);
+    console.log(`[TTS] Synthesizing voice response: "${cleanText.substring(0, 60)}..."`);
     try {
-      const audioBase64 = await synthesizeSpeech(text);
+      const audioBase64 = await synthesizeSpeech(cleanText);
       if (audioBase64) {
         console.log(`[TTS] Synthesized ${audioBase64.length} chars, sending to mobile...`);
         syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
