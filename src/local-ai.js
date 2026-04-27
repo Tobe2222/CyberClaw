@@ -370,22 +370,22 @@ async function transcribeAudio(audioBase64, mimeType) {
       fs.copyFileSync(tmpSrc, tmpWav);
     }
 
-    // Run whisper-cli
+    // Run whisper-cli using exec for better error capture
     let stdout = '';
-    let stderr = '';
     try {
-      const result = await execFileAsync(binaryPath, [
-        '-m', modelPath,
-        '-f', tmpWav,
-        '--no-timestamps',
-        '-nt',
-        '--output-txt',
-        '--output-file', tmpWav.replace('.wav', '')
-      ]);
-      stdout = result.stdout || '';
+      const cmd = `"${binaryPath}" -m "${modelPath}" -f "${tmpWav}" --language en --output-txt --output-file "${tmpWav.replace('.wav', '')}"`;
+      console.log('[transcribeAudio] Running:', cmd);
+      
+      const { stdout: execStdout } = await execFileAsync('bash', ['-c', cmd]);
+      stdout = execStdout || '';
+      
+      console.log('[transcribeAudio] Whisper completed successfully');
     } catch (execErr) {
-      stderr = execErr.stderr || execErr.message || '';
-      console.error('[transcribeAudio] Whisper execution error:', stderr);
+      const stderr = execErr.stderr ? execErr.stderr.toString() : (execErr.message || 'Unknown error');
+      const stdout_err = execErr.stdout ? execErr.stdout.toString() : '';
+      console.error('[transcribeAudio] Whisper execution failed');
+      console.error('[transcribeAudio] stderr:', stderr);
+      console.error('[transcribeAudio] stdout:', stdout_err);
       throw new Error('Whisper transcription failed: ' + stderr);
     }
 
