@@ -243,10 +243,10 @@ async function ensureWhisper() {
       }
       
       sendProgress('Building Whisper from source', 50, 'Compiling...');
-      // Build with make
+      // Build with make (default target builds main executable)
       await new Promise((resolve, reject) => {
         require('child_process').exec(
-          `cd "${repoDir}" && make main -j4`,
+          `cd "${repoDir}" && make -j4`,
           { maxBuffer: 10 * 1024 * 1024 },
           (err) => err ? reject(err) : resolve()
         );
