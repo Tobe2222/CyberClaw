@@ -192,8 +192,14 @@ async function ensureWhisper() {
 
   const findBinary = (dir) => {
     if (!fs.existsSync(dir)) return null;
+    
+    // On Linux, skip .exe files (they won't work)
+    const validNames = platform === 'linux' 
+      ? ['whisper-cli', 'main']
+      : ['whisper-cli', 'whisper-cli.exe', 'main', 'main.exe'];
+    
     // Check common names
-    for (const name of ['whisper-cli', 'whisper-cli.exe', 'main', 'main.exe']) {
+    for (const name of validNames) {
       const p = path.join(dir, name);
       if (fs.existsSync(p)) return p;
     }
@@ -203,7 +209,7 @@ async function ensureWhisper() {
         const full = path.join(searchDir, entry);
         const stat = fs.statSync(full);
         if (stat.isDirectory()) {
-          for (const name of ['whisper-cli', 'whisper-cli.exe', 'main', 'main.exe']) {
+          for (const name of validNames) {
             const p = path.join(full, name);
             if (fs.existsSync(p)) return p;
           }
