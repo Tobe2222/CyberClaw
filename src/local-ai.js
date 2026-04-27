@@ -243,19 +243,47 @@ async function ensureWhisper() {
       }
       
       sendProgress('Building Whisper from source', 50, 'Compiling...');
-      // Build with make (default target builds main executable)
+      // Build with cmake
+      const buildDir = path.join(repoDir, 'build');
+      fs.mkdirSync(buildDir, { recursive: true });
+      
       await new Promise((resolve, reject) => {
         require('child_process').exec(
-          `cd "${repoDir}" && make -j4`,
+          `cd "${buildDir}" && cmake .. && make -j4`,
           { maxBuffer: 10 * 1024 * 1024 },
           (err) => err ? reject(err) : resolve()
         );
       });
       
-      const builtBinary = path.join(repoDir, 'main');
+      // Check for the main binary in build directory
+      const builtBinary = path.join(buildDir, 'bin', 'main');
       if (!fs.existsSync(builtBinary)) {
-        throw new Error('Whisper build failed - binary not found');
+        // Try alternate location
+        const altBinary = path.join(buildDir, 'main');
+        if (!fs.existsSync(altBinary)) {
+          throw new Error('Whisper build failed - binary not found at ' + builtBinary + ' or ' + altBinary);
+        }
+        // Use alternate location
+        fs.copyFileSync(altBinary, path.join(whisperDir, 'whisper-cli'));
+        binaryPath = path.join(whisperDir, 'whisper-cli');
+        fs.chmodSync(binaryPath, 0o755);
+      } else {
+        // Copy from standard location
+        fs.copyFileSync(builtBinary, path.join(whisperDir, 'whisper-cli'));
+        binaryPath = path.join(whisperDir, 'whisper-cli');
+        fs.chmodSync(binaryPath, 0o755);
       }
+      
+      sendProgress('Whisper build complete', 100, 'Done');
+      
+      // Early return to skip the old copy code
+      if (!fs.existsSync(modelPath)) {
+        sendProgress('Downloading Whisper model', 0, 'Downloading base.en model (~142MB)...');
+        await downloadFile(WHISPER_MODEL_URL, modelPath, 'Downloading Whisper model');
+        sendProgress('Whisper model ready', 100, 'Done');
+      }
+      
+      return { binaryPath, modelPath };
       
       // Copy to whisper dir
       fs.copyFileSync(builtBinary, path.join(whisperDir, 'whisper-cli'));
