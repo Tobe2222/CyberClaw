@@ -255,24 +255,15 @@ async function ensureWhisper() {
         );
       });
       
-      // Check for the main binary in build directory
-      const builtBinary = path.join(buildDir, 'bin', 'main');
-      if (!fs.existsSync(builtBinary)) {
-        // Try alternate location
-        const altBinary = path.join(buildDir, 'main');
-        if (!fs.existsSync(altBinary)) {
-          throw new Error('Whisper build failed - binary not found at ' + builtBinary + ' or ' + altBinary);
-        }
-        // Use alternate location
-        fs.copyFileSync(altBinary, path.join(whisperDir, 'whisper-cli'));
-        binaryPath = path.join(whisperDir, 'whisper-cli');
-        fs.chmodSync(binaryPath, 0o755);
-      } else {
-        // Copy from standard location
-        fs.copyFileSync(builtBinary, path.join(whisperDir, 'whisper-cli'));
-        binaryPath = path.join(whisperDir, 'whisper-cli');
-        fs.chmodSync(binaryPath, 0o755);
+      // Use the real whisper-cli binary from build/bin
+      const realBinary = path.join(buildDir, 'bin', 'whisper-cli');
+      if (!fs.existsSync(realBinary)) {
+        throw new Error('Whisper build failed - whisper-cli not found at ' + realBinary);
       }
+      // Copy to our cache location
+      fs.copyFileSync(realBinary, path.join(whisperDir, 'whisper-cli'));
+      binaryPath = path.join(whisperDir, 'whisper-cli');
+      fs.chmodSync(binaryPath, 0o755);
       
       sendProgress('Whisper build complete', 100, 'Done');
       
