@@ -255,21 +255,39 @@ async function transcribeAudio(audioBase64, mimeType) {
   try {
     // Convert to 16kHz mono WAV (whisper.cpp requirement)
     if (!isWav) {
-      await new Promise((resolve, reject) => {
-        // Try ffmpeg first, fall back to sox
-        const ffmpeg = require('child_process').exec(
-          `ffmpeg -y -i "${tmpSrc}" -ar 16000 -ac 1 -f wav "${tmpWav}" 2>/dev/null`,
-          (err) => {
-            if (err) {
-              // Try sox
-              require('child_process').exec(
-                `sox "${tmpSrc}" -r 16000 -c 1 "${tmpWav}" 2>/dev/null`,
-                (err2) => err2 ? reject(new Error('Need ffmpeg or sox to convert audio')) : resolve()
-              );
-            } else resolve();
-          }
-        );
-      });
+      let converted = false;
+      
+      // Try ffmpeg first
+      try {
+        await execFileAsync('ffmpeg', [
+          '-y',
+          '-i', tmpSrc,
+          '-ar', '16000',
+          '-ac', '1',
+          '-f', 'wav',
+          tmpWav
+        ]);
+        converted = true;
+      } catch (ffmpegErr) {
+        console.warn('[transcribeAudio] ffmpeg failed, trying sox:', ffmpegErr.message);
+        // Try sox as fallback
+        try {
+          await execFileAsync('sox', [
+            tmpSrc,
+            '-r', '16000',
+            '-c', '1',
+            tmpWav
+          ]);
+          converted = true;
+        } catch (soxErr) {
+          console.error('[transcribeAudio] Both ffmpeg and sox failed:', soxErr.message);
+          throw new Error('Need ffmpeg or sox to convert audio from ' + srcExt + ' to WAV');
+        }
+      }
+      
+      if (!converted || !fs.existsSync(tmpWav)) {
+        throw new Error('Audio conversion failed - output file not created');
+      }
     } else {
       fs.copyFileSync(tmpSrc, tmpWav);
     }
