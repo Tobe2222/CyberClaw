@@ -32,7 +32,7 @@ const PIPER_RELEASES = {
 };
 
 // Whisper.cpp releases — check https://github.com/ggml-org/whisper.cpp/releases
-const WHISPER_VERSION = '1.7.5';
+const WHISPER_VERSION = '1.8.4';
 const WHISPER_RELEASES = {
   linux:   `https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-bin-x64.zip`,
   win32:   `https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-bin-x64.zip`,
