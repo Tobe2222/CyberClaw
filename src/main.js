@@ -1192,14 +1192,13 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
     syncServer._voiceReplyWs = null;
     console.log(`[TTS] Synthesizing voice response: "${text.substring(0, 60)}..."`);
     try {
-      const audioBuffer = await synthesizeSpeech(text);
-      if (audioBuffer) {
-        console.log(`[TTS] Synthesized ${audioBuffer.length} bytes, sending to mobile...`);
-        const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+      const audioBase64 = await synthesizeSpeech(text);
+      if (audioBase64) {
+        console.log(`[TTS] Synthesized ${audioBase64.length} chars, sending to mobile...`);
         syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
         console.log('[TTS] Audio response sent to mobile');
       } else {
-        console.warn('[TTS] synthesizeSpeech returned empty buffer');
+        console.warn('[TTS] synthesizeSpeech returned empty string');
       }
     } catch (e) {
       console.error('[TTS] voice reply synthesis failed:', e.message);
