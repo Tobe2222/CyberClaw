@@ -138,15 +138,16 @@ async function ensurePiper() {
   const findBinary = (dir) => {
     if (!fs.existsSync(dir)) return null;
     const direct = path.join(dir, binaryName);
-    if (fs.existsSync(direct)) return direct;
+    if (fs.existsSync(direct) && !fs.statSync(direct).isDirectory()) return direct;
     
     // Search recursively
     const searchRecursive = (searchDir) => {
       for (const entry of fs.readdirSync(searchDir)) {
         const full = path.join(searchDir, entry);
-        if (fs.statSync(full).isDirectory()) {
+        const stat = fs.statSync(full);
+        if (stat.isDirectory()) {
           const found = path.join(full, binaryName);
-          if (fs.existsSync(found)) return found;
+          if (fs.existsSync(found) && !fs.statSync(found).isDirectory()) return found;
           const recursive = searchRecursive(full);
           if (recursive) return recursive;
         }
