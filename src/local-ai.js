@@ -71,7 +71,13 @@ function downloadFile(url, destPath, progressLabel) {
       const proto = reqUrl.startsWith('https') ? https : http;
       proto.get(reqUrl, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
-          doRequest(res.headers.location);
+          const location = res.headers.location;
+          if (!location) {
+            file.close();
+            fs.unlink(destPath, () => {});
+            return reject(new Error(`Redirect without location header from ${url}`));
+          }
+          doRequest(location);
           return;
         }
         if (res.statusCode !== 200) {
