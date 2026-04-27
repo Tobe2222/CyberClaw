@@ -371,14 +371,23 @@ async function transcribeAudio(audioBase64, mimeType) {
     }
 
     // Run whisper-cli
-    const { stdout } = await execFileAsync(binaryPath, [
-      '-m', modelPath,
-      '-f', tmpWav,
-      '--no-timestamps',
-      '-nt',
-      '--output-txt',
-      '--output-file', tmpWav.replace('.wav', '')
-    ]);
+    let stdout = '';
+    let stderr = '';
+    try {
+      const result = await execFileAsync(binaryPath, [
+        '-m', modelPath,
+        '-f', tmpWav,
+        '--no-timestamps',
+        '-nt',
+        '--output-txt',
+        '--output-file', tmpWav.replace('.wav', '')
+      ]);
+      stdout = result.stdout || '';
+    } catch (execErr) {
+      stderr = execErr.stderr || execErr.message || '';
+      console.error('[transcribeAudio] Whisper execution error:', stderr);
+      throw new Error('Whisper transcription failed: ' + stderr);
+    }
 
     // whisper writes to .txt file
     const txtFile = tmpWav.replace('.wav', '.txt');
