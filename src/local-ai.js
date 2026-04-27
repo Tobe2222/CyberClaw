@@ -197,17 +197,23 @@ async function ensureWhisper() {
       const p = path.join(dir, name);
       if (fs.existsSync(p)) return p;
     }
-    // Search subdirs
-    for (const entry of fs.readdirSync(dir)) {
-      const full = path.join(dir, entry);
-      if (fs.statSync(full).isDirectory()) {
-        for (const name of ['whisper-cli', 'whisper-cli.exe', 'main', 'main.exe']) {
-          const p = path.join(full, name);
-          if (fs.existsSync(p)) return p;
+    // Search subdirs recursively
+    const searchRecursive = (searchDir) => {
+      for (const entry of fs.readdirSync(searchDir)) {
+        const full = path.join(searchDir, entry);
+        const stat = fs.statSync(full);
+        if (stat.isDirectory()) {
+          for (const name of ['whisper-cli', 'whisper-cli.exe', 'main', 'main.exe']) {
+            const p = path.join(full, name);
+            if (fs.existsSync(p)) return p;
+          }
+          const found = searchRecursive(full);
+          if (found) return found;
         }
       }
-    }
-    return null;
+      return null;
+    };
+    return searchRecursive(dir);
   };
 
   const modelPath = path.join(whisperDir, 'ggml-base.en.bin');
@@ -215,19 +221,57 @@ async function ensureWhisper() {
   let binaryPath = findBinary(whisperDir);
 
   if (!binaryPath) {
-    sendProgress('Downloading Whisper STT', 0, 'Starting...');
-    const url = WHISPER_RELEASES[platform];
-    if (!url) throw new Error(`No whisper binary for platform: ${platform}`);
+    // For Linux, compile from source if binaries unavailable
+    if (platform === 'linux') {
+      sendProgress('Building Whisper from source', 0, 'Cloning repository...');
+      const repoDir = path.join(whisperDir, 'repo');
+      
+      // Clone if not exists
+      if (!fs.existsSync(repoDir)) {
+        await new Promise((resolve, reject) => {
+          require('child_process').exec(
+            `git clone https://github.com/ggml-org/whisper.cpp.git "${repoDir}"`,
+            (err) => err ? reject(err) : resolve()
+          );
+        });
+      }
+      
+      sendProgress('Building Whisper from source', 50, 'Compiling...');
+      // Build with make
+      await new Promise((resolve, reject) => {
+        require('child_process').exec(
+          `cd "${repoDir}" && make main -j4`,
+          { maxBuffer: 10 * 1024 * 1024 },
+          (err) => err ? reject(err) : resolve()
+        );
+      });
+      
+      const builtBinary = path.join(repoDir, 'main');
+      if (!fs.existsSync(builtBinary)) {
+        throw new Error('Whisper build failed - binary not found');
+      }
+      
+      // Copy to whisper dir
+      fs.copyFileSync(builtBinary, path.join(whisperDir, 'whisper-cli'));
+      binaryPath = path.join(whisperDir, 'whisper-cli');
+      fs.chmodSync(binaryPath, 0o755);
+      sendProgress('Whisper build complete', 100, 'Done');
+    } else {
+      // For Windows/Mac, try downloading
+      sendProgress('Downloading Whisper STT', 0, 'Starting...');
+      const url = WHISPER_RELEASES[platform];
+      if (!url) throw new Error(`No whisper binary for platform: ${platform}`);
 
-    const archivePath = path.join(whisperDir, 'whisper_archive.zip');
-    await downloadFile(url, archivePath, 'Downloading Whisper STT');
-    sendProgress('Extracting Whisper STT', 0, 'Extracting...');
-    await extractZip(archivePath, whisperDir);
-    fs.unlinkSync(archivePath);
-    binaryPath = findBinary(whisperDir);
-    if (!binaryPath) throw new Error('Whisper binary not found after extraction');
-    if (platform !== 'win32') fs.chmodSync(binaryPath, 0o755);
-    sendProgress('Whisper STT ready', 100, 'Done');
+      const archivePath = path.join(whisperDir, 'whisper_archive.zip');
+      await downloadFile(url, archivePath, 'Downloading Whisper STT');
+      sendProgress('Extracting Whisper STT', 0, 'Extracting...');
+      await extractZip(archivePath, whisperDir);
+      fs.unlinkSync(archivePath);
+      binaryPath = findBinary(whisperDir);
+      if (!binaryPath) throw new Error('Whisper binary not found after extraction');
+      if (platform !== 'win32') fs.chmodSync(binaryPath, 0o755);
+      sendProgress('Whisper STT ready', 100, 'Done');
+    }
   }
 
   if (!fs.existsSync(modelPath)) {
