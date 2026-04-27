@@ -1228,6 +1228,37 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
   }
 });
 
+ipcMain.handle('test-tts-voice', async (e, { voice, text }) => {
+  try {
+    console.log(`[TEST] Testing TTS voice: ${voice}`);
+    const audioBase64 = await synthesizeSpeech(text);
+    if (audioBase64) {
+      // Play the audio immediately
+      const path = require('path');
+      const os = require('os');
+      const fs = require('fs');
+      const tmpPath = path.join(os.tmpdir(), `tts-test-${Date.now()}.wav`);
+      const buffer = Buffer.from(audioBase64, 'base64');
+      fs.writeFileSync(tmpPath, buffer);
+      
+      // Try to play using the default system player
+      const { exec } = require('child_process');
+      if (process.platform === 'win32') {
+        exec(`powershell -Command "(New-Object System.Media.SoundPlayer '${tmpPath}').PlaySync()"`);
+      } else if (process.platform === 'darwin') {
+        exec(`afplay "${tmpPath}"`);
+      } else {
+        exec(`aplay "${tmpPath}"`);
+      }
+      
+      return { success: true, message: 'Playing test audio...' };
+    }
+  } catch (err) {
+    console.error('[TEST] TTS test failed:', err.message);
+    throw err;
+  }
+});
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

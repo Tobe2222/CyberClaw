@@ -357,6 +357,18 @@
             </select>
           </div>
           <div class="settings-row">
+            <span class="settings-label">TTS Voice</span>
+            <select id="settings-tts-voice" class="settings-select" onchange="saveSettings()">
+              <option value="lessac">Lessac (Professional Male)</option>
+              <option value="ryan">Ryan (Young Male)</option>
+              <option value="glow-tts">Glow TTS (Female)</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Test Voice</span>
+            <button class="settings-btn" onclick="testTTSVoice()">🔊 Play Sample</button>
+          </div>
+          <div class="settings-row">
             <span class="settings-label">Voice keybind</span>
             <button class="settings-keybind-btn" id="settings-voice-keybind" onclick="captureKeybind('voice')">
               <span id="voice-keybind-label">V</span>

@@ -16,9 +16,21 @@ const { promisify: prom } = require('util');
 const streamPipeline = prom(pipeline);
 
 // Piper voices from https://huggingface.co/rhasspy/piper-voices
-const PIPER_VOICE_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium';
-const PIPER_VOICE_ONNX = `${PIPER_VOICE_BASE}/en_US-lessac-medium.onnx`;
-const PIPER_VOICE_JSON = `${PIPER_VOICE_BASE}/en_US-lessac-medium.onnx.json`;
+const PIPER_VOICES = {
+  'lessac': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium',
+  'ryan': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium',
+  'glow-tts': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/glow-tts/medium'
+};
+
+const getVoiceUrls = (voice = 'lessac') => {
+  const baseUrl = PIPER_VOICES[voice] || PIPER_VOICES['lessac'];
+  const voiceName = `en_US-${voice}-medium`;
+  return {
+    onnx: `${baseUrl}/${voiceName}.onnx`,
+    json: `${baseUrl}/${voiceName}.onnx.json`,
+    voiceName
+  };
+};
 
 // Whisper model from HuggingFace
 const WHISPER_MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';

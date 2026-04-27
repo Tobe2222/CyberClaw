@@ -2144,6 +2144,7 @@ const DEFAULT_SETTINGS = {
   voiceKeybind: 'KeyV',
   voiceKeybindLabel: 'V',
   voiceAutoSend: false,
+  ttsVoice: 'lessac',
   defaultModel: '',
   keyAnthropic: '',
   keyOpenai: '',
@@ -2168,6 +2169,8 @@ function saveSettings() {
   s.theme = document.body.classList.contains('theme-light') ? 'light' : 'dark';
   const langEl = document.getElementById('settings-voice-lang');
   if (langEl) s.voiceLang = langEl.value;
+  const ttsEl = document.getElementById('settings-tts-voice');
+  if (ttsEl) s.ttsVoice = ttsEl.value;
   const autoEl = document.getElementById('settings-voice-autosend');
   if (autoEl) s.voiceAutoSend = autoEl.checked;
   const modelEl = document.getElementById('settings-default-model');
@@ -2198,12 +2201,30 @@ function applySettings() {
   else document.body.classList.remove('theme-light');
 }
 
+window.testTTSVoice = function() {
+  const voiceEl = document.getElementById('settings-tts-voice');
+  const voice = voiceEl ? voiceEl.value : 'lessac';
+  const testPhrase = 'Hello master. I am ready to assist you.';
+  
+  // Send test request to main process
+  window.ipcRenderer?.invoke('test-tts-voice', { voice, text: testPhrase })
+    .then(() => {
+      console.log('[TEST] TTS test started for voice:', voice);
+    })
+    .catch((err) => {
+      console.error('[TEST] TTS test failed:', err);
+      alert('TTS test failed: ' + err?.message);
+    });
+}
+
 window.openSettings = function() {
   const s = loadSettings();
   document.getElementById('settings-overlay').classList.remove('hidden');
   // Populate fields
   const langEl = document.getElementById('settings-voice-lang');
   if (langEl) langEl.value = s.voiceLang;
+  const ttsEl = document.getElementById('settings-tts-voice');
+  if (ttsEl) ttsEl.value = s.ttsVoice || 'lessac';
   const autoEl = document.getElementById('settings-voice-autosend');
   if (autoEl) autoEl.checked = s.voiceAutoSend;
   const keybindLabel = document.getElementById('voice-keybind-label');
