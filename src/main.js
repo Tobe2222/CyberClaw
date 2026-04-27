@@ -1196,7 +1196,7 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
       if (audioBuffer) {
         console.log(`[TTS] Synthesized ${audioBuffer.length} bytes, sending to mobile...`);
         const audioBase64 = Buffer.from(audioBuffer).toString('base64');
-        syncServer.sendAudioResponse(ws, audioBase64, 'audio/mpeg');
+        syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
         console.log('[TTS] Audio response sent to mobile');
       } else {
         console.warn('[TTS] synthesizeSpeech returned empty buffer');
