@@ -414,16 +414,23 @@ async function transcribeAudio(audioBase64, mimeType) {
 
 async function synthesizeSpeech(text) {
   const { binaryPath, voiceOnnx } = await ensurePiper();
+  const voiceJson = voiceOnnx.replace('.onnx', '.onnx.json');
   const tmpOut = path.join(os.tmpdir(), `cyberclaw-tts-${Date.now()}.wav`);
 
   try {
     await new Promise((resolve, reject) => {
       const proc = require('child_process').spawn(binaryPath, [
         '--model', voiceOnnx,
-        '--output_file', tmpOut
+        '--config', voiceJson,
+        '--output_file', tmpOut,
+        '--json-input'
       ]);
-      proc.stdin.write(text);
+      
+      // Send as JSON line
+      const jsonInput = JSON.stringify({ text });
+      proc.stdin.write(jsonInput + '\n');
       proc.stdin.end();
+      
       proc.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Piper exited with code ${code}`));
