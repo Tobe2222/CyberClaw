@@ -276,7 +276,7 @@ class PixelArena {
 
   // ── TREATS & TOYS ─────────────────────────────────────────────
 
-  static TOY_TYPES = ['ball', 'yarn', 'stick', 'frisbee', 'bell', 'feather'];
+  static TOY_TYPES = ['ball'];
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
     // Route toys to the physics system
