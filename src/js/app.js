@@ -2525,66 +2525,67 @@ window.toggleVoiceInput = function() {
   startVoice();
 };
 
-function startVoice() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    addChatMsg('system', '⚠️ Speech recognition not supported in this environment.');
+async function startVoice() {
+  if (voiceActive) {
+    stopVoice();
     return;
   }
 
-  const s = loadSettings();
-  voiceRecognition = new SpeechRecognition();
-  voiceRecognition.lang = s.voiceLang || 'en-US';
-  voiceRecognition.interimResults = true;
-  voiceRecognition.continuous = true;
-  voiceRecognition.maxAlternatives = 1;
-
   const input = document.getElementById('chat-input');
   const btn = document.getElementById('chat-voice');
-  let finalTranscript = '';
-
-  voiceRecognition.onstart = function() {
-    voiceActive = true;
-    btn.classList.add('recording');
-    btn.textContent = '⏹️';
-    input.placeholder = 'Listening...';
-  };
-
-  voiceRecognition.onresult = function(event) {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      if (event.results[i].isFinal) {
-        finalTranscript += event.results[i][0].transcript;
-      } else {
-        interim += event.results[i][0].transcript;
-      }
+  
+  voiceActive = true;
+  btn.classList.add('recording');
+  btn.textContent = '⏹️';
+  input.placeholder = 'Recording... (max 15s, say "stop" to end early)';
+  
+  try {
+    // Record audio for max 15 seconds or until user stops
+    addChatMsg('system', '🎤 Recording...');
+    const result = await window.ipcRenderer?.invoke('voice:start-recording', { durationMs: 15000 });
+    
+    if (!result?.path) {
+      throw new Error('No recording captured');
     }
-    input.value = finalTranscript + interim;
-  };
-
-  voiceRecognition.onerror = function(event) {
-    if (event.error !== 'aborted') {
-      addChatMsg('system', '⚠️ Voice error: ' + event.error);
+    
+    // Update UI
+    input.placeholder = 'Transcribing...';
+    btn.textContent = '⏳';
+    addChatMsg('system', '🔄 Transcribing with Whisper...');
+    
+    // Read audio file
+    const fs = require('fs');
+    const audioBase64 = fs.readFileSync(result.path, 'base64');
+    
+    // Send to local Whisper for transcription
+    const s = loadSettings();
+    const transcript = await window.ipcRenderer?.invoke('whisper:transcribe', {
+      audioBase64,
+      mimeType: 'audio/wav',
+      language: s.voiceLang || 'en-US'
+    });
+    
+    if (!transcript) {
+      addChatMsg('system', '⚠️ No speech detected');
+      stopVoice();
+      return;
     }
-    stopVoice();
-  };
-
-  voiceRecognition.onend = function() {
-    // Only auto-restart if still active (continuous mode can end unexpectedly)
-    if (voiceActive) {
-      // Recognition ended but user didn't stop — check auto-send
-    }
-    voiceActive = false;
-    btn.classList.remove('recording');
-    btn.textContent = '🎤';
-    input.placeholder = 'Type a message...';
-    if (s.voiceAutoSend && input.value.trim()) {
+    
+    // Put transcript in input
+    input.value = transcript;
+    addChatMsg('system', `✓ Recognized: "${transcript.substring(0, 60)}${transcript.length > 60 ? '...' : ''}"`);
+    
+    // Auto-send if enabled
+    if (s.voiceAutoSend) {
       window.sendChat();
     }
-  };
-
-  finalTranscript = input.value; // Preserve existing text
-  voiceRecognition.start();
+    
+  } catch (err) {
+    addChatMsg('system', `⚠️ Voice error: ${err?.message}`);
+    console.error('[VOICE]', err);
+  } finally {
+    stopVoice();
+  }
 }
 
 function stopVoice() {

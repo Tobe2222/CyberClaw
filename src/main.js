@@ -1273,3 +1273,78 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
+
+// Voice recording handler for desktop voice mode
+ipcMain.handle('voice:start-recording', async (e, { durationMs }) => {
+  try {
+    const os = require('os');
+    const path = require('path');
+    const { execFile } = require('child_process');
+    const tmpPath = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
+    
+    console.log(`[VOICE] Recording for ${durationMs}ms to ${tmpPath}`);
+    
+    // Use arecord to record audio
+    const recorder = execFile('arecord', [
+      '-f', 'S16_LE',
+      '-r', '16000',
+      '-c', '1',
+      '-d', String(Math.ceil(durationMs / 1000)),
+      '-q',
+      tmpPath
+    ]);
+    
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        recorder.kill();
+        resolve({ success: true, path: tmpPath });
+      }, durationMs + 500);
+      
+      recorder.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(new Error(`Recording failed: ${err.message}`));
+      });
+      
+      recorder.on('exit', (code) => {
+        clearTimeout(timeout);
+        if (code === 0 || code === 143) { // 0 = success, 143 = SIGTERM
+          resolve({ success: true, path: tmpPath });
+        } else {
+          reject(new Error(`arecord exited with code ${code}`));
+        }
+      });
+    });
+  } catch (err) {
+    console.error('[VOICE] Recording error:', err.message);
+    throw err;
+  }
+});
+
+// Whisper transcription handler for desktop voice mode
+ipcMain.handle('whisper:transcribe', async (e, { audioBase64, mimeType, language }) => {
+  try {
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+    
+    console.log(`[WHISPER] Transcribing audio (${language})...`);
+    
+    // Write base64 audio to temp file
+    const tmpPath = path.join(os.tmpdir(), `whisper-input-${Date.now()}.wav`);
+    const buffer = Buffer.from(audioBase64, 'base64');
+    fs.writeFileSync(tmpPath, buffer);
+    
+    // Transcribe using local Whisper
+    const transcript = await transcribeAudio(audioBase64, mimeType);
+    
+    // Clean up temp file
+    try { fs.unlinkSync(tmpPath); } catch {}
+    
+    console.log(`[WHISPER] Transcribed: "${transcript.substring(0, 60)}..."`);
+    return transcript || '';
+    
+  } catch (err) {
+    console.error('[WHISPER] Transcription error:', err.message);
+    throw err;
+  }
+});
