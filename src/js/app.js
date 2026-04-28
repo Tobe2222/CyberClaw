@@ -2869,12 +2869,12 @@ setTimeout(updateHappinessBar, 1000);
 
 // ── Treat emojis and selected treat state ──
 var TREAT_EMOJIS = {
-  apple: '🍎', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐',
-  ball: '⚽', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
+  apple: '🍎', hamburger: '🍔', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐',
+  ball: '⚽', 'tennis-ball': '⚾', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
 };
 var TREAT_NAMES = {
-  apple: 'an apple', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
-  ball: 'a ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
+  apple: 'an apple', hamburger: 'a hamburger', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
+  ball: 'a ball', 'tennis-ball': 'a tennis ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
 var selectedTreat = null; // { type, emoji }
 

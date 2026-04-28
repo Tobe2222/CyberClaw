@@ -1066,10 +1066,12 @@ class PixelArena {
     this._drawGround();
 
     // Draw treats on ground
+    this.ctx.globalAlpha = 1; // Ensure full opacity for treats
     for (const treat of this.treats) {
       const bounce = Math.sin(treat.bouncePhase) * 2;
       this.ctx.font = '31px serif';
       this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#ffffff'; // Ensure white fill
       this.ctx.fillText(treat.emoji, treat.x + 16, treat.y + 16 + bounce);
       // Small shadow
       this.ctx.fillStyle = 'rgba(0,0,0,0.25)';
