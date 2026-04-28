@@ -138,7 +138,7 @@ function extractZip(archivePath, destDir) {
 
 // ── PIPER ──────────────────────────────────────────────────────────────────
 
-async function ensurePiper() {
+async function ensurePiper(voice = 'lessac') {
   const aiDir = getAIDir();
   const piperDir = path.join(aiDir, 'piper');
   fs.mkdirSync(piperDir, { recursive: true });
@@ -169,8 +169,10 @@ async function ensurePiper() {
     return searchRecursive(dir);
   };
 
-  const voiceOnnx = path.join(piperDir, 'en_US-lessac-medium.onnx');
-  const voiceJson = path.join(piperDir, 'en_US-lessac-medium.onnx.json');
+  // Get voice URLs
+  const voiceUrls = getVoiceUrls(voice);
+  const voiceOnnx = path.join(piperDir, `${voiceUrls.voiceName}.onnx`);
+  const voiceJson = path.join(piperDir, `${voiceUrls.voiceName}.onnx.json`);
 
   let binaryPath = findBinary(piperDir);
 
@@ -195,15 +197,15 @@ async function ensurePiper() {
   }
 
   if (!fs.existsSync(voiceOnnx)) {
-    sendProgress('Downloading Piper voice', 0, 'Downloading voice model (~63MB)...');
-    await downloadFile(PIPER_VOICE_ONNX, voiceOnnx, 'Downloading Piper voice');
+    sendProgress(`Downloading ${voice} voice`, 0, `Downloading voice model (~63MB)...`);
+    await downloadFile(voiceUrls.onnx, voiceOnnx, `Downloading ${voice} voice`);
   }
   if (!fs.existsSync(voiceJson)) {
-    sendProgress('Downloading Piper voice config', 0, '...');
-    await downloadFile(PIPER_VOICE_JSON, voiceJson, 'Downloading Piper voice config');
+    sendProgress(`Downloading ${voice} voice config`, 0, '...');
+    await downloadFile(voiceUrls.json, voiceJson, `Downloading ${voice} config`);
   }
 
-  return { binaryPath, voiceOnnx };
+  return { binaryPath, voiceOnnx, voiceJson };
 }
 
 // ── WHISPER ────────────────────────────────────────────────────────────────
@@ -424,9 +426,8 @@ async function transcribeAudio(audioBase64, mimeType) {
   }
 }
 
-async function synthesizeSpeech(text) {
-  const { voiceOnnx } = await ensurePiper();
-  const voiceJson = voiceOnnx.replace('.onnx', '.onnx.json');
+async function synthesizeSpeech(text, voice = 'lessac') {
+  const { voiceOnnx, voiceJson } = await ensurePiper(voice);
   const tmpOut = path.join(os.tmpdir(), `cyberclaw-tts-${Date.now()}.wav`);
   const piperScript = path.join(__dirname, 'piper-tts.py');
 

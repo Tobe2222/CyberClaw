@@ -1200,9 +1200,18 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
     const ws = syncServer._voiceReplyWs;
     syncServer._voiceReplyWs = null;
     const cleanText = stripEmojisForTTS(text);
-    console.log(`[TTS] Synthesizing voice response: "${cleanText.substring(0, 60)}..."`);
+    
+    // Get the selected TTS voice
+    let ttsVoice = 'lessac';
     try {
-      const audioBase64 = await synthesizeSpeech(cleanText);
+      ttsVoice = await ipcMain.handle('settings:get-tts-voice', {});
+    } catch (err) {
+      console.warn('[TTS] Could not get voice setting, using default:', err.message);
+    }
+    
+    console.log(`[TTS] Synthesizing voice response with ${ttsVoice}: "${cleanText.substring(0, 60)}..."`);
+    try {
+      const audioBase64 = await synthesizeSpeech(cleanText, ttsVoice);
       if (audioBase64) {
         console.log(`[TTS] Synthesized ${audioBase64.length} chars, sending to mobile...`);
         syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
@@ -1346,5 +1355,24 @@ ipcMain.handle('whisper:transcribe', async (e, { audioBase64, mimeType, language
   } catch (err) {
     console.error('[WHISPER] Transcription error:', err.message);
     throw err;
+  }
+});
+
+// Get TTS voice setting from frontend
+ipcMain.handle('settings:get-tts-voice', async (e) => {
+  try {
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) return 'lessac';
+    
+    // Execute JS in renderer to get the setting
+    const voice = await mainWindow.webContents.executeJavaScript(
+      "(() => { const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}'); return s.ttsVoice || 'lessac'; })()"
+    );
+    
+    console.log('[SETTINGS] TTS voice:', voice);
+    return voice || 'lessac';
+  } catch (err) {
+    console.warn('[SETTINGS] Could not get TTS voice:', err.message);
+    return 'lessac';
   }
 });
