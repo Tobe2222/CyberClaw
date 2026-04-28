@@ -276,7 +276,7 @@ class PixelArena {
 
   // ── TREATS & TOYS ─────────────────────────────────────────────
 
-  static TOY_TYPES = ['ball'];
+  static TOY_TYPES = ['ball', 'tennis-ball'];
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
     // Route toys to the physics system
@@ -311,7 +311,7 @@ class PixelArena {
         vx: 0, vy: 0,
         type: treatType,
         emoji: emoji || '⚽',
-        radius: 16,
+        radius: treatType === 'tennis-ball' ? 8 : 16, // tennis ball is smaller
         age: 0,
         bouncePhase: 0,
         groundY: landingY,
@@ -431,13 +431,18 @@ class PixelArena {
     
     const friction = 0.997; // per-ms ground friction multiplier
     const wallBounce = 0.7;
-    const groundBounce = 0.55;
     const gravity = 0.00015; // gravity — tuned for ~1.5s visible fall
     const margin = 5;
     const horizonY = this.height * this.horizonLine;
     const groundBottom = this.height - margin;
 
     for (const toy of this.toys) {
+      // Determine bounce coefficient based on toy type
+      let groundBounce = 0.55; // default ball
+      if (toy.type === 'tennis-ball') {
+        groundBounce = 0.95; // insane bouncing!
+      }
+
       var isDragged = (toy === this._draggedToy);
       if (isDragged) {
         toy.lastTouched = performance.now();
@@ -511,10 +516,11 @@ class PixelArena {
         // Hit the ground?
         if (t >= 1) {
           toy.y = toy.groundY;
-          if (toy.bounceCount < 3) {
+          const maxBounces = toy.type === 'tennis-ball' ? 8 : 3; // tennis ball bounces more
+          if (toy.bounceCount < maxBounces) {
             // Bounce back up
             toy.bounceCount++;
-            var bounceHeight = (toy.groundY - toy.fallStartY) * 0.25 / toy.bounceCount;
+            var bounceHeight = (toy.groundY - toy.fallStartY) * groundBounce / toy.bounceCount;
             toy.fallStartY = toy.groundY - bounceHeight;
             toy.fallProgress = 0;
             toy.fallDuration = 400 / toy.bounceCount;
@@ -546,11 +552,11 @@ class PixelArena {
         // Keep on ground plane
         if (toy.y < horizonY + 5) {
           toy.y = horizonY + 5;
-          toy.vy = Math.abs(toy.vy) * 0.3;
+          toy.vy = Math.abs(toy.vy) * groundBounce;
         }
         if (toy.y > groundBottom - toy.radius * 2) {
           toy.y = groundBottom - toy.radius * 2;
-          toy.vy = -Math.abs(toy.vy) * 0.3;
+          toy.vy = -Math.abs(toy.vy) * groundBounce;
         }
       }
 
