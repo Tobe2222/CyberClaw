@@ -345,6 +345,16 @@ class SyncServer {
         break;
       }
 
+      case 'set_companion_id': {
+        if (!client.authenticated) return;
+        // Mobile is requesting a companion change
+        // Notify main window (Electron process) to handle it
+        this._notifyMainWindow('mobile-set-companion', { companionId: msg.companionId });
+        // Broadcast to all clients so they sync
+        this._broadcast({ type: 'companion_id', companionId: msg.companionId, ts: Date.now() });
+        break;
+      }
+
       case 'ping': {
         this._send(ws, { type: 'pong', ts: Date.now() });
         break;
