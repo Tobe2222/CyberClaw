@@ -2464,14 +2464,12 @@ try {
   ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
     // Log to visible events tab
     addChatMsg('system', `📱 Mobile requested companion: ${companionId}`);
-    // Update MEMORY and arena
+    // Update MEMORY - this will be broadcast back to mobile via syncServer
     if (window.MEMORY && typeof window.MEMORY === 'object') {
       window.MEMORY.companionId = companionId;
       addChatMsg('system', `✅ Updated companion to ${companionId}`);
-      // Trigger arena update
-      if (typeof window.updateArena === 'function') {
-        window.updateArena();
-      }
+      // Note: The visual change will happen when the broadcast is received by the UI
+      // The SyncServer already broadcasts back, so we don't need to manually update the UI here
     }
   });
 } catch {}
