@@ -1276,6 +1276,36 @@ window.sendChatMessage = async function(message) {
 };
 
 let chatMsgId = 0;
+// Track last date for separators
+let lastChatDate = null;
+let lastEventDate = null;
+
+// Helper to format date separator
+function getDateString(date) {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// Helper to check if we need a date separator
+function checkDateSeparator(lastDate, newDate, container) {
+  const lastDateString = lastDate ? lastDate.toDateString() : null;
+  const newDateString = newDate.toDateString();
+  
+  if (lastDateString !== newDateString) {
+    const sep = document.createElement('div');
+    sep.className = 'date-separator';
+    sep.textContent = getDateString(newDate);
+    container.appendChild(sep);
+    return newDate;
+  }
+  return lastDate;
+}
+
 function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
@@ -1295,6 +1325,8 @@ function addChatMsg(type, text, name, emoji) {
   }
 
   const msgs = document.getElementById('chat-messages');
+  const now = new Date();
+  lastChatDate = checkDateSeparator(lastChatDate, now, msgs);
   const div = document.createElement('div');
   const id = `chat-msg-${++chatMsgId}`;
   div.id = id;
@@ -1324,6 +1356,8 @@ let eventMsgId = 0;
 function addEventMsg(text) {
   const evts = document.getElementById('event-messages');
   if (!evts) return null;
+  const now = new Date();
+  lastEventDate = checkDateSeparator(lastEventDate, now, evts);
   const div = document.createElement('div');
   const id = `event-msg-${++eventMsgId}`;
   div.id = id;
