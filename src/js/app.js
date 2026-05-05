@@ -2462,11 +2462,12 @@ try {
   });
 
   ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
-    console.log(`[Mobile] Companion change requested: ${companionId}`);
+    // Log to visible events tab
+    addChatMsg('system', `📱 Mobile requested companion: ${companionId}`);
     // Update MEMORY and arena
     if (window.MEMORY && typeof window.MEMORY === 'object') {
       window.MEMORY.companionId = companionId;
-      console.log(`[Mobile] Updated MEMORY.companionId to ${companionId}`);
+      addChatMsg('system', `✅ Updated companion to ${companionId}`);
       // Trigger arena update
       if (typeof window.updateArena === 'function') {
         window.updateArena();
