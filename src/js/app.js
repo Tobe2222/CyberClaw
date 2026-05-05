@@ -1376,8 +1376,7 @@ function addEventMsg(text) {
   const id = `event-msg-${++eventMsgId}`;
   div.id = id;
   div.className = 'chat-msg system';
-  var now = new Date();
-  var ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   div.innerHTML = '<span class="msg-prefix" style="color:var(--text-muted)">[' + ts + ']</span> <span class="msg-text">' + escHtml(text) + '</span>';
   evts.appendChild(div);
   evts.scrollTop = evts.scrollHeight;
