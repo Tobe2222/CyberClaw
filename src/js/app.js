@@ -1283,12 +1283,26 @@ let lastEventDate = null;
 // Helper to format date separator
 function getDateString(date) {
   const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+  today.setHours(0, 0, 0, 0);
   
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const checkDate = new Date(date);
+  checkDate.setHours(0, 0, 0, 0);
+  
+  const diffMs = today - checkDate;
+  const diffDays = diffMs / (24 * 60 * 60 * 1000);
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  
+  if (diffDays < 7) return date.toLocaleDateString('en-US', { weekday: 'long' });
+  if (diffWeeks === 1) return 'Last week';
+  if (diffWeeks < 4) return `${diffWeeks} weeks ago`;
+  if (diffMonths === 1) return 'Last month';
+  if (diffMonths < 12) return `${diffMonths} months ago`;
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // Helper to check if we need a date separator
