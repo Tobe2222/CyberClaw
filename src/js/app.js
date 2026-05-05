@@ -2460,6 +2460,19 @@ try {
       window.sendChatMessage(prompt);
     }
   });
+
+  ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
+    console.log(`[Mobile] Companion change requested: ${companionId}`);
+    // Update MEMORY and arena
+    if (window.MEMORY && typeof window.MEMORY === 'object') {
+      window.MEMORY.companionId = companionId;
+      console.log(`[Mobile] Updated MEMORY.companionId to ${companionId}`);
+      // Trigger arena update
+      if (typeof window.updateArena === 'function') {
+        window.updateArena();
+      }
+    }
+  });
 } catch {}
 
 // Update mobile status when settings open
