@@ -263,6 +263,7 @@ async function initArenaCompanions() {
 
   // Find party leader (main agent) — becomes the Companion
   const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
+  window.leaderId = leaderId;
   
   debugLog(`[Arena] Leader: ${leaderId}, Agents: ${agentOrder.length}, Spirits catalog: ${spirits.length}`);
 
@@ -3329,10 +3330,8 @@ window.openCompanionsView = function() {
         // Update the arena display in this window
         if (window.pixelArena) {
           console.log('[Companions] Updating arena to:', companionId);
-          console.log('[Companions] pixelArena type:', typeof window.pixelArena);
-          console.log('[Companions] pixelArena.setCompanion type:', typeof (window.pixelArena && window.pixelArena.setCompanion));
-          const leaderId = window.agentOrder && window.agentOrder[0];
-          console.log('[Companions] leaderId:', leaderId, 'agentOrder:', window.agentOrder);
+          const leaderId = window.leaderId;
+          console.log('[Companions] leaderId:', leaderId);
           if (leaderId && window.pixelArena.setCompanion) {
             console.log('[Companions] Calling setCompanion with:', leaderId, companionId, companionName);
             try {
@@ -3342,7 +3341,7 @@ window.openCompanionsView = function() {
               console.error('[Companions] setCompanion error:', e);
             }
           } else {
-            console.log('[Companions] Missing leaderId or setCompanion method');
+            console.log('[Companions] Missing leaderId or setCompanion:', { leaderId, hasSetCompanion: window.pixelArena.setCompanion ? 'yes' : 'no' });
           }
         } else {
           console.log('[Companions] pixelArena not available');
