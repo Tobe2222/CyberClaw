@@ -1,5 +1,8 @@
 const { ipcRenderer } = require('electron');
 
+// Expose ipcRenderer directly to window for use in renderer
+window.ipcRenderer = ipcRenderer;
+
 // Expose API on window for renderer scripts
 window.cyberclaw = {
   terminal: {
