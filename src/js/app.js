@@ -3317,30 +3317,15 @@ window.openCompanionsView = function() {
     
     (function(companionId, companionName) {
       card.style.cursor = 'pointer';
-      card.onclick = function(event) {
-        event.stopPropagation();
-        event.preventDefault();
-        console.log('[Companions] Clicked:', companionId);
-        
-        try {
-          // Send to main process
-          if (window.ipcRenderer && typeof window.ipcRenderer.send === 'function') {
-            console.log('[Companions] Sending IPC for:', companionId);
-            window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
-            console.log('[Companions] IPC sent successfully');
-          } else {
-            console.error('[Companions] ipcRenderer not available');
-          }
-          
-          // Refresh after delay
-          setTimeout(function() {
-            window.openCompanionsView();
-          }, 300);
-        } catch (err) {
-          console.error('[Companions] Error:', err);
+      card.addEventListener('click', function(evt) {
+        evt.stopPropagation();
+        evt.preventDefault();
+        console.log('[Companions] CLICKED:', companionId);
+        if (window.ipcRenderer && window.ipcRenderer.send) {
+          window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
         }
-        return false;
-      };
+        setTimeout(() => window.openCompanionsView(), 300);
+      });
     })(comp.id, comp.name);
     
     compGrid.appendChild(card);
