@@ -3321,8 +3321,19 @@ window.openCompanionsView = function() {
         evt.stopPropagation();
         evt.preventDefault();
         console.log('[Companions] CLICKED:', companionId);
-        if (window.ipcRenderer && window.ipcRenderer.send) {
-          window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
+        console.log('[Companions] ipcRenderer:', typeof window.ipcRenderer, window.ipcRenderer ? Object.keys(window.ipcRenderer) : 'null');
+        console.log('[Companions] ipcRenderer.send:', typeof (window.ipcRenderer && window.ipcRenderer.send));
+        
+        if (window.ipcRenderer && typeof window.ipcRenderer.send === 'function') {
+          console.log('[Companions] Sending IPC for:', companionId);
+          try {
+            window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
+            console.log('[Companions] IPC sent successfully');
+          } catch (e) {
+            console.error('[Companions] IPC send error:', e);
+          }
+        } else {
+          console.error('[Companions] Cannot send - ipcRenderer.send not available');
         }
         setTimeout(() => window.openCompanionsView(), 300);
       });
