@@ -3326,6 +3326,17 @@ window.openCompanionsView = function() {
         localStorage.setItem('cyberclaw-selected-companion', companionId);
         console.log('[Companions] Saved to localStorage:', companionId);
         
+        // Update the arena display in this window
+        if (window.pixelArena) {
+          console.log('[Companions] Updating arena to:', companionId);
+          const leaderId = window.agentOrder && window.agentOrder[0];
+          if (leaderId) {
+            window.pixelArena.setCompanion(leaderId, companionId, companionName);
+            console.log('[Companions] Arena updated');
+          }
+        }
+        
+        // Broadcast to mobile
         if (window.ipcRenderer && typeof window.ipcRenderer.send === 'function') {
           console.log('[Companions] Sending IPC for:', companionId);
           try {
