@@ -3339,6 +3339,54 @@ window.focusCompanionFromView = function(agentId) {
 //  SPIRITS VIEW
 // ═══════════════════════════════════════════════════════════
 
+
+// ═══════════════════════════════════════════════════════════
+//  ARENA SETTINGS
+// ═══════════════════════════════════════════════════════════
+
+window.openArenaSettings = function() {
+  var grid = document.getElementById('arena-companion-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const COMPANIONS = [
+    { id: 'fox', name: '🦊 Fox' },
+    { id: 'boar', name: '🐗 Boar' },
+    { id: 'deer', name: '🦌 Deer' },
+    { id: 'hare', name: '🐰 Hare' },
+    { id: 'black_grouse', name: '🐦 Black Grouse' }
+  ];
+
+  const current = window.MEMORY?.companionId || 'boar';
+
+  COMPANIONS.forEach(function(comp) {
+    var card = document.createElement('div');
+    card.style.cssText = 'padding:12px;border-radius:8px;border:2px solid ' + 
+      (comp.id === current ? '#f7931a' : '#333') + 
+      ';background:' + (comp.id === current ? 'rgba(247,147,26,0.1)' : '#1a1a2e') + 
+      ';cursor:pointer;text-align:center;color:' + 
+      (comp.id === current ? '#f7931a' : '#888') + 
+      ';font-weight:' + (comp.id === current ? 'bold' : 'normal') + '';
+    card.textContent = comp.name;
+    
+    card.addEventListener('click', function() {
+      window.MEMORY.companionId = comp.id;
+      window.syncServer?.broadcast({ type: 'companion_id', companionId: comp.id });
+      console.log('[Arena Settings] Companion changed to:', comp.id);
+      window.openArenaSettings(); // Refresh the grid
+    });
+    
+    grid.appendChild(card);
+  });
+
+  document.getElementById('arena-settings-overlay').classList.remove('hidden');
+};
+
+window.closeArenaSettings = function(event) {
+  if (event && event.target.id !== 'arena-settings-overlay') return;
+  document.getElementById('arena-settings-overlay').classList.add('hidden');
+};
+
 window.openSpiritsView = function() {
   var list = document.getElementById('spirits-view-list');
   if (!list) return;
