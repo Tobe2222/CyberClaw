@@ -2508,18 +2508,15 @@ try {
     }
   });
 
-  ipcRenderer.on('mobile-set-companion', (e, { companionId, ws }) => {
+  ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
     // Log to visible events tab
     addChatMsg('system', `📱 Mobile requested companion: ${companionId}`);
-    // Update MEMORY
+    // Update MEMORY - this will be broadcast back to mobile via syncServer
     if (window.MEMORY && typeof window.MEMORY === 'object') {
       window.MEMORY.companionId = companionId;
       addChatMsg('system', `✅ Updated companion to ${companionId}`);
-      // Broadcast back to all mobile devices immediately
-      if (window.syncServer) {
-        window.syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
-        console.log('[IPC] Broadcast companion change to mobile:', companionId);
-      }
+      // Note: The visual change will happen when the broadcast is received by the UI
+      // The SyncServer already broadcasts back, so we don't need to manually update the UI here
     }
   });
 } catch {}
