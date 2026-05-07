@@ -3276,9 +3276,11 @@ window.openCompanionsView = function() {
   var compGrid = document.createElement('div');
   compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:12px;';
   
-  COMPANIONS.forEach(function(comp) {
+  COMPANIONS.forEach(function(comp, index) {
     var card = document.createElement('div');
     var isActive = comp.id === current;
+    card.setAttribute('data-companion-id', comp.id);
+    card.setAttribute('data-index', index);
     card.style.cssText = 'padding:16px;border-radius:8px;border:2px solid ' + 
       (isActive ? '#f7931a' : '#333') + 
       ';background:' + (isActive ? 'rgba(247,147,26,0.15)' : '#1a1a2e') + 
@@ -3313,22 +3315,30 @@ window.openCompanionsView = function() {
       }
     });
     
-    card.addEventListener('click', function() {
-      console.log('[Companions] Companion clicked:', comp.id);
-      
-      // Send to main process to handle the change
-      if (typeof window.ipcRenderer !== 'undefined' && window.ipcRenderer.send) {
-        window.ipcRenderer.send('desktop-set-companion', { companionId: comp.id });
-        console.log('[Companions] Sent to main process:', comp.id);
-      } else {
-        console.warn('[Companions] ipcRenderer not available');
-      }
-      
-      // Refresh the view to show selection
-      setTimeout(function() {
-        window.openCompanionsView();
-      }, 300);
-    });
+    (function(companionId, companionName) {
+      card.style.cursor = 'pointer';
+      card.onclick = function(event) {
+        event.stopPropagation();
+        event.preventDefault();
+        console.log('[Companions] Selected:', companionId);
+        
+        // Send to main process
+        if (window.ipcRenderer && window.ipcRenderer.send) {
+          window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
+          addChatMsg('system', `🐾 Switched to ${companionName}`);
+          console.log('[Companions] IPC sent for:', companionId);
+        } else {
+          console.error('[Companions] Cannot send - ipcRenderer missing');
+          addChatMsg('system', '⚠️ Error switching companion');
+        }
+        
+        // Refresh
+        setTimeout(function() {
+          window.openCompanionsView();
+        }, 300);
+        return false;
+      };
+    })(comp.id, comp.name);
     
     compGrid.appendChild(card);
   });
