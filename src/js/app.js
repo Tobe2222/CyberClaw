@@ -3257,40 +3257,55 @@ window.openCompanionsView = function() {
   if (!list) return;
   list.innerHTML = '';
 
-  // Show arena companions selector first
+  // Show arena companions selector only
   const COMPANIONS = [
-    { id: 'fox', name: '🦊 Fox' },
-    { id: 'boar', name: '🐗 Boar' },
-    { id: 'deer', name: '🦌 Deer' },
-    { id: 'hare', name: '🐰 Hare' },
-    { id: 'black_grouse', name: '🐦 Black Grouse' }
+    { id: 'fox', name: '🦊 Fox', desc: 'Swift and clever' },
+    { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce' },
+    { id: 'deer', name: '🦌 Deer', desc: 'Graceful and calm' },
+    { id: 'hare', name: '🐰 Hare', desc: 'Quick and curious' },
+    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare' }
   ];
 
   const current = window.MEMORY?.companionId || 'boar';
 
   var sectionHeader = document.createElement('div');
-  sectionHeader.style.cssText = 'padding:12px;color:#f7931a;font-weight:bold;font-size:14px;border-bottom:1px solid #333;margin-bottom:12px;';
-  sectionHeader.textContent = '🐾 ARENA COMPANIONS';
+  sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:16px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
+  sectionHeader.textContent = '🐾 SELECT YOUR COMPANION';
   list.appendChild(sectionHeader);
 
   var compGrid = document.createElement('div');
-  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:20px;';
+  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:12px;';
   
   COMPANIONS.forEach(function(comp) {
     var card = document.createElement('div');
-    card.style.cssText = 'padding:12px;border-radius:8px;border:2px solid ' + 
-      (comp.id === current ? '#f7931a' : '#333') + 
-      ';background:' + (comp.id === current ? 'rgba(247,147,26,0.1)' : '#1a1a2e') + 
-      ';cursor:pointer;text-align:center;color:' + 
-      (comp.id === current ? '#f7931a' : '#888') + 
-      ';font-weight:' + (comp.id === current ? 'bold' : 'normal') + ';transition:all 0.2s';
-    card.textContent = comp.name;
+    var isActive = comp.id === current;
+    card.style.cssText = 'padding:16px;border-radius:8px;border:2px solid ' + 
+      (isActive ? '#f7931a' : '#333') + 
+      ';background:' + (isActive ? 'rgba(247,147,26,0.15)' : '#1a1a2e') + 
+      ';cursor:pointer;text-align:center;transition:all 0.2s;';
+    
+    var nameEl = document.createElement('div');
+    nameEl.style.cssText = 'font-size:18px;font-weight:bold;color:' + (isActive ? '#f7931a' : '#ccc');
+    nameEl.textContent = comp.name;
+    
+    var descEl = document.createElement('div');
+    descEl.style.cssText = 'font-size:12px;color:' + (isActive ? '#f7931a' : '#888') + ';margin-top:4px;';
+    descEl.textContent = comp.desc + (isActive ? ' ✓' : '');
+    
+    card.appendChild(nameEl);
+    card.appendChild(descEl);
     
     card.addEventListener('mouseover', function() {
-      if (comp.id !== current) card.style.borderColor = '#f7931a';
+      if (!isActive) {
+        card.style.borderColor = '#f7931a';
+        card.style.background = 'rgba(247,147,26,0.05)';
+      }
     });
     card.addEventListener('mouseout', function() {
-      if (comp.id !== current) card.style.borderColor = '#333';
+      if (!isActive) {
+        card.style.borderColor = '#333';
+        card.style.background = '#1a1a2e';
+      }
     });
     
     card.addEventListener('click', function() {
@@ -3305,12 +3320,6 @@ window.openCompanionsView = function() {
 
   list.appendChild(compGrid);
 
-  // Show other agents as before
-  var agentHeader = document.createElement('div');
-  agentHeader.style.cssText = 'padding:12px;color:#f7931a;font-weight:bold;font-size:14px;border-bottom:1px solid #333;margin-bottom:12px;';
-  agentHeader.textContent = '🤖 ALL AGENTS';
-  list.appendChild(agentHeader);
-
   var TRAIT_LABELS = {
     sassy: '😏 Sassy', curious: '🔍 Curious', lazy: '😴 Lazy',
     cheerful: '🌟 Cheerful', foodobsessed: '🍖 Food-obsessed',
@@ -3318,6 +3327,8 @@ window.openCompanionsView = function() {
     goblin: '👺 Goblin',
   };
 
+  // Don't show other agents - just show companions
+  return;
   agentOrder.forEach(function(id) {
     var agent = agents[id];
     if (!agent || id.startsWith('subagent-')) return;
