@@ -379,6 +379,11 @@ class SyncServer {
     this._broadcast({ type: 'chat_message', agentId, text, isUser, ts: Date.now() });
   }
 
+  broadcastCompanionChange(companionId) {
+    console.log(`[SyncServer] Broadcasting companion change: ${companionId}`);
+    this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
+  }
+
   broadcastTyping(active) {
     this._broadcast({ type: 'typing', active, ts: Date.now() });
   }

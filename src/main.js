@@ -1244,7 +1244,7 @@ ipcMain.on('desktop-set-companion', (e, { companionId }) => {
     // Broadcast to all connected mobile devices
     if (syncServer) {
       console.log(`[IPC] SyncServer exists, broadcasting...`);
-      syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
+      syncServer.broadcastCompanionChange(companionId);
       console.log(`[IPC] Broadcasted to mobile: ${companionId}`);
     } else {
       console.log(`[IPC] No SyncServer`);
