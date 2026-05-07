@@ -144,7 +144,7 @@ class PixelArena {
 
     // Load sprite images
     const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
-    const basePath = _path.join(assetsDir, 'pixel-companions', compData.folder);
+    const basePath = _path.join(assetsDir, 'companions', compData.folder);
     const images = {};
 
     for (const [animName, animData] of Object.entries(compData.animations)) {

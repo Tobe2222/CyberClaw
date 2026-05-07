@@ -297,11 +297,11 @@ async function initArenaCompanions() {
     if (id === leaderId) continue; // skip the companion
     const agent = agents[id];
 
-    // Check if spirit has a saved spirit (support legacy cybermonId key)
+    // Check if spirit has a saved spirit (support legacy spiritId key)
     let spiritId = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
-      spiritId = config?.spiritId || config?.cybermonId;
+      spiritId = config?.spiritId || config?.spiritId;
     } catch {}
 
     // Auto-assign a spirit if none saved
@@ -1864,7 +1864,7 @@ function openSpiritForge(agentId) {
 
   // Load saved config
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
-    const sid = config?.spiritId || config?.cybermonId;
+    const sid = config?.spiritId || config?.spiritId;
     if (sid) selectSpirit(sid);
   });
 
@@ -1897,7 +1897,7 @@ window.saveCompanion = async function() {
     const _path = require('path');
     const catalog = loadPixelCatalog();
     const comp = catalog.companions.find(c => c.id === selectedPixelCompanion);
-    const idlePath = _path.join(__dirname, 'assets', 'pixel-companions', comp.folder, comp.animations.idle.file);
+    const idlePath = _path.join(__dirname, 'assets', 'companions', comp.folder, comp.animations.idle.file);
 
     // Extract first frame as avatar
     const canvas = document.createElement('canvas');
