@@ -3257,24 +3257,24 @@ window.openCompanionsView = function() {
   if (!list) return;
   list.innerHTML = '';
 
-  // Show arena companions selector only
+  // Companion data with descriptions
   const COMPANIONS = [
-    { id: 'fox', name: '🦊 Fox', desc: 'Swift and clever' },
-    { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce' },
-    { id: 'deer', name: '🦌 Deer', desc: 'Graceful and calm' },
-    { id: 'hare', name: '🐰 Hare', desc: 'Quick and curious' },
-    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare' }
+    { id: 'fox', name: '🦊 Fox', desc: 'Swift and clever hunter' },
+    { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce warrior' },
+    { id: 'deer', name: '🦌 Deer', desc: 'Graceful and calm observer' },
+    { id: 'hare', name: '🐰 Hare', desc: 'Quick and curious explorer' },
+    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare spirit' }
   ];
 
   const current = window.MEMORY?.companionId || 'boar';
 
   var sectionHeader = document.createElement('div');
-  sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:16px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
+  sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:18px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
   sectionHeader.textContent = '🐾 SELECT YOUR COMPANION';
   list.appendChild(sectionHeader);
 
   var compGrid = document.createElement('div');
-  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:12px;';
+  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:16px;';
   
   COMPANIONS.forEach(function(comp) {
     var card = document.createElement('div');
@@ -3282,18 +3282,46 @@ window.openCompanionsView = function() {
     card.style.cssText = 'padding:16px;border-radius:8px;border:2px solid ' + 
       (isActive ? '#f7931a' : '#333') + 
       ';background:' + (isActive ? 'rgba(247,147,26,0.15)' : '#1a1a2e') + 
-      ';cursor:pointer;text-align:center;transition:all 0.2s;';
+      ';cursor:pointer;text-align:center;transition:all 0.2s;display:flex;gap:16px;align-items:center;';
+    
+    // Sprite canvas
+    var canvasContainer = document.createElement('div');
+    canvasContainer.style.cssText = 'flex:0 0 80px;height:80px;background:#0a0a0a;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;';
+    
+    var canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    canvas.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;';
+    canvasContainer.appendChild(canvas);
+    
+    // Text info
+    var infoContainer = document.createElement('div');
+    infoContainer.style.cssText = 'flex:1;text-align:left;';
     
     var nameEl = document.createElement('div');
-    nameEl.style.cssText = 'font-size:18px;font-weight:bold;color:' + (isActive ? '#f7931a' : '#ccc');
+    nameEl.style.cssText = 'font-size:18px;font-weight:bold;color:' + (isActive ? '#f7931a' : '#ccc') + ';margin-bottom:4px;';
     nameEl.textContent = comp.name;
     
     var descEl = document.createElement('div');
-    descEl.style.cssText = 'font-size:12px;color:' + (isActive ? '#f7931a' : '#888') + ';margin-top:4px;';
+    descEl.style.cssText = 'font-size:12px;color:' + (isActive ? '#f7931a' : '#888');
     descEl.textContent = comp.desc + (isActive ? ' ✓' : '');
     
-    card.appendChild(nameEl);
-    card.appendChild(descEl);
+    infoContainer.appendChild(nameEl);
+    infoContainer.appendChild(descEl);
+    
+    card.appendChild(canvasContainer);
+    card.appendChild(infoContainer);
+    
+    // Render sprite idle animation frame
+    (function(c, compId) {
+      var img = new Image();
+      img.src = './assets/pixel-companions/' + compId.charAt(0).toUpperCase() + compId.slice(1).replace('_', '_') + '/Fox_Idle.png';
+      img.onload = function() {
+        var ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, 32, 32, 16, 16, 32, 32);
+      };
+    })(canvas, comp.id);
     
     card.addEventListener('mouseover', function() {
       if (!isActive) {
@@ -3312,58 +3340,13 @@ window.openCompanionsView = function() {
       window.MEMORY.companionId = comp.id;
       window.syncServer?.broadcast({ type: 'companion_id', companionId: comp.id });
       console.log('[Companions] Companion changed to:', comp.id);
-      window.openCompanionsView(); // Refresh the view
+      window.openCompanionsView(); // Refresh
     });
     
     compGrid.appendChild(card);
   });
 
   list.appendChild(compGrid);
-
-  document.getElementById('companions-view-overlay').classList.remove('hidden');
-};
-
-    var card = document.createElement('div');
-    card.className = 'companion-card' + (agent.isMain ? ' is-main' : '');
-
-    // Avatar
-    var avatarHtml = '';
-    if (agent.avatar && agent.avatar.startsWith('data:')) {
-      avatarHtml = '<img class="companion-card-avatar" src="' + agent.avatar + '" alt="avatar">';
-    } else {
-      avatarHtml = '<div class="companion-card-avatar-placeholder">' + (agent.emoji || '🤖') + '</div>';
-    }
-
-    // Traits
-    var traits = agent.traits || [];
-    var traitTags = traits.map(function(t) {
-      return '<span class="companion-card-tag trait">' + (TRAIT_LABELS[t] || t) + '</span>';
-    }).join('');
-
-    // Skills
-    var skills = (agent.focusSkills || []).map(function(s) {
-      return '<span class="companion-card-tag">' + s + '</span>';
-    }).join('');
-
-    // Model
-    var model = agent.primaryModel ? formatModelName(agent.primaryModel) : agent.model || '—';
-
-    card.innerHTML = avatarHtml +
-      '<div class="companion-card-body">' +
-        '<div class="companion-card-name">' + agent.name + '</div>' +
-        '<div class="companion-card-role">' + (agent.isMain ? '⭐ Companion' : '✨ Spirit') + (agent.class ? ' — ' + agent.class : '') + '</div>' +
-        (traitTags ? '<div class="companion-card-details">' + traitTags + '</div>' : '') +
-        (skills ? '<div class="companion-card-details">' + skills + '</div>' : '') +
-        '<div class="companion-card-model">🧠 ' + model + '</div>' +
-        '<div class="companion-card-actions">' +
-          '<button class="companion-card-btn primary" onclick="editCompanionFromView(\'' + id + '\')">✏️ Edit</button>' +
-          '<button class="companion-card-btn" onclick="focusCompanionFromView(\'' + id + '\')">👁 Focus</button>' +
-        '</div>' +
-      '</div>';
-
-    list.appendChild(card);
-  });
-
   document.getElementById('companions-view-overlay').classList.remove('hidden');
 };
 
