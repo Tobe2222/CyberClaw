@@ -1240,12 +1240,17 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
 ipcMain.on('desktop-set-companion', (e, { companionId }) => {
   try {
     console.log(`[IPC] Desktop set companion to: ${companionId}`);
+    
+    // Broadcast to all connected mobile devices
     if (syncServer) {
-      // Broadcast to all connected mobile devices
       syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
       console.log(`[IPC] Broadcasted companion change to mobile: ${companionId}`);
-    } else {
-      console.warn('[IPC] SyncServer not available');
+    }
+    
+    // Update companion-window if it's open
+    if (companionWindow && !companionWindow.isDestroyed()) {
+      console.log(`[IPC] Sending companion update to window: ${companionId}`);
+      companionWindow.webContents.send('companion-changed', { companionId });
     }
   } catch (err) {
     console.error('[IPC] Error setting companion:', err);

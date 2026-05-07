@@ -60,6 +60,19 @@
         await arena.addSpirit(spirit.id, spirit.spiritId, spirit.name);
       }
     })();
+
+    // Listen for companion changes from main process
+    const { ipcRenderer } = require('electron');
+    if (ipcRenderer) {
+      ipcRenderer.on('companion-changed', async (event, { companionId }) => {
+        console.log('[Companion Window] Companion changed to:', companionId);
+        state.companionId = companionId;
+        // Update the arena display
+        if (arena) {
+          await arena.setCompanion(state.companionAgentId, companionId, state.companionName);
+        }
+      });
+    }
   </script>
 </body>
 </html>
