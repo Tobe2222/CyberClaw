@@ -3320,18 +3320,8 @@ window.openCompanionsView = function() {
 
   list.appendChild(compGrid);
 
-  var TRAIT_LABELS = {
-    sassy: '😏 Sassy', curious: '🔍 Curious', lazy: '😴 Lazy',
-    cheerful: '🌟 Cheerful', foodobsessed: '🍖 Food-obsessed',
-    dramatic: '🎭 Dramatic', stoic: '🗿 Stoic', adventurous: '⚔️ Adventurous',
-    goblin: '👺 Goblin',
-  };
-
-  // Don't show other agents - just show companions
-  return;
-  agentOrder.forEach(function(id) {
-    var agent = agents[id];
-    if (!agent || id.startsWith('subagent-')) return;
+  document.getElementById('companions-view-overlay').classList.remove('hidden');
+};
 
     var card = document.createElement('div');
     card.className = 'companion-card' + (agent.isMain ? ' is-main' : '');
