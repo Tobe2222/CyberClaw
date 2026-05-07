@@ -3329,11 +3329,23 @@ window.openCompanionsView = function() {
         // Update the arena display in this window
         if (window.pixelArena) {
           console.log('[Companions] Updating arena to:', companionId);
+          console.log('[Companions] pixelArena type:', typeof window.pixelArena);
+          console.log('[Companions] pixelArena.setCompanion type:', typeof (window.pixelArena && window.pixelArena.setCompanion));
           const leaderId = window.agentOrder && window.agentOrder[0];
-          if (leaderId) {
-            window.pixelArena.setCompanion(leaderId, companionId, companionName);
-            console.log('[Companions] Arena updated');
+          console.log('[Companions] leaderId:', leaderId, 'agentOrder:', window.agentOrder);
+          if (leaderId && window.pixelArena.setCompanion) {
+            console.log('[Companions] Calling setCompanion with:', leaderId, companionId, companionName);
+            try {
+              window.pixelArena.setCompanion(leaderId, companionId, companionName);
+              console.log('[Companions] Arena updated successfully');
+            } catch (e) {
+              console.error('[Companions] setCompanion error:', e);
+            }
+          } else {
+            console.log('[Companions] Missing leaderId or setCompanion method');
           }
+        } else {
+          console.log('[Companions] pixelArena not available');
         }
         
         // Broadcast to mobile
