@@ -3257,7 +3257,7 @@ window.openCompanionsView = function() {
   if (!list) return;
   list.innerHTML = '';
 
-  // Companion data with descriptions
+  // Companions list
   const COMPANIONS = [
     { id: 'fox', name: '🦊 Fox', desc: 'Swift and clever hunter' },
     { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce warrior' },
@@ -3274,7 +3274,7 @@ window.openCompanionsView = function() {
   list.appendChild(sectionHeader);
 
   var compGrid = document.createElement('div');
-  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:16px;';
+  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(1,1fr);gap:12px;';
   
   COMPANIONS.forEach(function(comp) {
     var card = document.createElement('div');
@@ -3282,46 +3282,23 @@ window.openCompanionsView = function() {
     card.style.cssText = 'padding:16px;border-radius:8px;border:2px solid ' + 
       (isActive ? '#f7931a' : '#333') + 
       ';background:' + (isActive ? 'rgba(247,147,26,0.15)' : '#1a1a2e') + 
-      ';cursor:pointer;text-align:center;transition:all 0.2s;display:flex;gap:16px;align-items:center;';
-    
-    // Sprite canvas
-    var canvasContainer = document.createElement('div');
-    canvasContainer.style.cssText = 'flex:0 0 80px;height:80px;background:#0a0a0a;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;';
-    
-    var canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    canvas.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;';
-    canvasContainer.appendChild(canvas);
-    
-    // Text info
-    var infoContainer = document.createElement('div');
-    infoContainer.style.cssText = 'flex:1;text-align:left;';
+      ';cursor:pointer;transition:all 0.2s;text-align:center;';
     
     var nameEl = document.createElement('div');
-    nameEl.style.cssText = 'font-size:18px;font-weight:bold;color:' + (isActive ? '#f7931a' : '#ccc') + ';margin-bottom:4px;';
+    nameEl.style.cssText = 'font-size:18px;font-weight:bold;color:' + (isActive ? '#f7931a' : '#ccc') + ';margin-bottom:6px;';
     nameEl.textContent = comp.name;
     
     var descEl = document.createElement('div');
-    descEl.style.cssText = 'font-size:12px;color:' + (isActive ? '#f7931a' : '#888');
-    descEl.textContent = comp.desc + (isActive ? ' ✓' : '');
+    descEl.style.cssText = 'font-size:12px;color:' + (isActive ? '#f7931a' : '#888') + ';margin-bottom:8px;';
+    descEl.textContent = comp.desc;
     
-    infoContainer.appendChild(nameEl);
-    infoContainer.appendChild(descEl);
+    var statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:11px;color:' + (isActive ? '#f7931a' : '#666') + ';font-weight:bold;';
+    statusEl.textContent = isActive ? '✓ CURRENT' : 'SELECT';
     
-    card.appendChild(canvasContainer);
-    card.appendChild(infoContainer);
-    
-    // Render sprite idle animation frame
-    (function(c, compId) {
-      var img = new Image();
-      img.src = './assets/pixel-companions/' + compId.charAt(0).toUpperCase() + compId.slice(1).replace('_', '_') + '/Fox_Idle.png';
-      img.onload = function() {
-        var ctx = c.getContext('2d');
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0, 32, 32, 16, 16, 32, 32);
-      };
-    })(canvas, comp.id);
+    card.appendChild(nameEl);
+    card.appendChild(descEl);
+    card.appendChild(statusEl);
     
     card.addEventListener('mouseover', function() {
       if (!isActive) {
