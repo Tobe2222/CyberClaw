@@ -2510,14 +2510,27 @@ try {
   });
 
   ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
-    // Log to visible events tab
-    addChatMsg('system', `📱 Mobile requested companion: ${companionId}`);
-    // Update MEMORY - this will be broadcast back to mobile via syncServer
-    if (window.MEMORY && typeof window.MEMORY === 'object') {
-      window.MEMORY.companionId = companionId;
-      addChatMsg('system', `✅ Updated companion to ${companionId}`);
-      // Note: The visual change will happen when the broadcast is received by the UI
-      // The SyncServer already broadcasts back, so we don't need to manually update the UI here
+    console.log('[App] Received mobile companion change request:', companionId);
+    try {
+      if (window.pixelArena && window.leaderId) {
+        // Find companion name
+        const catalog = window._companionCatalog || loadPixelCatalog();
+        const comp = catalog?.companions?.find(c => c.id === companionId);
+        const companionName = comp?.name || companionId;
+        
+        console.log('[App] Updating arena from mobile:', companionId);
+        localStorage.setItem('cyberclaw-selected-companion', companionId);
+        window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
+        console.log('[App] Arena updated from mobile successfully');
+        
+        // Notify user
+        addChatMsg('system', `📱 Companion changed to ${companionName}`);
+      } else {
+        console.log('[App] Cannot update - missing pixelArena or leaderId');
+      }
+    } catch (err) {
+      console.error('[App] Error handling mobile companion change:', err);
+      addChatMsg('system', `⚠️ Error changing companion from mobile`);
     }
   });
 } catch {}
