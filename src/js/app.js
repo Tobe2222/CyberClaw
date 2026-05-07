@@ -3320,22 +3320,25 @@ window.openCompanionsView = function() {
       card.onclick = function(event) {
         event.stopPropagation();
         event.preventDefault();
-        console.log('[Companions] Selected:', companionId);
+        console.log('[Companions] Clicked:', companionId);
         
-        // Send to main process
-        if (window.ipcRenderer && window.ipcRenderer.send) {
-          window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
-          addChatMsg('system', `🐾 Switched to ${companionName}`);
-          console.log('[Companions] IPC sent for:', companionId);
-        } else {
-          console.error('[Companions] Cannot send - ipcRenderer missing');
-          addChatMsg('system', '⚠️ Error switching companion');
+        try {
+          // Send to main process
+          if (window.ipcRenderer && typeof window.ipcRenderer.send === 'function') {
+            console.log('[Companions] Sending IPC for:', companionId);
+            window.ipcRenderer.send('desktop-set-companion', { companionId: companionId });
+            console.log('[Companions] IPC sent successfully');
+          } else {
+            console.error('[Companions] ipcRenderer not available');
+          }
+          
+          // Refresh after delay
+          setTimeout(function() {
+            window.openCompanionsView();
+          }, 300);
+        } catch (err) {
+          console.error('[Companions] Error:', err);
         }
-        
-        // Refresh
-        setTimeout(function() {
-          window.openCompanionsView();
-        }, 300);
         return false;
       };
     })(comp.id, comp.name);

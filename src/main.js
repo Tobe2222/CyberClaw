@@ -1238,11 +1238,17 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
 });
 
 ipcMain.on('desktop-set-companion', (e, { companionId }) => {
-  console.log(`[IPC] Desktop set companion to: ${companionId}`);
-  if (syncServer) {
-    // Broadcast to all connected mobile devices
-    syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
-    console.log(`[IPC] Broadcasted companion change to mobile: ${companionId}`);
+  try {
+    console.log(`[IPC] Desktop set companion to: ${companionId}`);
+    if (syncServer) {
+      // Broadcast to all connected mobile devices
+      syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
+      console.log(`[IPC] Broadcasted companion change to mobile: ${companionId}`);
+    } else {
+      console.warn('[IPC] SyncServer not available');
+    }
+  } catch (err) {
+    console.error('[IPC] Error setting companion:', err);
   }
 });
 
