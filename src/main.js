@@ -1239,21 +1239,32 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
 
 ipcMain.on('desktop-set-companion', (e, { companionId }) => {
   try {
-    console.log(`[IPC] Desktop set companion to: ${companionId}`);
+    console.log(`[IPC] ===== RECEIVED desktop-set-companion: ${companionId} =====`);
     
     // Broadcast to all connected mobile devices
     if (syncServer) {
+      console.log(`[IPC] SyncServer exists, broadcasting...`);
       syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
-      console.log(`[IPC] Broadcasted companion change to mobile: ${companionId}`);
+      console.log(`[IPC] Broadcasted to mobile: ${companionId}`);
+    } else {
+      console.log(`[IPC] No SyncServer`);
     }
     
     // Update companion-window if it's open
-    if (companionWindow && !companionWindow.isDestroyed()) {
-      console.log(`[IPC] Sending companion update to window: ${companionId}`);
-      companionWindow.webContents.send('companion-changed', { companionId });
+    if (companionWindow) {
+      console.log(`[IPC] Companion window exists`);
+      if (!companionWindow.isDestroyed()) {
+        console.log(`[IPC] Window not destroyed, sending IPC...`);
+        companionWindow.webContents.send('companion-changed', { companionId });
+        console.log(`[IPC] Sent companion-changed to window for: ${companionId}`);
+      } else {
+        console.log(`[IPC] Companion window is destroyed`);
+      }
+    } else {
+      console.log(`[IPC] No companion window open`);
     }
   } catch (err) {
-    console.error('[IPC] Error setting companion:', err);
+    console.error('[IPC] ERROR:', err);
   }
 });
 

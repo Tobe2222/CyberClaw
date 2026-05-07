@@ -63,15 +63,25 @@
 
     // Listen for companion changes from main process
     const { ipcRenderer } = require('electron');
+    console.log('[Companion Window] Setting up listener... ipcRenderer:', !!ipcRenderer);
     if (ipcRenderer) {
+      console.log('[Companion Window] Registering companion-changed listener');
       ipcRenderer.on('companion-changed', async (event, { companionId }) => {
-        console.log('[Companion Window] Companion changed to:', companionId);
+        console.log('[Companion Window] ===== RECEIVED companion-changed: ' + companionId + ' =====');
         state.companionId = companionId;
+        console.log('[Companion Window] Updated state.companionId to:', companionId);
         // Update the arena display
         if (arena) {
+          console.log('[Companion Window] Arena exists, calling setCompanion...');
           await arena.setCompanion(state.companionAgentId, companionId, state.companionName);
+          console.log('[Companion Window] setCompanion completed');
+        } else {
+          console.log('[Companion Window] Arena is null!');
         }
       });
+      console.log('[Companion Window] Listener registered successfully');
+    } else {
+      console.log('[Companion Window] ERROR: ipcRenderer not available!');
     }
   </script>
 </body>
