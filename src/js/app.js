@@ -3257,13 +3257,13 @@ window.openCompanionsView = function() {
   if (!list) return;
   list.innerHTML = '';
 
-  // Companion data with descriptions
+  // Map companion IDs to 3D models
   const COMPANIONS = [
-    { id: 'fox', name: '🦊 Fox', desc: 'Swift and clever hunter' },
-    { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce warrior' },
-    { id: 'deer', name: '🦌 Deer', desc: 'Graceful and calm observer' },
-    { id: 'hare', name: '🐰 Hare', desc: 'Quick and curious explorer' },
-    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare spirit' }
+    { id: 'fox', name: '🦊 Fox', model: 'voltfox', desc: 'Swift electric fox' },
+    { id: 'boar', name: '🐗 Boar', model: 'magmadog', desc: 'Strong fire warrior' },
+    { id: 'deer', name: '🦌 Deer', model: 'frostdeer', desc: 'Graceful frost spirit' },
+    { id: 'hare', name: '🐰 Hare', model: 'sparkhare', desc: 'Quick spark companion' },
+    { id: 'black_grouse', name: '🐦 Black Grouse', model: 'stormbird', desc: 'Proud storm guardian' }
   ];
 
   const current = window.MEMORY?.companionId || 'boar';
@@ -3282,17 +3282,12 @@ window.openCompanionsView = function() {
     card.style.cssText = 'padding:16px;border-radius:8px;border:2px solid ' + 
       (isActive ? '#f7931a' : '#333') + 
       ';background:' + (isActive ? 'rgba(247,147,26,0.15)' : '#1a1a2e') + 
-      ';cursor:pointer;text-align:center;transition:all 0.2s;display:flex;gap:16px;align-items:center;';
+      ';cursor:pointer;transition:all 0.2s;display:flex;gap:16px;align-items:center;';
     
-    // Sprite canvas
-    var canvasContainer = document.createElement('div');
-    canvasContainer.style.cssText = 'flex:0 0 80px;height:80px;background:#0a0a0a;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;';
-    
-    var canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    canvas.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;';
-    canvasContainer.appendChild(canvas);
+    // 3D Model container
+    var modelContainer = document.createElement('div');
+    modelContainer.style.cssText = 'flex:0 0 100px;height:100px;background:#0a0a0a;border-radius:4px;overflow:hidden;';
+    modelContainer.id = 'model-' + comp.id;
     
     // Text info
     var infoContainer = document.createElement('div');
@@ -3309,19 +3304,53 @@ window.openCompanionsView = function() {
     infoContainer.appendChild(nameEl);
     infoContainer.appendChild(descEl);
     
-    card.appendChild(canvasContainer);
+    card.appendChild(modelContainer);
     card.appendChild(infoContainer);
     
-    // Render sprite idle animation frame
-    (function(c, compId) {
-      var img = new Image();
-      img.src = './assets/pixel-companions/' + compId.charAt(0).toUpperCase() + compId.slice(1).replace('_', '_') + '/Fox_Idle.png';
-      img.onload = function() {
-        var ctx = c.getContext('2d');
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0, 32, 32, 16, 16, 32, 32);
-      };
-    })(canvas, comp.id);
+    // Load and render 3D model
+    (function(container, modelId) {
+      try {
+        var scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0a);
+        
+        var camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+        camera.position.set(0, 0, 3);
+        
+        var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(100, 100);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+        
+        // Lighting
+        var light1 = new THREE.DirectionalLight(0xffffff, 0.8);
+        light1.position.set(5, 5, 5);
+        scene.add(light1);
+        
+        var light2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        light2.position.set(-5, -5, 5);
+        scene.add(light2);
+        
+        // Load model
+        var loader = new THREE.GLTFLoader();
+        loader.load('./assets/cybermons/' + modelId + '.glb', function(gltf) {
+          var model = gltf.scene;
+          model.scale.set(1.5, 1.5, 1.5);
+          scene.add(model);
+          
+          // Rotate for nice view
+          var angle = 0;
+          function animate() {
+            requestAnimationFrame(animate);
+            angle += 0.01;
+            model.rotation.y = angle;
+            renderer.render(scene, camera);
+          }
+          animate();
+        });
+      } catch(e) {
+        console.log('Could not load 3D model:', modelId);
+      }
+    })(modelContainer, comp.model);
     
     card.addEventListener('mouseover', function() {
       if (!isActive) {
