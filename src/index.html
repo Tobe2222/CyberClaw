@@ -102,7 +102,6 @@
 
         <!-- View companions/spirits buttons (top left) -->
         <button id="arena-companions-btn" onclick="openCompanionsView()" title="View companions">🐾 Companions</button>
-        <button id="arena-settings-btn" onclick="openArenaSettings()" title="Arena settings">⚙️</button>
         <button id="arena-spirits-btn" onclick="openSpiritsView()" title="View spirits">✨ Spirits</button>
 
         <!-- Pop-out button -->
@@ -164,22 +163,6 @@
             <button class="modal-close" onclick="closeSpiritsView()">✕</button>
           </div>
           <div id="spirits-view-list" class="companions-view-list"></div>
-        </div>
-      </div>
-
-      <!-- Arena Settings modal -->
-      <div id="arena-settings-overlay" class="modal-overlay hidden" onclick="closeArenaSettings(event)">
-        <div class="modal-panel companions-view-panel" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <span class="rune-icon">⚙️</span> ARENA SETTINGS
-            <button class="modal-close" onclick="closeArenaSettings()">✕</button>
-          </div>
-          <div style="padding: 16px;">
-            <div style="margin-bottom: 20px;">
-              <h3 style="color: #f7931a; font-size: 14px; margin-bottom: 12px;">🐾 COMPANION</h3>
-              <div id="arena-companion-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;"></div>
-            </div>
-          </div>
         </div>
       </div>
 

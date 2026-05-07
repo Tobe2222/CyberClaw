@@ -3257,6 +3257,60 @@ window.openCompanionsView = function() {
   if (!list) return;
   list.innerHTML = '';
 
+  // Show arena companions selector first
+  const COMPANIONS = [
+    { id: 'fox', name: '🦊 Fox' },
+    { id: 'boar', name: '🐗 Boar' },
+    { id: 'deer', name: '🦌 Deer' },
+    { id: 'hare', name: '🐰 Hare' },
+    { id: 'black_grouse', name: '🐦 Black Grouse' }
+  ];
+
+  const current = window.MEMORY?.companionId || 'boar';
+
+  var sectionHeader = document.createElement('div');
+  sectionHeader.style.cssText = 'padding:12px;color:#f7931a;font-weight:bold;font-size:14px;border-bottom:1px solid #333;margin-bottom:12px;';
+  sectionHeader.textContent = '🐾 ARENA COMPANIONS';
+  list.appendChild(sectionHeader);
+
+  var compGrid = document.createElement('div');
+  compGrid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:20px;';
+  
+  COMPANIONS.forEach(function(comp) {
+    var card = document.createElement('div');
+    card.style.cssText = 'padding:12px;border-radius:8px;border:2px solid ' + 
+      (comp.id === current ? '#f7931a' : '#333') + 
+      ';background:' + (comp.id === current ? 'rgba(247,147,26,0.1)' : '#1a1a2e') + 
+      ';cursor:pointer;text-align:center;color:' + 
+      (comp.id === current ? '#f7931a' : '#888') + 
+      ';font-weight:' + (comp.id === current ? 'bold' : 'normal') + ';transition:all 0.2s';
+    card.textContent = comp.name;
+    
+    card.addEventListener('mouseover', function() {
+      if (comp.id !== current) card.style.borderColor = '#f7931a';
+    });
+    card.addEventListener('mouseout', function() {
+      if (comp.id !== current) card.style.borderColor = '#333';
+    });
+    
+    card.addEventListener('click', function() {
+      window.MEMORY.companionId = comp.id;
+      window.syncServer?.broadcast({ type: 'companion_id', companionId: comp.id });
+      console.log('[Companions] Companion changed to:', comp.id);
+      window.openCompanionsView(); // Refresh the view
+    });
+    
+    compGrid.appendChild(card);
+  });
+
+  list.appendChild(compGrid);
+
+  // Show other agents as before
+  var agentHeader = document.createElement('div');
+  agentHeader.style.cssText = 'padding:12px;color:#f7931a;font-weight:bold;font-size:14px;border-bottom:1px solid #333;margin-bottom:12px;';
+  agentHeader.textContent = '🤖 ALL AGENTS';
+  list.appendChild(agentHeader);
+
   var TRAIT_LABELS = {
     sassy: '😏 Sassy', curious: '🔍 Curious', lazy: '😴 Lazy',
     cheerful: '🌟 Cheerful', foodobsessed: '🍖 Food-obsessed',
@@ -3338,54 +3392,6 @@ window.focusCompanionFromView = function(agentId) {
 // ═══════════════════════════════════════════════════════════
 //  SPIRITS VIEW
 // ═══════════════════════════════════════════════════════════
-
-
-// ═══════════════════════════════════════════════════════════
-//  ARENA SETTINGS
-// ═══════════════════════════════════════════════════════════
-
-window.openArenaSettings = function() {
-  var grid = document.getElementById('arena-companion-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-
-  const COMPANIONS = [
-    { id: 'fox', name: '🦊 Fox' },
-    { id: 'boar', name: '🐗 Boar' },
-    { id: 'deer', name: '🦌 Deer' },
-    { id: 'hare', name: '🐰 Hare' },
-    { id: 'black_grouse', name: '🐦 Black Grouse' }
-  ];
-
-  const current = window.MEMORY?.companionId || 'boar';
-
-  COMPANIONS.forEach(function(comp) {
-    var card = document.createElement('div');
-    card.style.cssText = 'padding:12px;border-radius:8px;border:2px solid ' + 
-      (comp.id === current ? '#f7931a' : '#333') + 
-      ';background:' + (comp.id === current ? 'rgba(247,147,26,0.1)' : '#1a1a2e') + 
-      ';cursor:pointer;text-align:center;color:' + 
-      (comp.id === current ? '#f7931a' : '#888') + 
-      ';font-weight:' + (comp.id === current ? 'bold' : 'normal') + '';
-    card.textContent = comp.name;
-    
-    card.addEventListener('click', function() {
-      window.MEMORY.companionId = comp.id;
-      window.syncServer?.broadcast({ type: 'companion_id', companionId: comp.id });
-      console.log('[Arena Settings] Companion changed to:', comp.id);
-      window.openArenaSettings(); // Refresh the grid
-    });
-    
-    grid.appendChild(card);
-  });
-
-  document.getElementById('arena-settings-overlay').classList.remove('hidden');
-};
-
-window.closeArenaSettings = function(event) {
-  if (event && event.target.id !== 'arena-settings-overlay') return;
-  document.getElementById('arena-settings-overlay').classList.add('hidden');
-};
 
 window.openSpiritsView = function() {
   var list = document.getElementById('spirits-view-list');
