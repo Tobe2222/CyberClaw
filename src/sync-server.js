@@ -351,10 +351,12 @@ class SyncServer {
         console.log(`[SyncServer] Mobile requesting companion change to: ${companionId}`);
         // Notify main window (Electron process) to actually change it
         this._notifyMainWindow('mobile-set-companion', { companionId });
-        // Broadcast to all clients so they sync
-        this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
-        // Also send confirmation back to the requesting client
-        this._send(ws, { type: 'companion_id', companionId, ts: Date.now() });
+        // Wait a moment for the IPC handler to update MEMORY
+        setTimeout(() => {
+          console.log(`[SyncServer] Broadcasting companion change after IPC`);
+          this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
+          this._send(ws, { type: 'companion_id', companionId, ts: Date.now() });
+        }, 100);
         break;
       }
 
