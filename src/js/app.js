@@ -3314,10 +3314,20 @@ window.openCompanionsView = function() {
     });
     
     card.addEventListener('click', function() {
-      window.MEMORY.companionId = comp.id;
-      window.syncServer?.broadcast({ type: 'companion_id', companionId: comp.id });
-      console.log('[Companions] Companion changed to:', comp.id);
-      window.openCompanionsView(); // Refresh
+      console.log('[Companions] Companion clicked:', comp.id);
+      
+      // Send to main process to handle the change
+      if (typeof window.ipcRenderer !== 'undefined' && window.ipcRenderer.send) {
+        window.ipcRenderer.send('desktop-set-companion', { companionId: comp.id });
+        console.log('[Companions] Sent to main process:', comp.id);
+      } else {
+        console.warn('[Companions] ipcRenderer not available');
+      }
+      
+      // Refresh the view to show selection
+      setTimeout(function() {
+        window.openCompanionsView();
+      }, 300);
     });
     
     compGrid.appendChild(card);

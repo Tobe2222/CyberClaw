@@ -1237,6 +1237,15 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
   }
 });
 
+ipcMain.on('desktop-set-companion', (e, { companionId }) => {
+  console.log(`[IPC] Desktop set companion to: ${companionId}`);
+  if (syncServer) {
+    // Broadcast to all connected mobile devices
+    syncServer.broadcast({ type: 'companion_id', companionId, ts: Date.now() });
+    console.log(`[IPC] Broadcasted companion change to mobile: ${companionId}`);
+  }
+});
+
 ipcMain.handle('test-tts-voice', async (e, { voice, text }) => {
   try {
     console.log(`[TEST] Testing TTS voice: ${voice}`);
