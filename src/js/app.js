@@ -3266,7 +3266,7 @@ window.openCompanionsView = function() {
     { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare spirit' }
   ];
 
-  const current = window.MEMORY?.companionId || 'boar';
+  const current = localStorage.getItem('cyberclaw-selected-companion') || 'boar';
 
   var sectionHeader = document.createElement('div');
   sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:18px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
@@ -3321,8 +3321,10 @@ window.openCompanionsView = function() {
         evt.stopPropagation();
         evt.preventDefault();
         console.log('[Companions] CLICKED:', companionId);
-        console.log('[Companions] ipcRenderer:', typeof window.ipcRenderer, window.ipcRenderer ? Object.keys(window.ipcRenderer) : 'null');
-        console.log('[Companions] ipcRenderer.send:', typeof (window.ipcRenderer && window.ipcRenderer.send));
+        
+        // Save to localStorage so we know which is current
+        localStorage.setItem('cyberclaw-selected-companion', companionId);
+        console.log('[Companions] Saved to localStorage:', companionId);
         
         if (window.ipcRenderer && typeof window.ipcRenderer.send === 'function') {
           console.log('[Companions] Sending IPC for:', companionId);
