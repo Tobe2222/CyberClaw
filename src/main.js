@@ -1194,7 +1194,11 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
 });
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
-  if (syncServer) syncServer.broadcastChatMessage(agentId, text, isUser);
+  console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 50), isUser });
+  if (syncServer) {
+    syncServer.broadcastChatMessage(agentId, text, isUser);
+    console.log('[IPC] Message broadcast to mobile clients');
+  }
   // If this AI reply follows a voice input, synthesize TTS and send audio back
   if (!isUser && syncServer && syncServer._voiceReplyWs) {
     const ws = syncServer._voiceReplyWs;

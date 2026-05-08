@@ -1329,6 +1329,7 @@ function addChatMsg(type, text, name, emoji) {
 
   // Broadcast to mobile companion app
   if (type === 'agent' || type === 'user') {
+    console.log(`[addChatMsg] Broadcasting ${type} message to mobile`);
     try {
       const { ipcRenderer } = require('electron');
       ipcRenderer.invoke('sync-broadcast-chat', {
