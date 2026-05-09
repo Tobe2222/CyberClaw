@@ -1194,7 +1194,7 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
 });
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
-  console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 50), isUser });
+  console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 100), isUser });
   if (syncServer) {
     syncServer.broadcastChatMessage(agentId, text, isUser);
     console.log('[IPC] Message broadcast to mobile clients');
