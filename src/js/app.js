@@ -1277,6 +1277,7 @@ window.sendChatMessage = async function(message) {
 };
 
 let chatMsgId = 0;
+let chatHistory = []; // Keep in-memory chat history for mobile sync
 // Track last date for separators
 let lastChatDate = null;
 let lastEventDate = null;
@@ -1325,6 +1326,20 @@ function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
+  }
+
+  // Keep in-memory chat history for mobile sync
+  if (type === 'agent' || type === 'user') {
+    chatHistory.push({
+      text: text,
+      isUser: type === 'user',
+      agentId: name || 'companion',
+      ts: Date.now()
+    });
+    // Keep only last 100 messages
+    if (chatHistory.length > 100) {
+      chatHistory = chatHistory.slice(-100);
+    }
   }
 
   // Broadcast to mobile companion app
@@ -2475,29 +2490,11 @@ try {
   ipcRenderer.on('mobile-paired', () => updateMobileStatus());
 
   ipcRenderer.on('mobile-request-chat-history', () => {
-    // Collect current chat messages from the DOM and send to mobile
-    const chatContainer = document.getElementById('chat-messages');
-    console.log('[Mobile] Chat history request - container found:', !!chatContainer);
-    
-    const msgs = [];
-    const msgElements = document.querySelectorAll('.chat-msg');
-    console.log('[Mobile] Found', msgElements.length, 'chat messages in DOM');
-    
-    msgElements.forEach(el => {
-      const type = el.classList.contains('user') ? 'user' : el.classList.contains('agent') ? 'agent' : null;
-      if (!type) return;
-      const textEl = el.querySelector('.msg-text');
-      if (!textEl) return;
-      msgs.push({
-        text: textEl.textContent,
-        isUser: type === 'user',
-        agentId: 'companion',
-        ts: Date.now() - msgs.length * 1000, // approximate
-      });
-    });
-    
-    console.log('[Mobile] Sending', msgs.length, 'messages to mobile');
-    ipcRenderer.invoke('sync-send-chat-history', { messages: msgs.slice(-50) });
+    // Use in-memory chat history instead of DOM scraping
+    console.log('[Mobile] Chat history request received');
+    console.log('[Mobile] Chat history array has', chatHistory.length, 'messages');
+    console.log('[Mobile] Sending last 50 messages to mobile');
+    ipcRenderer.invoke('sync-send-chat-history', { messages: chatHistory.slice(-50) });
   });
 
   // Route mobile chat to companion
