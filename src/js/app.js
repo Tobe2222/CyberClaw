@@ -2476,8 +2476,14 @@ try {
 
   ipcRenderer.on('mobile-request-chat-history', () => {
     // Collect current chat messages from the DOM and send to mobile
+    const chatContainer = document.getElementById('chat-messages');
+    console.log('[Mobile] Chat history request - container found:', !!chatContainer);
+    
     const msgs = [];
-    document.querySelectorAll('.chat-msg').forEach(el => {
+    const msgElements = document.querySelectorAll('.chat-msg');
+    console.log('[Mobile] Found', msgElements.length, 'chat messages in DOM');
+    
+    msgElements.forEach(el => {
       const type = el.classList.contains('user') ? 'user' : el.classList.contains('agent') ? 'agent' : null;
       if (!type) return;
       const textEl = el.querySelector('.msg-text');
@@ -2489,6 +2495,8 @@ try {
         ts: Date.now() - msgs.length * 1000, // approximate
       });
     });
+    
+    console.log('[Mobile] Sending', msgs.length, 'messages to mobile');
     ipcRenderer.invoke('sync-send-chat-history', { messages: msgs.slice(-50) });
   });
 
