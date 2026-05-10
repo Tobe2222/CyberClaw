@@ -2490,10 +2490,7 @@ try {
   ipcRenderer.on('mobile-paired', () => updateMobileStatus());
 
   ipcRenderer.on('mobile-request-chat-history', () => {
-    // Use in-memory chat history instead of DOM scraping
-    console.log('[Mobile] Chat history request received');
-    console.log('[Mobile] Chat history array has', chatHistory.length, 'messages');
-    console.log('[Mobile] Sending last 50 messages to mobile');
+    // Send current chat history to mobile
     ipcRenderer.invoke('sync-send-chat-history', { messages: chatHistory.slice(-50) });
   });
 
