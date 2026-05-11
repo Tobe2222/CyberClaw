@@ -1122,11 +1122,16 @@ app.whenReady().then(() => {
     },
     onRequestChatHistory: (ws) => {
       // Ask renderer for current chat history, then send to mobile client
+      console.log('[SyncServer] Mobile requested chat history');
       if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log('[SyncServer] Requesting history from renderer');
         mainWindow.webContents.send('mobile-request-chat-history', {});
         // Store ws so IPC reply can find it
         if (!syncServer._pendingHistoryWs) syncServer._pendingHistoryWs = [];
         syncServer._pendingHistoryWs.push(ws);
+        console.log('[SyncServer] Stored ws reference, waiting for renderer response');
+      } else {
+        console.log('[SyncServer] Main window not available!');
       }
     },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {

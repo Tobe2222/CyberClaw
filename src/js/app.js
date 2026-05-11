@@ -2491,7 +2491,10 @@ try {
 
   ipcRenderer.on('mobile-request-chat-history', () => {
     // Send current chat history to mobile
-    ipcRenderer.invoke('sync-send-chat-history', { messages: chatHistory.slice(-50) });
+    console.log('[App] Mobile requesting chat history, sending', chatHistory.length, 'messages');
+    ipcRenderer.invoke('sync-send-chat-history', { messages: chatHistory.slice(-50) })
+      .then(() => console.log('[App] Chat history sent successfully'))
+      .catch(err => console.log('[App] Error sending chat history:', err));
   });
 
   // Route mobile chat to companion
