@@ -3297,6 +3297,7 @@ window.openCompanionsView = function() {
   ];
 
   const current = currentCompanionId || localStorage.getItem('cyberclaw-selected-companion') || 'boar';
+  console.log('[openCompanionsView] Current companion: global=' + currentCompanionId + ', storage=' + localStorage.getItem('cyberclaw-selected-companion') + ', using: ' + current);
 
   var sectionHeader = document.createElement('div');
   sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:18px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
@@ -3353,8 +3354,9 @@ window.openCompanionsView = function() {
         console.log('[Companions] CLICKED:', companionId);
         
         // Save to localStorage so we know which is current
+        currentCompanionId = companionId; // Update global state
         localStorage.setItem('cyberclaw-selected-companion', companionId);
-        console.log('[Companions] Saved to localStorage:', companionId);
+        console.log('[Companions] Saved to localStorage:', companionId, '(global:', currentCompanionId + ')');
         
         // Update the arena display in this window
         if (window.pixelArena) {
@@ -3388,7 +3390,13 @@ window.openCompanionsView = function() {
         } else {
           console.error('[Companions] Cannot send - ipcRenderer.send not available');
         }
-        setTimeout(() => window.openCompanionsView(), 300);
+        
+        // Rebuild UI to show updated selection
+        console.log('[Companions] Rebuilding view after 100ms, current should be:', companionId);
+        setTimeout(() => {
+          console.log('[Companions] About to rebuild, localStorage has:', localStorage.getItem('cyberclaw-selected-companion'));
+          window.openCompanionsView();
+        }, 100);
       });
     })(comp.id, comp.name);
     
