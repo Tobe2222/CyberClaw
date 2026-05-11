@@ -7,6 +7,7 @@ const path = require('path');
 
 // Pixel arena instance (shared 2D scene)
 let pixelArena = null;
+let currentCompanionId = 'boar'; // Track current companion globally
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
@@ -284,7 +285,9 @@ async function initArenaCompanions() {
     if (pixelId) {
       leader._pixelCompanionId = pixelId;
       try {
-        await pixelArena.setCompanion(leaderId, pixelId, leader.name);
+        currentCompanionId = pixelId;
+      localStorage.setItem('cyberclaw-selected-companion', pixelId);
+      await pixelArena.setCompanion(leaderId, pixelId, leader.name);
         debugLog(`[Arena] Companion set: ${leader.name} (${pixelId})`);
       } catch (e) { debugLog('[Arena] ERROR set companion: ' + e.message + '\n' + e.stack); }
     } else {
@@ -3293,7 +3296,7 @@ window.openCompanionsView = function() {
     { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare spirit' }
   ];
 
-  const current = localStorage.getItem('cyberclaw-selected-companion') || 'boar';
+  const current = currentCompanionId || localStorage.getItem('cyberclaw-selected-companion') || 'boar';
 
   var sectionHeader = document.createElement('div');
   sectionHeader.style.cssText = 'padding:16px;color:#f7931a;font-weight:bold;font-size:18px;border-bottom:2px solid #333;margin-bottom:16px;text-align:center;';
