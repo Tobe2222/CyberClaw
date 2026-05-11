@@ -1246,6 +1246,30 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
   }
 });
 
+ipcMain.on('mobile-set-companion', (e, { companionId }) => {
+  try {
+    console.log(`[IPC] Mobile requesting companion change to: ${companionId}`);
+    
+    // Update companion window (same as desktop set)
+    if (companionWindow) {
+      if (!companionWindow.isDestroyed()) {
+        companionWindow.webContents.send('companion-changed', { companionId });
+        console.log(`[IPC] Sent companion-changed to arena for: ${companionId}`);
+      }
+    }
+    
+    // Update companion selector on main window (app.js)
+    if (mainWindow) {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-companion-selector', { companionId });
+        console.log(`[IPC] Sent update-companion-selector to UI for: ${companionId}`);
+      }
+    }
+  } catch (e) {
+    console.error('[IPC] Error handling mobile-set-companion:', e);
+  }
+});
+
 ipcMain.on('desktop-set-companion', (e, { companionId }) => {
   try {
     console.log(`[IPC] ===== RECEIVED desktop-set-companion: ${companionId} =====`);

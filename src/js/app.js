@@ -2529,6 +2529,13 @@ try {
         window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
         console.log('[App] Arena updated from mobile successfully');
         
+        // Update settings selector dropdown
+        const selector = document.getElementById('companion-selector');
+        if (selector) {
+          selector.value = companionId;
+          console.log('[App] Updated companion selector dropdown');
+        }
+        
         // Notify user
         addChatMsg('system', `📱 Companion changed to ${companionName}`);
       } else {
