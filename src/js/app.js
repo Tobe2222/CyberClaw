@@ -1228,7 +1228,24 @@ window.sendChat = async function() {
  * Unlike sendChat() which reads from the DOM input, this takes text directly.
  */
 window.sendChatMessage = async function(message) {
-  if (!message || chatBusy || agentOrder.length === 0) return;
+  if (!message) return;
+  if (chatBusy) {
+    console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
+    // Wait up to 15s for chatBusy to clear, then force-reset and proceed
+    let waited = 0;
+    while (chatBusy && waited < 15000) {
+      await new Promise(r => setTimeout(r, 200));
+      waited += 200;
+    }
+    if (chatBusy) {
+      console.warn('[sendChatMessage] chatBusy stuck, force-resetting');
+      chatBusy = false;
+    }
+  }
+  if (agentOrder.length === 0) {
+    console.warn('[sendChatMessage] No agents loaded yet, cannot send:', message.substring(0, 60));
+    return;
+  }
 
   const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
   if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
@@ -1254,6 +1271,7 @@ window.sendChatMessage = async function(message) {
   }
 
   chatBusy = true;
+  window.addDesktopLog?.('🧠', 'AI thinking', message.substring(0, 60), 'voice');
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
   try { ipcRenderer.invoke('sync-broadcast-typing', { active: true }); } catch {}
 
@@ -1265,6 +1283,7 @@ window.sendChatMessage = async function(message) {
     if (result.ok) {
       const leader = agents[mainAgentId];
       addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+      window.addDesktopLog?.('💬', 'AI responded', result.reply.substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: result.reply }); } catch {}
     } else {
