@@ -370,8 +370,13 @@ class SyncServer {
 
   _sendFullState(ws) {
     this._send(ws, { type: 'request_state_from_main' });
-    // Replay last audio response if it arrived within the last 8 seconds (reconnect window)
-    if (this._lastAudioResponse && (Date.now() - this._lastAudioResponse.ts) < 8000) {
+    // Replay last chat message if it arrived while client was disconnected (60s window)
+    if (this._lastChatMessage && (Date.now() - this._lastChatMessage.ts) < 60000) {
+      console.log('[SyncServer] Replaying recent chat_message to reconnected client');
+      this._send(ws, this._lastChatMessage.payload);
+    }
+    // Replay last audio response if it arrived while client was disconnected (60s window)
+    if (this._lastAudioResponse && (Date.now() - this._lastAudioResponse.ts) < 60000) {
       console.log('[SyncServer] Replaying recent audio_response to reconnected client');
       this._send(ws, this._lastAudioResponse.payload);
       this._lastAudioResponse = null;
@@ -383,7 +388,10 @@ class SyncServer {
   }
 
   broadcastChatMessage(agentId, text, isUser = false) {
-    this._broadcast({ type: 'chat_message', agentId, text, isUser, ts: Date.now() });
+    const payload = { type: 'chat_message', agentId, text, isUser, ts: Date.now() };
+    // Cache last AI message for reconnect replay
+    if (!isUser) this._lastChatMessage = { payload, ts: Date.now() };
+    this._broadcast(payload);
   }
 
   broadcastCompanionChange(companionId) {
