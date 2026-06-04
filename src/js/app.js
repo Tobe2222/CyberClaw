@@ -3180,11 +3180,14 @@ setupArenaDrop();
 setTimeout(setupArenaDrop, 3000);
 
 // Prompt the companion and show response in both chat + bubble
+var reactionBusy = false;
 function promptCompanionReaction(promptText) {
   var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
   if (!agentId) return;
   var agent = agents[agentId];
   if (!agent) return;
+  // Don't fire if main chat or another reaction is already running
+  if (chatBusy || reactionBusy) return;
 
   var traitCtx = getTraitContext();
   var userCtx = getUserContext();
@@ -3193,13 +3196,12 @@ function promptCompanionReaction(promptText) {
     (userCtx ? ' ' + userCtx : '') +
     '] ' + promptText;
 
-  chatBusy = true;
+  reactionBusy = true;
   cyberclaw.chat.sendMessage(agentId, systemPrompt).then(function(result) {
-    chatBusy = false;
+    reactionBusy = false;
     if (result && result.ok && result.reply) {
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
-
       addChatMsg('agent', reply, agent.name, agent.emoji);
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
@@ -3207,13 +3209,8 @@ function promptCompanionReaction(promptText) {
         arena.showBubble(bubbleText, 10000);
       }
     }
-  }).catch(function(err) {
-    chatBusy = false;
-    var fallbacks = ['Yum! 😋', 'Delicious! ❤️', 'More please! 🤤', 'Nom nom nom! 🍖'];
-    var msg = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    addChatMsg('agent', msg, agent.name, agent.emoji);
-    var arena = window.pixelArena;
-    if (arena && arena.showBubble) arena.showBubble(msg, 10000);
+  }).catch(function() {
+    reactionBusy = false;
   });
 }
 
