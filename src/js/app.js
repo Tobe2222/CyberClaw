@@ -1228,6 +1228,7 @@ window.sendChat = async function() {
  * Unlike sendChat() which reads from the DOM input, this takes text directly.
  */
 window.sendChatMessage = async function(message) {
+  window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}"`, 'info');
   if (!message) return;
   if (chatBusy) {
     console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
@@ -1243,8 +1244,17 @@ window.sendChatMessage = async function(message) {
     }
   }
   if (agentOrder.length === 0) {
-    console.warn('[sendChatMessage] No agents loaded yet, cannot send:', message.substring(0, 60));
-    return;
+    console.warn('[sendChatMessage] No agents loaded yet, waiting...');
+    window.addDesktopLog?.('⏳', 'Waiting for agents to load', '', 'warn');
+    let waited = 0;
+    while (agentOrder.length === 0 && waited < 10000) {
+      await new Promise(r => setTimeout(r, 300));
+      waited += 300;
+    }
+    if (agentOrder.length === 0) {
+      window.addDesktopLog?.('❌', 'No agents loaded — message dropped', message.substring(0, 60), 'error');
+      return;
+    }
   }
 
   const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
