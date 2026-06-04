@@ -1111,6 +1111,8 @@ app.whenReady().then(() => {
     port: 9247,
     mainWindow,
     onChatMessage: (text, agentId, meta) => {
+      // Mark this ws for TTS reply — same as audio_input flow
+      if (meta.ws && syncServer) syncServer._voiceReplyWs = meta.ws;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-chat', { text, agentId, meta });
       }

@@ -298,7 +298,8 @@ class SyncServer {
         if (this.onChatMessage) {
           this.onChatMessage(msg.text, msg.agentId || 'companion', {
             source: 'mobile',
-            deviceName: client.name
+            deviceName: client.name,
+            ws,
           });
         }
         break;
