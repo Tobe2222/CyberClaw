@@ -370,6 +370,12 @@ class SyncServer {
 
   _sendFullState(ws) {
     this._send(ws, { type: 'request_state_from_main' });
+    // Replay last audio response if it arrived within the last 8 seconds (reconnect window)
+    if (this._lastAudioResponse && (Date.now() - this._lastAudioResponse.ts) < 8000) {
+      console.log('[SyncServer] Replaying recent audio_response to reconnected client');
+      this._send(ws, this._lastAudioResponse.payload);
+      this._lastAudioResponse = null;
+    }
   }
 
   broadcastState(state) {
@@ -390,7 +396,24 @@ class SyncServer {
   }
 
   sendAudioResponse(ws, audioBase64, mimeType = 'audio/mpeg') {
-    this._send(ws, { type: 'audio_response', audioBase64, mimeType });
+    const payload = { type: 'audio_response', audioBase64, mimeType };
+    // Cache for reconnect replay (5s window)
+    this._lastAudioResponse = { payload, ts: Date.now() };
+    // Try original ws; fallback to any authenticated client
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this._send(ws, payload);
+    } else {
+      console.log('[SyncServer] audio_response ws closed, sending to any authenticated client');
+      let sent = false;
+      for (const [clientWs, client] of this.clients) {
+        if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
+          this._send(clientWs, payload);
+          sent = true;
+          break;
+        }
+      }
+      if (!sent) console.warn('[SyncServer] audio_response: no open client to send to');
+    }
   }
 
   sendTranscript(ws, transcript) {
