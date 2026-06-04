@@ -2550,9 +2550,17 @@ try {
 
   // Route mobile chat to companion
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
+    console.log('[mobile-chat] received:', text?.substring(0, 60), 'sendChatMessage defined:', typeof window.sendChatMessage);
+    window.addDesktopLog?.('💬', 'Mobile chat → AI', text?.substring(0, 50), 'info');
     addChatMsg('user', text);
     if (typeof window.sendChatMessage === 'function') {
       window.sendChatMessage(text);
+    } else {
+      // Fallback: retry after 2s if not ready yet
+      setTimeout(() => {
+        console.log('[mobile-chat] retry sendChatMessage, defined:', typeof window.sendChatMessage);
+        if (typeof window.sendChatMessage === 'function') window.sendChatMessage(text);
+      }, 2000);
     }
   });
 
@@ -2560,9 +2568,15 @@ try {
     const prompt = context
       ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`
       : transcript;
+    console.log('[mobile-voice] received:', transcript?.substring(0, 60));
+    window.addDesktopLog?.('🎤', 'Voice → AI', transcript?.substring(0, 50), 'info');
     addChatMsg('user', `🎤 ${transcript}`);
     if (typeof window.sendChatMessage === 'function') {
       window.sendChatMessage(prompt);
+    } else {
+      setTimeout(() => {
+        if (typeof window.sendChatMessage === 'function') window.sendChatMessage(prompt);
+      }, 2000);
     }
   });
 
