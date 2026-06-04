@@ -1202,6 +1202,7 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
   console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 100), isUser });
+  console.log('[IPC] _voiceReplyWs state:', syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL');
   if (syncServer) {
     syncServer.broadcastChatMessage(agentId, text, isUser);
     console.log('[IPC] Message broadcast to mobile clients');
@@ -1212,10 +1213,15 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
     syncServer._voiceReplyWs = null;
     const cleanText = stripEmojisForTTS(text);
     
-    // Get the selected TTS voice
+    // Read TTS voice directly — can't call ipcMain.handle from within a handler
     let ttsVoice = 'lessac';
     try {
-      ttsVoice = await ipcMain.handle('settings:get-tts-voice', {});
+      const mainWin = BrowserWindow.getAllWindows()[0];
+      if (mainWin) {
+        ttsVoice = await mainWin.webContents.executeJavaScript(
+          "(() => { const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}'); return s.ttsVoice || 'lessac'; })()"
+        ) || 'lessac';
+      }
     } catch (err) {
       console.warn('[TTS] Could not get voice setting, using default:', err.message);
     }
