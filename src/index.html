@@ -189,6 +189,9 @@
           <button class="term-tab" data-tab="terminal" onclick="switchTermTab('terminal')">
             <span class="tab-icon">⚔️</span> OpenClaw
           </button>
+          <button class="term-tab" data-tab="logs" onclick="switchTermTab('logs')">
+            <span class="tab-icon">🪵</span> Logs
+          </button>
           <button class="term-tab-toggle" onclick="toggleTerminal()" title="Expand/Collapse">▼</button>
         </div>
         <div id="view-terminal" class="term-view">
@@ -196,6 +199,9 @@
         </div>
         <div id="view-events" class="term-view">
           <div id="event-messages"></div>
+        </div>
+        <div id="view-logs" class="term-view">
+          <div id="log-messages" style="font-family:monospace;font-size:12px;padding:8px;overflow-y:auto;height:100%;"></div>
         </div>
         <div id="view-chat" class="term-view active">
           <div id="chat-messages">

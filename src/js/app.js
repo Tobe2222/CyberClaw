@@ -2485,12 +2485,31 @@ async function updateMobileStatus() {
   } catch {}
 }
 
+// Desktop log panel
+window.addDesktopLog = function(emoji, title, detail = '', level = 'info') {
+  const el = document.getElementById('log-messages');
+  if (!el) return;
+  const colors = { info: '#a0a0b8', success: '#4ade80', warn: '#f7931e', error: '#ff3366', voice: '#a78bfa', tts: '#38bdf8' };
+  const color = colors[level] || colors.info;
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const line = document.createElement('div');
+  line.style.cssText = `padding:2px 4px;border-bottom:1px solid #111;color:${color};`;
+  line.innerHTML = `<span style="opacity:0.5">${ts}</span> ${emoji} <b>${title}</b>${detail ? ` <span style="opacity:0.7">— ${detail}</span>` : ''}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  // Cap at 200 entries
+  while (el.children.length > 200) el.removeChild(el.firstChild);
+};
+
 // Listen for mobile connection events
 try {
   const { ipcRenderer } = require('electron');
-  ipcRenderer.on('mobile-connected', () => updateMobileStatus());
-  ipcRenderer.on('mobile-disconnected', () => updateMobileStatus());
-  ipcRenderer.on('mobile-paired', () => updateMobileStatus());
+  ipcRenderer.on('desktop-log', (e, { emoji, title, detail, level }) => {
+    window.addDesktopLog(emoji, title, detail, level);
+  });
+  ipcRenderer.on('mobile-connected', () => { updateMobileStatus(); window.addDesktopLog('📱', 'Mobile connected', '', 'success'); });
+  ipcRenderer.on('mobile-disconnected', () => { updateMobileStatus(); window.addDesktopLog('📴', 'Mobile disconnected', '', 'warn'); });
+  ipcRenderer.on('mobile-paired', () => { updateMobileStatus(); window.addDesktopLog('🔗', 'Mobile paired', '', 'success'); });
 
   ipcRenderer.on('mobile-request-chat-history', () => {
     // Send current chat history to mobile

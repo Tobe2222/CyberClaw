@@ -4,36 +4,13 @@ const os = require('os');
 const fs = require('fs');
 const pty = require('node-pty');
 
-// Discord log channel forwarding
-const DISCORD_LOG_CHANNEL = '1512149042065440930';
-const OPENCLAW_TOKEN = (() => {
+// Desktop log panel — sends structured log entries to renderer via IPC
+function discordLog(emoji, title, detail = '', level = 'info') {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.openclaw', 'openclaw.json'), 'utf8'));
-    return cfg?.channels?.discord?.token || null;
-  } catch { return null; }
-})();
-
-let _logQueue = [];
-let _logTimer = null;
-function discordLog(emoji, title, detail = '') {
-  if (!OPENCLAW_TOKEN) return;
-  const line = detail ? `${emoji} **${title}** — ${detail}` : `${emoji} **${title}**`;
-  _logQueue.push(line);
-  if (_logTimer) return;
-  _logTimer = setTimeout(() => {
-    _logTimer = null;
-    const msg = _logQueue.splice(0).join('\n');
-    const body = JSON.stringify({ content: msg });
-    const req = require('https').request({
-      hostname: 'discord.com',
-      path: `/api/v10/channels/${DISCORD_LOG_CHANNEL}/messages`,
-      method: 'POST',
-      headers: { 'Authorization': `Bot ${OPENCLAW_TOKEN}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-    });
-    req.on('error', () => {});
-    req.write(body);
-    req.end();
-  }, 2000); // batch logs every 2s
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length) wins[0].webContents.send('desktop-log', { emoji, title, detail, level });
+  } catch {}
+  console.log(`[LOG] ${emoji} ${title}${detail ? ' — ' + detail : ''}`);
 }
 
 let mainWindow;
@@ -660,9 +637,9 @@ ipcMain.on('doctor:close', () => { doctorWindow?.close(); });
 // Window controls
 // ---------------------------------------------------------------------------
 ipcMain.on('window:minimize', () => mainWindow?.minimize());
-ipcMain.on('mobile-connected', (e, { name }) => discordLog('📱', 'Mobile connected', name || 'unknown'));
-ipcMain.on('mobile-disconnected', (e, { clientId }) => discordLog('📴', 'Mobile disconnected', clientId || 'unknown'));
-ipcMain.on('mobile-paired', (e, { name }) => discordLog('🔗', 'Mobile paired', name || 'unknown'));
+ipcMain.on('mobile-connected', (e, { name }) => discordLog('📱', 'Mobile connected', name || 'unknown', 'success'));
+ipcMain.on('mobile-disconnected', (e, { clientId }) => discordLog('📴', 'Mobile disconnected', clientId || 'unknown', 'warn'));
+ipcMain.on('mobile-paired', (e, { name }) => discordLog('🔗', 'Mobile paired', name || 'unknown', 'success'));
 
 ipcMain.on('window:maximize', () => {
   mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize();
@@ -1191,7 +1168,7 @@ app.whenReady().then(() => {
 
         // 1. Transcribe audio via Whisper
         console.log('[Voice] Starting transcription...');
-        discordLog('🎤', 'Voice received', 'transcribing...');
+        discordLog('🎤', 'Voice received', 'transcribing...', 'voice');
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) {
@@ -1280,7 +1257,7 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
       }
     } catch (e) {
       console.error('[TTS] voice reply synthesis failed:', e.message);
-      discordLog('❌', 'TTS failed', e.message);
+      discordLog('❌', 'TTS failed', e.message, 'error');
     }
   }
 });
