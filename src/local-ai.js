@@ -176,6 +176,18 @@ async function ensurePiper(voice = 'lessac') {
 
   let binaryPath = findBinary(piperDir);
 
+  // Check system PATH first before downloading
+  if (!binaryPath) {
+    const { execSync } = require('child_process');
+    try {
+      const systemPiper = execSync('which piper 2>/dev/null || command -v piper 2>/dev/null', { encoding: 'utf8' }).trim();
+      if (systemPiper && fs.existsSync(systemPiper)) {
+        binaryPath = systemPiper;
+        console.log(`[local-ai] Using system piper: ${binaryPath}`);
+      }
+    } catch (_) {}
+  }
+
   if (!binaryPath) {
     sendProgress('Downloading Piper TTS', 0, 'Starting...');
     const url = PIPER_RELEASES[platform];
@@ -200,7 +212,7 @@ async function ensurePiper(voice = 'lessac') {
     sendProgress(`Downloading ${voice} voice`, 0, `Downloading voice model (~63MB)...`);
     await downloadFile(voiceUrls.onnx, voiceOnnx, `Downloading ${voice} voice`);
   }
-  if (!fs.existsSync(voiceJson)) {
+  if (!fs.existsSync(voiceJson) || fs.statSync(voiceJson).size === 0) {
     sendProgress(`Downloading ${voice} voice config`, 0, '...');
     await downloadFile(voiceUrls.json, voiceJson, `Downloading ${voice} config`);
   }
