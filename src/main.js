@@ -1126,6 +1126,7 @@ app.whenReady().then(() => {
     onChatMessage: (text, agentId, meta) => {
       // Mark this ws for TTS reply — same as audio_input flow
       if (meta.ws && syncServer) syncServer._voiceReplyWs = meta.ws;
+      discordLog('💬', 'Mobile chat received', `"${text.substring(0, 60)}"`, 'voice');
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-chat', { text, agentId, meta });
       }
@@ -1178,8 +1179,11 @@ app.whenReady().then(() => {
         }
 
         console.log(`[Voice] Transcription complete: "${transcript.substring(0, 80)}"`);
-        discordLog('📝', 'Transcribed', `"${transcript.substring(0, 80)}"`);
+        discordLog('📝', 'Transcribed', `"${transcript.substring(0, 80)}"`, 'info');
         // 2. Send transcript back to mobile for review / auto-send in focus mode
+        const wsOpen = ws && ws.readyState === 1;
+        console.log(`[Voice] Sending transcript back, ws.readyState=${ws?.readyState}`);
+        discordLog('📤', 'Sending transcript to mobile', `ws=${wsOpen ? 'OPEN' : 'CLOSED'}`, wsOpen ? 'success' : 'warn');
         if (syncServer && ws) syncServer.sendTranscript(ws, transcript);
 
         // 3. Mark that the next AI reply should be spoken back (TTS audio response)
