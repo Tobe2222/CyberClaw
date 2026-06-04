@@ -4,6 +4,38 @@ const os = require('os');
 const fs = require('fs');
 const pty = require('node-pty');
 
+// Discord log channel forwarding
+const DISCORD_LOG_CHANNEL = '1512149042065440930';
+const OPENCLAW_TOKEN = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.openclaw', 'openclaw.json'), 'utf8'));
+    return cfg?.channels?.discord?.token || null;
+  } catch { return null; }
+})();
+
+let _logQueue = [];
+let _logTimer = null;
+function discordLog(emoji, title, detail = '') {
+  if (!OPENCLAW_TOKEN) return;
+  const line = detail ? `${emoji} **${title}** — ${detail}` : `${emoji} **${title}**`;
+  _logQueue.push(line);
+  if (_logTimer) return;
+  _logTimer = setTimeout(() => {
+    _logTimer = null;
+    const msg = _logQueue.splice(0).join('\n');
+    const body = JSON.stringify({ content: msg });
+    const req = require('https').request({
+      hostname: 'discord.com',
+      path: `/api/v10/channels/${DISCORD_LOG_CHANNEL}/messages`,
+      method: 'POST',
+      headers: { 'Authorization': `Bot ${OPENCLAW_TOKEN}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    });
+    req.on('error', () => {});
+    req.write(body);
+    req.end();
+  }, 2000); // batch logs every 2s
+}
+
 let mainWindow;
 let ptyProcess = null;
 let chatPty = null;
@@ -628,6 +660,10 @@ ipcMain.on('doctor:close', () => { doctorWindow?.close(); });
 // Window controls
 // ---------------------------------------------------------------------------
 ipcMain.on('window:minimize', () => mainWindow?.minimize());
+ipcMain.on('mobile-connected', (e, { name }) => discordLog('📱', 'Mobile connected', name || 'unknown'));
+ipcMain.on('mobile-disconnected', (e, { clientId }) => discordLog('📴', 'Mobile disconnected', clientId || 'unknown'));
+ipcMain.on('mobile-paired', (e, { name }) => discordLog('🔗', 'Mobile paired', name || 'unknown'));
+
 ipcMain.on('window:maximize', () => {
   mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize();
 });
@@ -1155,6 +1191,7 @@ app.whenReady().then(() => {
 
         // 1. Transcribe audio via Whisper
         console.log('[Voice] Starting transcription...');
+        discordLog('🎤', 'Voice received', 'transcribing...');
         const transcript = await transcribeAudio(audioBase64, mimeType);
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) {
@@ -1164,6 +1201,7 @@ app.whenReady().then(() => {
         }
 
         console.log(`[Voice] Transcription complete: "${transcript.substring(0, 80)}"`);
+        discordLog('📝', 'Transcribed', `"${transcript.substring(0, 80)}"`);
         // 2. Send transcript back to mobile for review / auto-send in focus mode
         if (syncServer && ws) syncServer.sendTranscript(ws, transcript);
 
@@ -1202,7 +1240,9 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
   console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 100), isUser });
-  console.log('[IPC] _voiceReplyWs state:', syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL');
+  const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
+  console.log('[IPC] _voiceReplyWs state:', wsState);
+  discordLog('📡', 'Chat broadcast', `isUser=${isUser} voiceWs=${wsState}`);
   if (syncServer) {
     syncServer.broadcastChatMessage(agentId, text, isUser);
     console.log('[IPC] Message broadcast to mobile clients');
@@ -1227,17 +1267,20 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
     }
     
     console.log(`[TTS] Synthesizing voice response with ${ttsVoice}: "${cleanText.substring(0, 60)}..."`);
+    discordLog('🔊', 'TTS synthesizing', `${ttsVoice}: "${cleanText.substring(0, 60)}"`);
     try {
       const audioBase64 = await synthesizeSpeech(cleanText, ttsVoice);
       if (audioBase64) {
         console.log(`[TTS] Synthesized ${audioBase64.length} chars, sending to mobile...`);
         syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
         console.log('[TTS] Audio response sent to mobile');
+        discordLog('✅', 'Audio sent to mobile', `${audioBase64.length} chars`);
       } else {
         console.warn('[TTS] synthesizeSpeech returned empty string');
       }
     } catch (e) {
       console.error('[TTS] voice reply synthesis failed:', e.message);
+      discordLog('❌', 'TTS failed', e.message);
     }
   }
 });
