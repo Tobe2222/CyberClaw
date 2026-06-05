@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
+const EventEmitter = require('events');
 
 const CYBERCLAW_DIR = path.join(os.homedir(), '.openclaw', 'cyberclaw');
 const SYNC_CONFIG_FILE = path.join(CYBERCLAW_DIR, 'sync-config.json');
@@ -30,8 +31,9 @@ const CERT_DIR = path.join(CYBERCLAW_DIR, 'certs');
 const CERT_FILE = path.join(CERT_DIR, 'sync-cert.pem');
 const KEY_FILE = path.join(CERT_DIR, 'sync-key.pem');
 
-class SyncServer {
+class SyncServer extends EventEmitter {
   constructor(options = {}) {
+    super();
     this.port = options.port || 9247;
     this.wss = null;
     this.httpsServer = null;
@@ -296,10 +298,11 @@ class SyncServer {
       case 'chat': {
         if (!client.authenticated) return;
         if (this.onChatMessage) {
-          this.onChatMessage(msg.text, msg.agentId || 'companion', {
-            source: 'mobile',
-            deviceName: client.name,
+          const deviceTag = client.name && client.name !== 'Desktop' ? `[From: ${client.name}] ` : '';
+          this.onChatMessage(deviceTag + msg.text, msg.agentId || 'companion', {
             ws,
+            deviceName: client.name,
+            deviceType: msg.deviceType || 'mobile',
           });
         }
         break;
@@ -363,6 +366,13 @@ class SyncServer {
 
       case 'ping': {
         this._send(ws, { type: 'pong', ts: Date.now() });
+        break;
+      }
+
+      case 'remote_tool_result': {
+        if (!client.authenticated) return;
+        // Emit so the remote-tool-bridge can resolve the pending promise
+        this.emit('remote_tool_result', msg);
         break;
       }
     }
@@ -446,6 +456,41 @@ class SyncServer {
 
   broadcastArenaEvent(event) {
     this._broadcast({ type: 'arena_event', ...event, ts: Date.now() });
+  }
+
+  /**
+   * Send a remote_tool message to all authenticated mobile clients
+   */
+  sendRemoteTool(id, op, params) {
+    this._broadcast({ type: 'remote_tool', id, op, ...params });
+  }
+
+  /**
+   * Send a message to all authenticated mobile clients.
+   * Returns true if at least one client was reachable, false if no device connected.
+   */
+  sendToMobile(payload) {
+    const authenticatedEntries = [...this.clients.entries()].filter(([, c]) => c.authenticated);
+    if (authenticatedEntries.length === 0) return false;
+    const json = JSON.stringify(payload);
+    authenticatedEntries.forEach(([ws]) => {
+      try { if (ws.readyState === 1) ws.send(json); } catch (_) {}
+    });
+    return true;
+  }
+
+  /**
+   * Register a handler for bridge events (emitted by the EventEmitter 'emit' method).
+   */
+  onBridge(type, handler) {
+    this.on(type, handler);
+  }
+
+  /**
+   * Remove a previously registered bridge handler.
+   */
+  offBridge(type, handler) {
+    this.off(type, handler);
   }
 
   _send(ws, obj) {

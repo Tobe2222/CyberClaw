@@ -1196,6 +1196,11 @@ app.whenReady().then(() => {
     },
   });
   syncServer.start();
+
+  // Agent Reach — initialise remote tool bridge
+  const RemoteToolBridge = require('./remote-tool-bridge');
+  let remoteToolBridge = null;
+  remoteToolBridge = new RemoteToolBridge(syncServer);
 });
 
 app.on('before-quit', cleanup);
