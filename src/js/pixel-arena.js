@@ -611,6 +611,27 @@ class PixelArena {
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
   _updateCompanion(comp, dt) {
+    // ── SLEEP MODE (22:00–08:00) ──────────────────────────────
+    const hour = new Date().getHours();
+    const isNight = hour >= 22 || hour < 8;
+    if (isNight) {
+      if (comp.animation !== 'death') {
+        comp.animation = 'death';
+        comp.vx = 0;
+        comp.vy = 0;
+        comp.state = 'idle';
+        // Hold on last frame of death anim
+        const deathAnim = comp.images['death'];
+        if (deathAnim) comp.frame = deathAnim.frames - 1;
+      }
+      return; // Skip all movement/state logic while sleeping
+    }
+    // Resume from sleep — back to idle
+    if (comp.animation === 'death') {
+      comp.animation = 'idle';
+      comp.frame = 0;
+    }
+
     // Frame animation
     comp.frameTimer += dt;
     const animData = comp.images[comp.animation];

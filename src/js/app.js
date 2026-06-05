@@ -3196,6 +3196,8 @@ setTimeout(setupArenaDrop, 3000);
 // Prompt the companion and show response in both chat + bubble
 var reactionBusy = false;
 function promptCompanionReaction(promptText) {
+  // Silent at night (22:00–08:00)
+  if (isNightTime()) return;
   var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
   if (!agentId) return;
   var agent = agents[agentId];
@@ -3311,29 +3313,35 @@ var IDLE_PROMPTS = [
   'Say something about wanting to go on an adventure.',
 ];
 
+function isNightTime() {
+  var h = new Date().getHours();
+  return h >= 22 || h < 8;
+}
+
 function scheduleIdleChatter() {
-  // Random interval between 15 and 25 minutes
-  var minMs = 15 * 60 * 1000;
-  var maxMs = 25 * 60 * 1000;
+  // Random interval between 19 and 31 minutes (~20% less frequent than before)
+  var minMs = 19 * 60 * 1000;
+  var maxMs = 31 * 60 * 1000;
   var delay = minMs + Math.random() * (maxMs - minMs);
 
   setTimeout(function() {
-    var userCtx = getUserContext();
-    var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
-    var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +
-      randomPrompt + ' Keep it to 1 short sentence, max 1 emoji, no asterisks. ' +
-      (userCtx ? userCtx : '') + ']';
-
-    promptCompanionReaction(fullPrompt);
-
-    // Schedule the next one
+    // Silent at night
+    if (!isNightTime()) {
+      var userCtx = getUserContext();
+      var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
+      var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +
+        randomPrompt + ' Keep it to 1 short sentence, max 1 emoji, no asterisks. ' +
+        (userCtx ? userCtx : '') + ']';
+      promptCompanionReaction(fullPrompt);
+    }
+    // Schedule the next one regardless
     scheduleIdleChatter();
   }, delay);
 }
 
 // Start greeting and idle chatter after boot
 setTimeout(function() {
-  doStartupGreeting();
+  if (!isNightTime()) doStartupGreeting();
   scheduleIdleChatter();
 }, 2000);
 
