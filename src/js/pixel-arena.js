@@ -614,7 +614,8 @@ class PixelArena {
     // ── SLEEP MODE (22:00–08:00) ──────────────────────────────
     const hour = new Date().getHours();
     const isNight = hour >= 22 || hour < 8;
-    if (isNight) {
+    const isAsleep = isNight && !window._nightWakeTimer;
+    if (isAsleep) {
       if (comp.animation !== 'death') {
         comp.animation = 'death';
         comp.vx = 0;

@@ -1129,6 +1129,9 @@ window.sendChat = async function() {
   const message = input.value.trim();
   if (!message || chatBusy || agentOrder.length === 0) return;
 
+  // Wake companion if sleeping
+  nudgeNightWake();
+
   const agent = agents[agentOrder[focusIndex]];
   if (!agent) return;
 
@@ -1230,6 +1233,8 @@ window.sendChat = async function() {
 window.sendChatMessage = async function(message) {
   window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}"`, 'info');
   if (!message) return;
+  // Wake companion if sleeping
+  nudgeNightWake();
   if (chatBusy) {
     console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
     // Wait up to 15s for chatBusy to clear, then force-reset and proceed
@@ -3196,8 +3201,8 @@ setTimeout(setupArenaDrop, 3000);
 // Prompt the companion and show response in both chat + bubble
 var reactionBusy = false;
 function promptCompanionReaction(promptText) {
-  // Silent at night (22:00–08:00)
-  if (isNightTime()) return;
+  // Silent while asleep (night + not woken by user)
+  if (isAsleep()) return;
   var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
   if (!agentId) return;
   var agent = agents[agentId];
@@ -3318,6 +3323,42 @@ function isNightTime() {
   return h >= 22 || h < 8;
 }
 
+// ── SLEEP WAKE LOGIC ────────────────────────────────────────
+var _nightWakeTimer = null;
+window._nightWakeTimer = null;
+var _wakeDurationMs = 10 * 60 * 1000; // 10 minutes
+
+function isAsleep() {
+  return isNightTime() && !_nightWakeTimer;
+}
+
+function wakeFromSleep() {
+  if (!isNightTime()) return;
+  // Tell arena to exit sleep animation
+  var arena = window.pixelArena;
+  if (arena && arena._companions) {
+    arena._companions.forEach(function(comp) {
+      if (comp.animation === 'death') {
+        comp.animation = 'idle';
+        comp.frame = 0;
+      }
+    });
+  }
+  // Reset/restart the sleep timer
+  if (_nightWakeTimer) clearTimeout(_nightWakeTimer);
+  _nightWakeTimer = setTimeout(function() {
+    _nightWakeTimer = null;
+    window._nightWakeTimer = null;
+    // Go back to sleep — arena will pick it up on next update tick
+  }, _wakeDurationMs);
+  window._nightWakeTimer = _nightWakeTimer;
+}
+
+function nudgeNightWake() {
+  // Called on any user interaction at night — wakes or resets timer
+  if (isNightTime()) wakeFromSleep();
+}
+
 function scheduleIdleChatter() {
   // Random interval between 19 and 31 minutes (~20% less frequent than before)
   var minMs = 19 * 60 * 1000;
@@ -3325,8 +3366,8 @@ function scheduleIdleChatter() {
   var delay = minMs + Math.random() * (maxMs - minMs);
 
   setTimeout(function() {
-    // Silent at night
-    if (!isNightTime()) {
+    // Silent while asleep
+    if (!isAsleep()) {
       var userCtx = getUserContext();
       var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
       var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +
@@ -3341,7 +3382,7 @@ function scheduleIdleChatter() {
 
 // Start greeting and idle chatter after boot
 setTimeout(function() {
-  if (!isNightTime()) doStartupGreeting();
+  if (!isAsleep()) doStartupGreeting();
   scheduleIdleChatter();
 }, 2000);
 
