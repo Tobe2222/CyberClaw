@@ -1128,7 +1128,8 @@ app.whenReady().then(() => {
       if (meta.ws && syncServer) syncServer._voiceReplyWs = meta.ws;
       discordLog('💬', 'Mobile chat received', `"${text.substring(0, 60)}"`, 'voice');
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mobile-chat', { text, agentId, meta });
+        const { ws: _ws, ...serializableMeta } = meta || {};
+        mainWindow.webContents.send('mobile-chat', { text, agentId, meta: serializableMeta });
       }
     },
     onVoiceTranscript: (transcript, context, meta) => {
