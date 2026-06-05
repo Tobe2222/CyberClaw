@@ -1,7 +1,7 @@
 {
   "name": "cyberclaw",
-  "version": "1.4.5",
-  "description": "CyberClaw \u2014 RPG-style GUI companion for OpenClaw AI agents. Install, manage, and command your AI party.",
+  "version": "3.0.0",
+  "description": "CyberClaw — AI companion you can play and talk to. RPG-style progression, quests, and a task system. Pairs with the CyberClaw mobile app for voice and agent reach.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
