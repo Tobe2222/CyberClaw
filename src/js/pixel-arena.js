@@ -176,6 +176,7 @@ class PixelArena {
       state: 'idle',
       stateTimer: 3000 + Math.random() * 3000,
       scale: 5, // big companion
+      sleepState: 'awake', // v3.1.4: 'awake' | 'sleeping' — set by app.js toggle
     };
   }
 
@@ -611,10 +612,18 @@ class PixelArena {
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
   _updateCompanion(comp, dt) {
-    // ── SLEEP MODE (22:00–08:00) ──────────────────────────────
+    // ── SLEEP MODE ────────────────────────────────────────────
+    // v3.1.4: two sources of sleep:
+    //   1. Manual: comp.sleepState === 'sleeping' (set via the inspect
+    //      panel's sleep button). Takes priority.
+    //   2. Time-based: night (22:00–08:00) AND the user hasn't woken
+    //      the session in the last 10 min.
+    // Both use the same "death" sprite frame as a sleeping pose.
+    const manualSleep = comp.sleepState === 'sleeping';
     const hour = new Date().getHours();
     const isNight = hour >= 22 || hour < 8;
-    const isAsleep = isNight && !window._nightWakeTimer;
+    const timeBasedSleep = isNight && !window._nightWakeTimer;
+    const isAsleep = manualSleep || timeBasedSleep;
     if (isAsleep) {
       if (comp.animation !== 'death') {
         comp.animation = 'death';
@@ -627,8 +636,10 @@ class PixelArena {
       }
       return; // Skip all movement/state logic while sleeping
     }
-    // Resume from sleep — back to idle
-    if (comp.animation === 'death') {
+    // Resume from sleep — back to idle. Don't clobber a different
+    // animation the user triggered (e.g. walk) and don't wake a
+    // manually-sleeping companion.
+    if (comp.animation === 'death' && !manualSleep && !timeBasedSleep) {
       comp.animation = 'idle';
       comp.frame = 0;
     }

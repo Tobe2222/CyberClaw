@@ -141,6 +141,8 @@ async function loadAgents() {
         status: a.status,
         isMain: false, // legacy field, kept false (no leader concept in v3.1.3+)
         sleepState: 'awake', // 'awake' or 'sleeping' — toggled manually or auto on chat
+        bootTs: Date.now(), // for auto-sleep-on-inactivity
+        lastInteractionTs: Date.now(), // reset by bumpCompanionInteraction()
         skills: defaultSkills,
       };
       agentOrder.push(a.id);
@@ -276,9 +278,10 @@ async function initArenaCompanions() {
         currentCompanionId = pixelId;
         localStorage.setItem('cyberclaw-selected-companion', pixelId);
         await pixelArena.setCompanion(id, pixelId, agent.name);
-        // Apply the saved sleep state to the sprite
-        if (pixelArena.companion && agent.sleepState === 'sleeping') {
-          pixelArena.companion.animation = 'death';
+        // Apply the saved sleep state to the sprite (v3.1.4: the arena's
+        // update loop honours comp.sleepState, so just set it there).
+        if (pixelArena.companion) {
+          pixelArena.companion.sleepState = agent.sleepState || 'awake';
         }
         debugLog('[Arena] Companion set: ' + agent.name + ' (' + pixelId + ')');
       } else {
@@ -499,18 +502,21 @@ window.toggleCompanionSleep = function() {
   if (!agent) return;
   if (agent.sleepState === 'sleeping') {
     agent.sleepState = 'awake';
-    // Wake the arena sprite if this is the one currently shown
+    // Wake the arena sprite if this is the one currently shown.
+    // The _updateCompanion loop checks comp.sleepState; we just need to
+    // clear it and reset velocity so the sprite doesn't keep drifting.
     if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
-      pixelArena.companion.animation = 'idle';
+      pixelArena.companion.sleepState = 'awake';
       pixelArena.companion.vx = 0;
       pixelArena.companion.vy = 0;
       pixelArena.companion.frame = 0;
+      pixelArena.companion.animation = 'idle';
     }
     addChatMsg('system', `☀️ ${agent.name} woke up`);
   } else {
     agent.sleepState = 'sleeping';
     if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
-      pixelArena.companion.animation = 'death';
+      pixelArena.companion.sleepState = 'sleeping';
       pixelArena.companion.vx = 0;
       pixelArena.companion.vy = 0;
     }
@@ -519,6 +525,7 @@ window.toggleCompanionSleep = function() {
   // Refresh the inspect panel and the channel header
   if (window._inspectAgentId === id) updateInspect(id);
   if (activeChatAgentId === id) updateChatHeader(id);
+  bumpCompanionInteraction(id); // v3.1.4: manual toggle counts as interaction
 };
 
 // Pop-out companion window via Electron BrowserWindow
@@ -557,6 +564,7 @@ function updateCarousel() {
 
   // Update focused agent strip + right panel
   const focusedId = agentOrder[focusIndex];
+  bumpCompanionInteraction(focusedId); // v3.1.4: count focus change as interaction
   updateFocused(focusedId);
   updateInspect(focusedId);
   updateChatTarget();
@@ -603,13 +611,9 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  // Set type badge — v3.1.3: every companion is just a "Companion",
-  // no more leader sub-label.
-  const typeBadge = document.getElementById('inspect-type-label');
-  if (typeBadge) {
-    typeBadge.textContent = 'Companion';
-    typeBadge.className = 'inspect-type-badge companion';
-  }
+  // v3.1.4: the type badge was removed (every companion is just a
+  // Companion; the badge was redundant noise).
+
 
   // Camera view — track the currently inspected agent ID for the render loop
   window._inspectAgentId = agentId;
@@ -1388,13 +1392,19 @@ window.sendChat = async function() {
   if (!message || chatBusy || agentOrder.length === 0) return;
 
   // v3.1.3: auto-wake the target companion so they can reply.
+  // v3.1.4: also set pixelArena.companion.sleepState so the arena
+  // update loop doesn't snap the sprite back to death.
   const targetId = agentOrder[focusIndex] || pickCurrentCompanionId();
   if (targetId && agents[targetId] && agents[targetId].sleepState === 'sleeping') {
     agents[targetId].sleepState = 'awake';
     if (pixelArena && pixelArena.companion && pixelArena.companion.id === targetId) {
-      pixelArena.companion.animation = 'idle';
+      pixelArena.companion.sleepState = 'awake';
+      pixelArena.companion.vx = 0;
+      pixelArena.companion.vy = 0;
+      pixelArena.companion.frame = 0;
     }
   }
+  bumpCompanionInteraction(targetId); // v3.1.4: reset auto-sleep timer
 
   const agent = agents[agentOrder[focusIndex]];
   if (!agent) return;
@@ -1530,12 +1540,18 @@ window.sendChatMessage = async function(message) {
   if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
   // v3.1.3: auto-wake the target companion so they can reply.
+  // v3.1.4: also clear pixelArena.companion.sleepState so the arena
+  // update loop doesn't snap the sprite back to death.
   if (agents[mainAgentId].sleepState === 'sleeping') {
     agents[mainAgentId].sleepState = 'awake';
     if (pixelArena && pixelArena.companion && pixelArena.companion.id === mainAgentId) {
-      pixelArena.companion.animation = 'idle';
+      pixelArena.companion.sleepState = 'awake';
+      pixelArena.companion.vx = 0;
+      pixelArena.companion.vy = 0;
+      pixelArena.companion.frame = 0;
     }
   }
+  bumpCompanionInteraction(mainAgentId); // v3.1.4: reset auto-sleep timer
 
   const agent = agents[mainAgentId];
   if (!agent) return;
@@ -4096,6 +4112,39 @@ function nudgeNightWake() {
   if (isNightTime()) wakeFromSleep();
 }
 
+// ── AUTO-SLEEP ON INACTIVITY (v3.1.4) ──────────────────────────────
+// Each companion tracks a lastInteractionTs. After `AUTO_SLEEP_AFTER_MS`
+// of no interaction, the companion goes to sleep on its own. Any
+// interaction (chat, focus change, manual wake) resets the timer.
+var AUTO_SLEEP_AFTER_MS = 12 * 60 * 1000; // 12 minutes of inactivity
+function bumpCompanionInteraction(agentId) {
+  if (!agentId) return;
+  if (agents[agentId]) agents[agentId].lastInteractionTs = Date.now();
+}
+function scheduleAutoSleep() {
+  setInterval(function() {
+    const now = Date.now();
+    for (const id of agentOrder) {
+      const a = agents[id];
+      if (!a) continue;
+      if (a.sleepState === 'sleeping') continue;
+      const last = a.lastInteractionTs || a.bootTs || now;
+      if (now - last > AUTO_SLEEP_AFTER_MS) {
+        // Auto-sleep this companion
+        a.sleepState = 'sleeping';
+        if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
+          pixelArena.companion.sleepState = 'sleeping';
+          pixelArena.companion.vx = 0;
+          pixelArena.companion.vy = 0;
+        }
+        addChatMsg('system', `💤 ${a.name} fell asleep`);
+        if (window._inspectAgentId === id) updateInspect(id);
+        if (activeChatAgentId === id) updateChatHeader(id);
+      }
+    }
+  }, 60 * 1000); // check every minute
+}
+
 function scheduleIdleChatter() {
   // v3.1.3: bumped from ~20min to ~60-90min so chatter stays sparse.
   var minMs = 60 * 60 * 1000;
@@ -4122,6 +4171,7 @@ function scheduleIdleChatter() {
 setTimeout(function() {
   if (!isAsleep()) doStartupGreeting();
   scheduleIdleChatter();
+  scheduleAutoSleep(); // v3.1.4: auto-sleep on inactivity
 }, 2000);
 
 // ═══════════════════════════════════════════════════════════

@@ -271,10 +271,11 @@
           <canvas id="inspect-camera" width="180" height="120"></canvas>
         </div>
 
-        <!-- Name + type -->
+        <!-- Name + status (v3.1.4: removed the "Companion" type badge
+             since every companion is just a Companion, the badge was
+             noise. Status row is centered.) -->
         <div id="inspect-header-block">
           <div id="inspect-name" class="legendary-text">Codesuu</div>
-          <div id="inspect-type-label" class="inspect-type-badge">Companion</div>
           <div class="inspect-status-row">
             <div class="inspect-status" id="inspect-status">
               <span class="status-dot online"></span> Online
@@ -308,16 +309,18 @@
           </div>
         </div>
 
-        <!-- Abilities (v3.1.3: renamed from "Skills" to avoid confusion
-             with the gear-grid "Skills" section below) -->
+        <!-- Skills (v3.1.4: swapped with Abilities; the categories here
+             are what openclaw calls "skills", so the user-facing label
+             is now "Skills" to match) -->
         <div class="inspect-section">
-          <div class="section-title">Abilities</div>
+          <div class="section-title">Skills</div>
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Skills (v3.1.3: simplified to two buttons + modal lists) -->
+        <!-- Abilities (v3.1.4: the equip/learn section, previously
+             labelled "Skills", is now "Abilities") -->
         <div class="inspect-section" id="inspect-skills-section">
-          <div class="section-title">Skills</div>
+          <div class="section-title">Abilities</div>
           <div class="inspect-skills-actions">
             <button class="learn-skill-btn" onclick="learnNewSkill()" title="Search and equip a new skill">📚 Learn New Skill</button>
             <button class="learned-skills-btn" onclick="openLearnedSkillsModal()" title="View the skills this companion already knows">📋 Learned Skills</button>
