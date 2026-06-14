@@ -1550,6 +1550,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendChat(); }
   });
 
+  // ── Chat / input vertical resizer ─────────────────────────────
+  // Drag the bar between #chat-messages and #chat-input-area to grow
+  // the input area (and shrink the messages) or vice versa.
+  (function setupChatResizer() {
+    const resizer = document.getElementById('chat-resizer');
+    const inputArea = document.getElementById('chat-input-area');
+    const messages = document.getElementById('chat-messages');
+    const STORAGE_KEY = 'cyberclaw-input-height';
+    const MIN_INPUT = 56;   // ~2 lines worth
+    const MAX_INPUT = 360;  // generous cap
+
+    // Restore saved height
+    try {
+      const saved = parseInt(localStorage.getItem(STORAGE_KEY) || '', 10);
+      if (saved >= MIN_INPUT && saved <= MAX_INPUT) {
+        inputArea.style.flexBasis = saved + 'px';
+        inputArea.style.flexGrow = '0';
+        inputArea.style.flexShrink = '0';
+        if (messages) { messages.style.flex = '1 1 auto'; }
+      }
+    } catch {}
+
+    if (!resizer) return;
+    let dragging = false;
+    let startY = 0;
+    let startH = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+      dragging = true;
+      startY = e.clientY;
+      startH = inputArea.getBoundingClientRect().height;
+      resizer.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const delta = e.clientY - startY;
+      let newH = Math.max(MIN_INPUT, Math.min(MAX_INPUT, startH + delta));
+      inputArea.style.flexBasis = newH + 'px';
+      inputArea.style.flexGrow = '0';
+      inputArea.style.flexShrink = '0';
+      // Auto-grow textarea as the input area grows
+      const textarea = document.getElementById('chat-input');
+      if (textarea) {
+        const maxTA = Math.max(60, newH - 24); // room for padding/image-preview
+        textarea.style.maxHeight = maxTA + 'px';
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      const finalH = Math.round(inputArea.getBoundingClientRect().height);
+      try { localStorage.setItem(STORAGE_KEY, String(finalH)); } catch {}
+    });
+
+    // Double-click the bar = reset to default 2-line height
+    resizer.addEventListener('dblclick', () => {
+      inputArea.style.flexBasis = '';
+      inputArea.style.flexGrow = '';
+      inputArea.style.flexShrink = '';
+      if (messages) { messages.style.flex = ''; }
+      const textarea = document.getElementById('chat-input');
+      if (textarea) textarea.style.maxHeight = '';
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    });
+  })();
+
   // Typing watcher — companion reacts if user types but doesn't send for 30s+
   (function() {
     var typingTimer = null;
@@ -1851,6 +1923,66 @@ window.openCompanionEditor = function() {
   }
 };
 
+// Open the forge pre-configured for a brand-new companion: name is empty,
+// no sprite is pre-selected, and the sprite picker is shown so the user
+// must pick a visual before they can save. The save will update the
+// current leader's sprite + name in place.
+window.createNewCompanion = function() {
+  const agentId = agentOrder[focusIndex] || (window.leaderId) || (agentOrder.find(id => agents[id]?.isMain));
+  if (!agentId) {
+    addChatMsg('error', 'No agent available to attach the new companion to.');
+    return;
+  }
+  editorAgentId = agentId;
+  const agent = agents[agentId];
+  selectedPixelCompanion = null;
+
+  // Clear the name field — force the user to type one
+  const nameEl = document.getElementById('editor-name');
+  if (nameEl) { nameEl.value = ''; nameEl.placeholder = 'Name your new companion...'; nameEl.focus(); }
+
+  // Uncheck all trait checkboxes (start fresh)
+  document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(cb => { cb.checked = false; });
+
+  // Show a blank preview
+  const viewer = document.getElementById('forge-companion-viewer');
+  if (viewer) {
+    if (forgeCompanionSprite) forgeCompanionSprite.dispose();
+    forgeCompanionSprite = new PixelSprite(viewer, { scale: 4, direction: 0, animation: 'idle' });
+    forgeCompanionSprite.show('boar'); // harmless default; the picker forces a choice
+  }
+  renderPixelGallery();
+  // Open the picker so the user MUST pick a sprite before saving
+  const picker = document.getElementById('companion-picker');
+  if (picker) picker.classList.remove('hidden');
+  // Reset model selections to defaults
+  refreshForgeModelDropdowns().catch(() => {});
+  const modelEl = document.getElementById('forge-model-primary');
+  if (modelEl) modelEl.value = agent.primaryModel || 'anthropic/claude-opus-4-6';
+  const modelEl2 = document.getElementById('forge-model-secondary');
+  if (modelEl2) modelEl2.value = agent.secondaryModel || '';
+
+  // Patch saveCompanion briefly so it refuses to save without a sprite
+  const origSave = window.saveCompanion;
+  window.saveCompanion = async function guardedSave() {
+    if (!selectedPixelCompanion) {
+      addChatMsg('error', 'Pick a companion sprite before saving.');
+      return;
+    }
+    const newName = (document.getElementById('editor-name')?.value || '').trim();
+    if (!newName) {
+      addChatMsg('error', 'Give your companion a name first.');
+      const ne = document.getElementById('editor-name'); if (ne) ne.focus();
+      return;
+    }
+    window.saveCompanion = origSave;
+    return origSave.apply(this, arguments);
+  };
+
+  document.getElementById('companion-editor-overlay').classList.remove('hidden');
+  addChatMsg('system', '✨ Pick a sprite and name your new companion.');
+};
+
 // ── COMPANION FORGE ─────────────────────────────────────────
 let forgeCompanionSprite = null;
 
@@ -1864,6 +1996,9 @@ function openCompanionForge(agentId) {
   // Hide companion picker by default
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.add('hidden');
+
+  // Refresh the model dropdowns to include any custom providers the user added
+  refreshForgeModelDropdowns().catch(e => console.warn('refreshForgeModelDropdowns:', e));
 
   // Load saved config and show companion preview
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
@@ -1883,9 +2018,20 @@ function openCompanionForge(agentId) {
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
       cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
     });
-    // Load models
+    // Load models — prefer saved config, fall back to agent's stored model
     const modelEl = document.getElementById('forge-model-primary');
-    if (modelEl) modelEl.value = agent.primaryModel || 'anthropic/claude-opus-4-6';
+    if (modelEl) {
+      const desired = (config && config.primaryModel) || agent.primaryModel || 'anthropic/claude-opus-4-6';
+      // If the saved value isn't a current option (e.g. the provider was deleted),
+      // keep it as a custom option so the user can see what's configured.
+      if (![...modelEl.options].some(o => o.value === desired)) {
+        const opt = document.createElement('option');
+        opt.value = desired; opt.textContent = desired + ' (custom / missing)'; opt.selected = true;
+        modelEl.insertBefore(opt, modelEl.firstChild);
+      } else {
+        modelEl.value = desired;
+      }
+    }
     const modelEl2 = document.getElementById('forge-model-secondary');
     if (modelEl2) modelEl2.value = agent.secondaryModel || '';
   });
@@ -2276,14 +2422,7 @@ function saveSettings() {
   if (autoEl) s.voiceAutoSend = autoEl.checked;
   const modelEl = document.getElementById('settings-default-model');
   if (modelEl) s.defaultModel = modelEl.value;
-  const antEl = document.getElementById('settings-key-anthropic');
-  if (antEl) s.keyAnthropic = antEl.value.trim();
-  const oaiEl = document.getElementById('settings-key-openai');
-  if (oaiEl) s.keyOpenai = oaiEl.value.trim();
-  const gooEl = document.getElementById('settings-key-google');
-  if (gooEl) s.keyGoogle = gooEl.value.trim();
-  const ollEl = document.getElementById('settings-ollama-url');
-  if (ollEl) s.ollamaUrl = ollEl.value.trim();
+  // Legacy provider key fields were removed; values still in s.* if previously saved.
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) s.discordToken = discEl.value.trim();
   const teleEl = document.getElementById('settings-telegram-token');
@@ -2332,14 +2471,9 @@ window.openSettings = function() {
   if (keybindLabel) keybindLabel.textContent = s.voiceKeybindLabel || 'V';
   const modelEl = document.getElementById('settings-default-model');
   if (modelEl) modelEl.value = s.defaultModel || '';
-  const antEl = document.getElementById('settings-key-anthropic');
-  if (antEl) antEl.value = s.keyAnthropic || '';
-  const oaiEl = document.getElementById('settings-key-openai');
-  if (oaiEl) oaiEl.value = s.keyOpenai || '';
-  const gooEl = document.getElementById('settings-key-google');
-  if (gooEl) gooEl.value = s.keyGoogle || '';
-  const ollEl = document.getElementById('settings-ollama-url');
-  if (ollEl) ollEl.value = s.ollamaUrl || '';
+  // Refresh the dynamic providers list + default-model dropdown whenever settings opens
+  try { renderProvidersList(); } catch (e) { console.warn('renderProvidersList:', e); }
+  try { refreshDefaultModelDropdown(); } catch (e) { console.warn('refreshDefaultModelDropdown:', e); }
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) discEl.value = s.discordToken || '';
   const teleEl = document.getElementById('settings-telegram-token');
@@ -2395,6 +2529,177 @@ window.resetSettings = function() {
   applySettings();
   openSettings();
 };
+
+// ── Custom LLM Providers ────────────────────────────────────────
+// Each provider: { id, name, baseUrl, apiKey?, defaultModel?, api }
+// `api` is the wire format: 'openai-completions' (most) or 'anthropic-messages'.
+async function fetchProviders() {
+  try { return await cyberclaw.providers.list(); } catch { return []; }
+}
+
+async function renderProvidersList() {
+  const list = document.getElementById('providers-list');
+  if (!list) return;
+  const providers = await fetchProviders();
+  if (!providers.length) {
+    list.innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:6px 2px;">No saved providers yet. Add one below.</div>';
+    return;
+  }
+  list.innerHTML = providers.map(p => {
+    const safeId = (p.id || '').replace(/[^a-z0-9_-]/gi, '');
+    const url = p.baseUrl ? p.baseUrl.replace(/^https?:\/\//, '') : '';
+    return `
+      <div class="provider-row" data-provider-id="${safeId}">
+        <span class="provider-name">🧠 ${escapeHtml(p.name)}</span>
+        <span class="provider-url" title="${escapeHtml(p.baseUrl || '')}">${escapeHtml(url)}</span>
+        <span class="provider-model" title="${escapeHtml(p.defaultModel || '')}">${escapeHtml(p.defaultModel || '—')}</span>
+        <button class="btn-xs btn-danger" onclick="deleteProvider('${safeId}')" title="Delete this provider">✕</button>
+      </div>`;
+  }).join('');
+}
+
+async function refreshDefaultModelDropdown() {
+  const sel = document.getElementById('settings-default-model');
+  if (!sel) return;
+  const current = sel.value;
+  const providers = await fetchProviders();
+  const settings = loadSettings();
+  // Build options: keep the "Use OpenClaw default" entry, then a group per provider
+  // We list the *default model* from each provider, but also include a few
+  // common well-known models so the dropdown remains useful even before any
+  // provider is saved.
+  const wellKnown = [
+    { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
+    { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
+    { provider: 'Anthropic',  model: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
+    { provider: 'OpenAI',     model: 'openai/gpt-4o',              label: 'GPT-4o' },
+    { provider: 'OpenAI',     model: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
+    { provider: 'Google',     model: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
+    { provider: 'Google',     model: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
+    { provider: 'Local',      model: 'ollama/llama3',              label: 'Ollama — Llama 3' },
+  ];
+  const groups = {};
+  for (const w of wellKnown) {
+    (groups[w.provider] = groups[w.provider] || []).push(
+      `<option value="${escapeAttr(w.model)}"${w.model === current ? ' selected' : ''}>${escapeHtml(w.label)}</option>`
+    );
+  }
+  for (const p of providers) {
+    const groupName = p.name || p.id || 'Provider';
+    const model = (p.defaultModel || '').trim();
+    if (!model) continue;
+    (groups[groupName] = groups[groupName] || []).push(
+      `<option value="${escapeAttr(model)}"${model === current ? ' selected' : ''}>${escapeHtml(p.name)} — ${escapeHtml(model)}</option>`
+    );
+  }
+  const html = `<option value="">Use OpenClaw default</option>` +
+    Object.keys(groups).sort().map(name =>
+      `<optgroup label="${escapeAttr(name)}">${groups[name].join('')}</optgroup>`
+    ).join('');
+  sel.innerHTML = html;
+  // Restore selection if still valid
+  if (current) sel.value = current;
+  // Save current setting so the default model round-trips
+  settings.defaultModel = sel.value;
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+window.addProvider = async function() {
+  const name = (document.getElementById('provider-add-name')?.value || '').trim();
+  const baseUrl = (document.getElementById('provider-add-url')?.value || '').trim();
+  const apiKey = (document.getElementById('provider-add-key')?.value || '').trim();
+  const defaultModel = (document.getElementById('provider-add-model')?.value || '').trim();
+  const api = document.getElementById('provider-add-api')?.value || 'openai-completions';
+  if (!name || !baseUrl) {
+    alert('Provider needs at least a name and base URL.');
+    return;
+  }
+  const res = await cyberclaw.providers.save({ name, baseUrl, apiKey, defaultModel, api });
+  if (!res || !res.ok) {
+    alert('Failed to save provider: ' + (res?.error || 'unknown'));
+    return;
+  }
+  // Clear form
+  ['provider-add-name','provider-add-url','provider-add-key','provider-add-model'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  // Close the details panel
+  const det = document.getElementById('provider-add-details');
+  if (det) det.removeAttribute('open');
+  await renderProvidersList();
+  await refreshDefaultModelDropdown();
+  addChatMsg('system', '✅ Provider saved: ' + name);
+};
+
+window.cancelAddProvider = function() {
+  ['provider-add-name','provider-add-url','provider-add-key','provider-add-model'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const det = document.getElementById('provider-add-details');
+  if (det) det.removeAttribute('open');
+};
+
+window.deleteProvider = async function(id) {
+  if (!confirm('Delete this provider? Saved models in companion configs will be kept but may stop working.')) return;
+  await cyberclaw.providers.delete(id);
+  await renderProvidersList();
+  await refreshDefaultModelDropdown();
+  addChatMsg('system', '🗑️ Provider deleted');
+};
+
+// Populate the companion forge model dropdown with hard-coded + custom providers
+async function refreshForgeModelDropdowns() {
+  const providers = await fetchProviders();
+  // Hard-coded well-known models
+  const wellKnown = [
+    { group: 'Anthropic', options: [
+      { value: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
+      { value: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
+    ]},
+    { group: 'OpenAI', options: [
+      { value: 'openai/gpt-4o',              label: 'GPT-4o' },
+      { value: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
+    ]},
+    { group: 'Google', options: [
+      { value: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
+      { value: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
+    ]},
+    { group: 'Local', options: [
+      { value: 'ollama/llama3',              label: 'Ollama — Llama 3' },
+    ]},
+  ];
+  // Custom providers
+  for (const p of providers) {
+    const model = (p.defaultModel || '').trim();
+    if (!model) continue;
+    wellKnown.push({ group: p.name || p.id, options: [{ value: model, label: model }] });
+  }
+  const html = wellKnown.map(g =>
+    `<optgroup label="${escapeAttr(g.group)}">${g.options.map(o =>
+      `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`
+    ).join('')}</optgroup>`
+  ).join('');
+  const sel1 = document.getElementById('forge-model-primary');
+  const sel2 = document.getElementById('forge-model-secondary');
+  // Preserve current values
+  const v1 = sel1?.value; const v2 = sel2?.value;
+  if (sel1) sel1.innerHTML = html;
+  if (sel2) sel2.innerHTML = `<option value="">None (primary only)</option>` + html;
+  if (sel1 && v1) {
+    sel1.value = v1;
+    if (sel1.value !== v1) {
+      // value wasn't in the new list — keep it as a custom option so the
+      // user's existing config is preserved visually
+      const opt = document.createElement('option');
+      opt.value = v1; opt.textContent = v1 + ' (custom)'; opt.selected = true;
+      sel1.insertBefore(opt, sel1.firstChild);
+    }
+  }
+  if (sel2 && v2) sel2.value = v2;
+}
+
+function escapeAttr(s) { return String(s == null ? '' : s).replace(/[&"'<>]/g, c => ({'&':'&amp;','"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'})[c]); }
 
 // ── Mobile Companion ──
 let pairingTimerInterval = null;
@@ -2589,23 +2894,24 @@ try {
     console.log('[App] Received mobile companion change request:', companionId);
     try {
       if (window.pixelArena && window.leaderId) {
-        // Find companion name
-        const catalog = window._companionCatalog || loadPixelCatalog();
-        const comp = catalog?.companions?.find(c => c.id === companionId);
-        const companionName = comp?.name || companionId;
-        
+        // Always use the *agent's* own name (e.g. "Clawsuu") rather than the
+        // sprite species name (e.g. "Boar") — the displayed label should be
+        // the companion, not its visual.
+        const leader = window.agents && window.agents[window.leaderId];
+        const companionName = (leader && leader.name) || companionId;
+
         console.log('[App] Updating arena from mobile:', companionId);
         localStorage.setItem('cyberclaw-selected-companion', companionId);
         window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
         console.log('[App] Arena updated from mobile successfully');
-        
+
         // Update settings selector dropdown
         const selector = document.getElementById('companion-selector');
         if (selector) {
           selector.value = companionId;
           console.log('[App] Updated companion selector dropdown');
         }
-        
+
         // Notify user
         addChatMsg('system', `📱 Companion changed to ${companionName}`);
       } else {
@@ -3454,27 +3760,31 @@ window.openCompanionsView = function() {
       }
     });
     
-    (function(companionId, companionName) {
+    (function(companionId) {
       card.style.cursor = 'pointer';
       card.addEventListener('click', function(evt) {
         evt.stopPropagation();
         evt.preventDefault();
         console.log('[Companions] CLICKED:', companionId);
-        
+
         // Save to localStorage so we know which is current
         currentCompanionId = companionId; // Update global state
         localStorage.setItem('cyberclaw-selected-companion', companionId);
         console.log('[Companions] Saved to localStorage:', companionId, '(global:', currentCompanionId + ')');
-        
-        // Update the arena display in this window
+
+        // Update the arena display in this window. Use the AGENT's name, not
+        // the sprite's display name, so the label above the companion is
+        // always the companion (e.g. "Clawsuu") rather than its species.
         if (window.pixelArena) {
           console.log('[Companions] Updating arena to:', companionId);
           const leaderId = window.leaderId;
+          const leader = (window.agents && leaderId) ? window.agents[leaderId] : null;
+          const displayName = (leader && leader.name) || companionId;
           console.log('[Companions] leaderId:', leaderId);
           if (leaderId && window.pixelArena.setCompanion) {
-            console.log('[Companions] Calling setCompanion with:', leaderId, companionId, companionName);
+            console.log('[Companions] Calling setCompanion with:', leaderId, companionId, displayName);
             try {
-              window.pixelArena.setCompanion(leaderId, companionId, companionName);
+              window.pixelArena.setCompanion(leaderId, companionId, displayName);
               console.log('[Companions] Arena updated successfully');
             } catch (e) {
               console.error('[Companions] setCompanion error:', e);
@@ -3506,7 +3816,7 @@ window.openCompanionsView = function() {
           window.openCompanionsView();
         }, 100);
       });
-    })(comp.id, comp.name);
+    })(comp.id);
     
     compGrid.appendChild(card);
   });
@@ -3539,63 +3849,20 @@ window.focusCompanionFromView = function(agentId) {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  SPIRITS VIEW
+//  SPIRITS VIEW — removed in v3.1.0+
+//  (companion visuals are now managed through the Companion Forge)
+//  Functions kept as no-op stubs for backward compatibility.
 // ═══════════════════════════════════════════════════════════
 
 window.openSpiritsView = function() {
-  var list = document.getElementById('spirits-view-list');
-  if (!list) return;
-  list.innerHTML = '';
-
-  var spirits = agentOrder.filter(function(id) {
-    var a = agents[id];
-    return a && !a.isMain && !id.startsWith('subagent-');
-  });
-
-  if (!spirits.length) {
-    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No spirits yet. Add agents in OpenClaw to see them here.</div>';
-  } else {
-    spirits.forEach(function(id) {
-      var agent = agents[id];
-      var card = document.createElement('div');
-      card.className = 'companion-card';
-
-      var avatarHtml = agent.avatar && agent.avatar.startsWith('data:')
-        ? '<img class="companion-card-avatar" src="' + agent.avatar + '" alt="avatar">'
-        : '<div class="companion-card-avatar-placeholder">' + (agent.emoji || '✨') + '</div>';
-
-      var skills = (agent.focusSkills || []).map(function(s) {
-        return '<span class="companion-card-tag">' + s + '</span>';
-      }).join('');
-
-      var model = agent.primaryModel ? formatModelName(agent.primaryModel) : agent.model || '—';
-
-      card.innerHTML = avatarHtml +
-        '<div class="companion-card-body">' +
-          '<div class="companion-card-name">' + agent.name + '</div>' +
-          '<div class="companion-card-role">✨ Spirit' + (agent.class ? ' — ' + agent.class : '') + '</div>' +
-          (skills ? '<div class="companion-card-details">' + skills + '</div>' : '') +
-          '<div class="companion-card-model">🧠 ' + model + '</div>' +
-          '<div class="companion-card-actions">' +
-            '<button class="companion-card-btn primary" onclick="editSpiritFromView(\'' + id + '\')">✏️ Edit</button>' +
-            '<button class="companion-card-btn" onclick="focusCompanionFromView(\'' + id + '\')">👁 Focus</button>' +
-          '</div>' +
-        '</div>';
-
-      list.appendChild(card);
-    });
-  }
-
-  document.getElementById('spirits-view-overlay').classList.remove('hidden');
+  /* spirits view removed */
 };
 
-window.closeSpiritsView = function(e) {
-  if (e && e.target !== e.currentTarget) return;
-  document.getElementById('spirits-view-overlay').classList.add('hidden');
+window.closeSpiritsView = function(_e) {
+  /* no-op */
 };
 
 window.editSpiritFromView = function(agentId) {
-  window.closeSpiritsView();
   setTimeout(function() {
     var idx = agentOrder.indexOf(agentId);
     if (idx >= 0) focusIndex = idx;

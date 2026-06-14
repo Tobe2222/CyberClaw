@@ -46,6 +46,11 @@ window.cyberclaw = {
     pickDirectory: () => ipcRenderer.invoke('quests:pick-directory'),
     detectVersion: (dir) => ipcRenderer.invoke('quests:detect-version', dir),
   },
+  providers: {
+    list: () => ipcRenderer.invoke('providers:list'),
+    save: (provider) => ipcRenderer.invoke('providers:save', provider),
+    delete: (id) => ipcRenderer.invoke('providers:delete', id),
+  },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),
     install: (pkg) => ipcRenderer.invoke('wizard:install', pkg),

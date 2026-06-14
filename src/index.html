@@ -100,9 +100,8 @@
         <!-- Shared 2D pixel arena (the whole arena view) -->
         <div id="pixel-arena-container"></div>
 
-        <!-- View companions/spirits buttons (top left) -->
-        <button id="arena-companions-btn" onclick="openCompanionsView()" title="View companions">🐾 Companions</button>
-        <button id="arena-spirits-btn" onclick="openSpiritsView()" title="View spirits">✨ Spirits</button>
+        <!-- (Arena Companions/Spirits buttons removed in v1.4.5. Companion
+             visuals are now managed entirely through the Companion Forge.) -->
 
         <!-- Pop-out button -->
         <button id="arena-expand-btn" onclick="toggleArenaExpand()" title="Expand arena">⛶</button>
@@ -155,16 +154,7 @@
         </div>
       </div>
 
-      <!-- Spirits view modal -->
-      <div id="spirits-view-overlay" class="modal-overlay hidden" onclick="closeSpiritsView(event)">
-        <div class="modal-panel companions-view-panel" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <span class="rune-icon">✨</span> SPIRITS
-            <button class="modal-close" onclick="closeSpiritsView()">✕</button>
-          </div>
-          <div id="spirits-view-list" class="companions-view-list"></div>
-        </div>
-      </div>
+      <!-- (Spirits view removed in v1.4.5) -->
 
       <!-- Background selector modal -->
       <div id="bg-selector-overlay" class="modal-overlay hidden" onclick="closeBgSelector(event)">
@@ -206,6 +196,9 @@
         <div id="view-chat" class="term-view active">
           <div id="chat-messages">
           </div>
+          <div id="chat-resizer" title="Drag to resize chat / input">
+            <span class="resizer-grip"></span>
+          </div>
           <div id="chat-input-area">
             <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
             <div id="chat-image-preview" class="chat-image-preview hidden">
@@ -214,7 +207,7 @@
             </div>
             <div id="chat-input-row">
               <button id="chat-attach" onclick="pickImageAttachment()" title="Attach image">📎</button>
-              <input type="text" id="chat-input" placeholder="Type a message..." />
+              <textarea id="chat-input" rows="2" placeholder="Type a message... (Shift+Enter for newline)"></textarea>
               <button id="chat-voice" onclick="toggleVoiceInput()" title="Voice input">🎤</button>
               <button id="chat-send" onclick="sendChat()">⚔️</button>
             </div>
@@ -313,9 +306,10 @@
           </div>
         </div>
 
-        <!-- Edit button -->
+        <!-- Edit + Create buttons -->
         <div class="inspect-edit-row">
-          <button class="inspect-edit-btn" onclick="openCompanionEditor()" title="Edit character">🎨 Edit</button>
+          <button class="inspect-edit-btn" onclick="openCompanionEditor()" title="Edit current companion">🎨 Edit Companion</button>
+          <button class="inspect-edit-btn inspect-edit-btn-secondary" onclick="createNewCompanion()" title="Create a new companion from scratch">✨ Create New Companion</button>
         </div>
       </div>
     </aside>
@@ -398,42 +392,47 @@
             <span class="settings-label">Default Model</span>
             <select id="settings-default-model" class="settings-select" onchange="saveSettings()">
               <option value="">Use OpenClaw default</option>
-              <optgroup label="Anthropic">
-                <option value="anthropic/claude-opus-4">Claude Opus 4</option>
-                <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
-                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
-              </optgroup>
-              <optgroup label="OpenAI">
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                <option value="openai/o1">o1</option>
-              </optgroup>
-              <optgroup label="Google">
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              </optgroup>
-              <optgroup label="Local">
-                <option value="ollama/llama3">Ollama — Llama 3</option>
-                <option value="ollama/mistral">Ollama — Mistral</option>
-              </optgroup>
             </select>
           </div>
-          <div class="settings-row">
-            <span class="settings-label">Anthropic API Key</span>
-            <input type="password" class="settings-input" id="settings-key-anthropic" placeholder="sk-ant-..." onchange="saveSettings()" />
+          <div id="providers-list" class="providers-list">
+            <!-- Populated dynamically from cyberclaw.providers.list() -->
           </div>
-          <div class="settings-row">
-            <span class="settings-label">OpenAI API Key</span>
-            <input type="password" class="settings-input" id="settings-key-openai" placeholder="sk-..." onchange="saveSettings()" />
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin:8px 0 4px;">
+            Add your own LLM provider — name, base URL, optional API key, and any default model.
+            Saved providers appear in the companion model pickers.
           </div>
-          <div class="settings-row">
-            <span class="settings-label">Google AI Key</span>
-            <input type="password" class="settings-input" id="settings-key-google" placeholder="AIza..." onchange="saveSettings()" />
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Ollama URL</span>
-            <input type="text" class="settings-input" id="settings-ollama-url" placeholder="http://localhost:11434" onchange="saveSettings()" />
-          </div>
+          <details id="provider-add-details" class="provider-add">
+            <summary>➕ Add provider</summary>
+            <div class="provider-add-form">
+              <div class="settings-row" style="margin:6px 0;">
+                <span class="settings-label">Name</span>
+                <input type="text" class="settings-input" id="provider-add-name" placeholder="e.g. My OpenRouter" />
+              </div>
+              <div class="settings-row" style="margin:6px 0;">
+                <span class="settings-label">Base URL</span>
+                <input type="text" class="settings-input" id="provider-add-url" placeholder="https://openrouter.ai/api/v1" />
+              </div>
+              <div class="settings-row" style="margin:6px 0;">
+                <span class="settings-label">API Key</span>
+                <input type="password" class="settings-input" id="provider-add-key" placeholder="(optional)" />
+              </div>
+              <div class="settings-row" style="margin:6px 0;">
+                <span class="settings-label">Default Model</span>
+                <input type="text" class="settings-input" id="provider-add-model" placeholder="e.g. anthropic/claude-sonnet-4" />
+              </div>
+              <div class="settings-row" style="margin:6px 0;">
+                <span class="settings-label">API Style</span>
+                <select id="provider-add-api" class="settings-select">
+                  <option value="openai-completions">OpenAI-compatible (most providers)</option>
+                  <option value="anthropic-messages">Anthropic Messages API</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;">
+                <button class="btn-sm btn-muted" onclick="cancelAddProvider()">Cancel</button>
+                <button class="btn-sm btn-primary" onclick="addProvider()">💾 Save provider</button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <!-- Agent Channels -->
@@ -550,45 +549,10 @@
           <input type="text" id="editor-name" class="editor-name-input" placeholder="Companion Name" />
         </div>
 
-        <!-- Equipment + Companion viewer -->
-        <div class="forge-equip-area">
-          <!-- Left equipment slots -->
-          <div class="equip-column equip-left">
-            <div class="equip-slot" data-slot="head" title="Head">
-              <span class="equip-icon">🪖</span>
-              <span class="equip-label">Head</span>
-            </div>
-            <div class="equip-slot" data-slot="neck" title="Neck">
-              <span class="equip-icon">📿</span>
-              <span class="equip-label">Neck</span>
-            </div>
-            <div class="equip-slot" data-slot="weapon" title="Weapon">
-              <span class="equip-icon">⚔️</span>
-              <span class="equip-label">Weapon</span>
-            </div>
-          </div>
-
-          <!-- Center: companion preview -->
-          <div class="forge-companion-preview">
-            <button class="forge-change-btn" onclick="toggleCompanionPicker()">🔄 Change</button>
-            <div id="forge-companion-viewer"></div>
-          </div>
-
-          <!-- Right equipment slots -->
-          <div class="equip-column equip-right">
-            <div class="equip-slot" data-slot="ring1" title="Ring">
-              <span class="equip-icon">💍</span>
-              <span class="equip-label">Ring</span>
-            </div>
-            <div class="equip-slot" data-slot="ring2" title="Ring">
-              <span class="equip-icon">💍</span>
-              <span class="equip-label">Ring</span>
-            </div>
-            <div class="equip-slot" data-slot="trinket" title="Trinket">
-              <span class="equip-icon">🔮</span>
-              <span class="equip-label">Trinket</span>
-            </div>
-          </div>
+        <!-- Companion viewer (no equipment slots) -->
+        <div class="forge-companion-preview">
+          <button class="forge-change-btn" onclick="toggleCompanionPicker()">🔄 Change Companion</button>
+          <div id="forge-companion-viewer"></div>
         </div>
 
         <!-- Companion picker (hidden by default) -->

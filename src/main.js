@@ -22,6 +22,7 @@ const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
 const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
+const PROVIDERS_FILE = path.join(CYBERCLAW_DIR, 'providers.json');
 
 // Companion stats persistence (skills, XP, levels)
 function loadStats() {
@@ -486,33 +487,80 @@ ipcMain.on('chat:resize', (event, { cols, rows }) => {
 // ---------------------------------------------------------------------------
 // Chat — send messages to agents via gateway
 // ---------------------------------------------------------------------------
+// Robust JSON extractor: scans for the first valid top-level JSON object
+// in a buffer that may be polluted with stderr noise (e.g. "[state-migrations] ...").
+function extractFirstJsonObject(buf) {
+  if (typeof buf !== 'string' || !buf) return null;
+  // Fast path: already valid JSON
+  try { return JSON.parse(buf); } catch {}
+  const start = buf.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < buf.length; i++) {
+    const c = buf[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') inStr = false;
+    } else {
+      if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          const candidate = buf.slice(start, i + 1);
+          try { return JSON.parse(candidate); } catch { return null; }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
   const bin = findOpenClaw();
   if (!bin) return { ok: false, error: 'OpenClaw not found' };
 
   try {
     const result = await new Promise((resolve) => {
+      // Note: we intentionally do NOT use `2>&1` here. Stderr is captured
+      // separately so it can't pollute the JSON payload and cause raw
+      // debug output to leak into the chat.
       execCb(
-        `"${bin}" agent -m "${message.replace(/"/g, '\\"')}" --agent "${agentId}" --json 2>&1`,
+        `"${bin}" agent -m "${message.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
         { timeout: 120000, maxBuffer: 1024 * 512, env: { ...process.env } },
         (err, stdout, stderr) => {
-          if (err) {
-            resolve({ ok: false, error: err.message, output: stdout + stderr });
+          if (err && (!stdout || !stdout.trim())) {
+            resolve({ ok: false, error: err.message, output: stderr || err.message });
+            return;
+          }
+          const parsed = extractFirstJsonObject(stdout);
+          if (parsed) {
+            // Extract reply from various response formats:
+            // 1. OpenClaw agent --json: { result: { payloads: [{ text: "..." }] } }
+            // 2. Simple: { reply: "..." } or { message: "..." } or { text: "..." }
+            let reply = null;
+            if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
+              reply = parsed.result.payloads[0].text;
+            }
+            if (!reply) reply = parsed.reply || parsed.message || parsed.text;
+            if (!reply && typeof parsed === 'string') reply = parsed;
+            if (reply && reply.trim()) {
+              resolve({ ok: true, reply: reply });
+            } else {
+              // Parsed but no reply field — surface a friendly note rather than dumping JSON
+              resolve({ ok: false, error: parsed.error || 'No reply in agent response', output: stderr || '' });
+            }
           } else {
-            try {
-              const parsed = JSON.parse(stdout);
-              // Extract reply from various response formats:
-              // 1. OpenClaw agent --json: { result: { payloads: [{ text: "..." }] } }
-              // 2. Simple: { reply: "..." } or { message: "..." } or { text: "..." }
-              let reply = null;
-              if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
-                reply = parsed.result.payloads[0].text;
-              }
-              if (!reply) reply = parsed.reply || parsed.message || parsed.text;
-              if (!reply && typeof parsed === 'string') reply = parsed;
-              resolve({ ok: true, reply: reply || stdout.trim() });
-            } catch {
-              resolve({ ok: true, reply: stdout.trim() });
+            // No valid JSON — return stdout only if it looks like text, not a debug dump
+            const trimmed = (stdout || '').trim();
+            const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+            if (trimmed && !looksLikeJson) {
+              resolve({ ok: true, reply: trimmed });
+            } else {
+              resolve({ ok: false, error: 'Could not parse agent response', output: stderr || trimmed });
             }
           }
         }
@@ -700,6 +748,52 @@ ipcMain.handle('companion:save-avatar', (event, agentId, dataUrl) => {
   const avatarPath = path.join(avatarsDir, `${agentId}.png`);
   fs.writeFileSync(avatarPath, Buffer.from(base64, 'base64'));
   return avatarPath;
+});
+
+// ─── Custom LLM Providers ────────────────────────────────────────────────
+// Persisted in PROVIDERS_FILE. A provider is:
+//   { id, name, baseUrl, apiKey?, defaultModel?, api? }   (api: 'openai-completions' | 'anthropic-messages')
+function loadProviders() {
+  try { return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8')); } catch { return []; }
+}
+function saveProviders(list) {
+  if (!fs.existsSync(CYBERCLAW_DIR)) fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
+  fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(list, null, 2));
+}
+ipcMain.handle('providers:list', () => {
+  return loadProviders();
+});
+ipcMain.handle('providers:save', (event, provider) => {
+  if (!provider || !provider.name || !provider.baseUrl) {
+    return { ok: false, error: 'name and baseUrl are required' };
+  }
+  const list = loadProviders();
+  // id is optional; if absent, generate from name
+  if (!provider.id) {
+    const base = provider.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    let id = base || 'provider';
+    let n = 2;
+    while (list.some(p => p.id === id)) id = base + '-' + (n++);
+    provider.id = id;
+  }
+  const existing = list.findIndex(p => p.id === provider.id);
+  const clean = {
+    id: provider.id,
+    name: String(provider.name).trim(),
+    baseUrl: String(provider.baseUrl).trim(),
+    apiKey: provider.apiKey ? String(provider.apiKey) : '',
+    defaultModel: provider.defaultModel ? String(provider.defaultModel) : '',
+    api: provider.api || 'openai-completions',
+  };
+  if (existing >= 0) list[existing] = clean;
+  else list.push(clean);
+  saveProviders(list);
+  return { ok: true, provider: clean };
+});
+ipcMain.handle('providers:delete', (event, id) => {
+  const list = loadProviders().filter(p => p.id !== id);
+  saveProviders(list);
+  return { ok: true };
 });
 ipcMain.handle('quests:detect-version', (event, dir) => {
   if (!dir) return null;

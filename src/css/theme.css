@@ -35,6 +35,10 @@
   --green:         #4ade80;
   --blue:          #00d4ff;
   --pink:          #f472b6;
+
+  /* Generic accent (alias for orange) — used by buttons like Save */
+  --accent:        #ff6b35;
+  --accent-dim:    #cc5528;
   
   /* Rarity colors (RPG item tiers) */
   --common:        #9ca3af;

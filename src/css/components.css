@@ -991,6 +991,44 @@
 .btn-primary:hover { filter: brightness(1.2); }
 .btn-muted { background: var(--bg-dark); color: var(--text-muted); border: 1px solid var(--border); }
 .btn-muted:hover { border-color: var(--text-muted); }
+.btn-danger { background: rgba(255,51,102,0.12); color: var(--red); border: 1px solid rgba(255,51,102,0.4); }
+.btn-danger:hover { background: rgba(255,51,102,0.22); border-color: var(--red); }
+
+/* ---- LLM Providers list (Settings) ---- */
+.providers-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.provider-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-dark);
+}
+.provider-row .provider-name {
+  font-weight: bold; color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 12px; flex: 0 0 auto;
+}
+.provider-row .provider-url {
+  flex: 1; color: var(--text-muted); font-size: 10px;
+  font-family: var(--font-mono); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.provider-row .provider-model {
+  color: var(--cyan-dim); font-size: 10px; font-family: var(--font-mono);
+  max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.provider-add {
+  margin-top: 8px; border: 1px dashed var(--border-mid); border-radius: 6px;
+  padding: 6px 10px; background: rgba(0,0,0,0.25);
+}
+.provider-add summary {
+  cursor: pointer; color: var(--accent); font-size: 11px;
+  font-family: var(--font-mono); padding: 4px 0;
+  list-style: none; user-select: none;
+}
+.provider-add summary::-webkit-details-marker { display: none; }
+.provider-add summary:hover { color: var(--orange-bright); }
+.provider-add[open] summary { margin-bottom: 6px; }
+.provider-add-form { display: flex; flex-direction: column; }
+body.theme-light .provider-row { background: #fff; }
+body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
 
 /* ─── Generate Companion Button (top right of arena) ─── */
 /* ─── Bottom Buttons ─── */
@@ -1562,28 +1600,8 @@
 /* Companion Forge layout */
 .forge-companion-layout { display: flex; flex-direction: column; }
 
-.forge-equip-area {
-  display: flex; align-items: center; justify-content: center;
-  gap: 12px; padding: 12px;
-}
-
-.equip-column { display: flex; flex-direction: column; gap: 8px; }
-
-.equip-slot {
-  width: 56px; height: 56px; border: 2px solid var(--border);
-  border-radius: 8px; background: rgba(0,0,0,0.4);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s;
-}
-.equip-slot:hover { border-color: var(--accent); background: rgba(255,153,0,0.05); }
-.equip-slot .equip-icon { font-size: 18px; }
-.equip-slot .equip-label {
-  font-size: 7px; color: var(--text-muted); font-family: var(--font-mono);
-  text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;
-}
-
 .forge-companion-preview {
-  position: relative; width: 180px; height: 180px;
+  position: relative; width: 200px; height: 200px; margin: 14px auto 8px;
   border: 2px solid var(--border-dark); border-radius: 10px;
   background: rgba(0,0,0,0.3); overflow: hidden;
 }
