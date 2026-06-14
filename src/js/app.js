@@ -206,7 +206,7 @@ async function loadAgents() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared 2D Pixel Arena — Companion + Spirits
+// Shared 2D Pixel Arena — Companions
 // ---------------------------------------------------------------------------
 function buildCarousel() {
   // Dispose old arena (treats survive via window._arenaTreats)
@@ -235,7 +235,7 @@ function buildCarousel() {
     }
   };
 
-  // Populate companion + spirits
+  // Populate companions
   initArenaCompanions();
   updateCarousel();
 }
@@ -752,7 +752,7 @@ function updateInspect(agentId) {
     const levelEl = document.getElementById('inspect-level');
     if (levelEl) levelEl.textContent = `Lv.${stats.level}`;
 
-    // Skill list — companion shows ALL skills, spirits show only focus skills
+    // Skill list — all companions show their full skill set
     const skillsEl = document.getElementById('inspect-skills');
     const allSkillDefs = [
       { name: 'Coding', icon: '💻' },
@@ -766,7 +766,6 @@ function updateInspect(agentId) {
       { name: 'General', icon: '✨' },
     ];
     
-    // All companions show their full skill set (no more spirits with focus-only)
     const displaySkills = allSkillDefs;
     
     const skills = stats.skills || {};
@@ -1008,7 +1007,7 @@ async function renderQuests() {
     const div = document.createElement('div');
     div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${q.id === activeQuestId ? 'quest-selected' : ''}`;
     div.onclick = () => selectQuest(div, q.id);
-    const companionAvatars = ''; // Companion auto-assigns spirits based on quest category
+    const companionAvatars = ''; // Companion visuals are shown in the arena, not in the quest list
 
     div.innerHTML = `
       <div class="quest-top-row">
@@ -2241,7 +2240,7 @@ function renderPixelGallery() {
 
 
 // (renderSpiritGallery / selectSpirit removed in v3.1.1 — all agents are
-// companions now, no spirit selection needed)
+// companions now.)
 
 window.selectPixelCompanion = function(id) {
   selectedPixelCompanion = id;
@@ -2263,8 +2262,8 @@ window.selectPixelCompanion = function(id) {
 // ---------------------------------------------------------------------------
 let editorAgentId = null;
 
-// All agents are Companions now (no more spirits). The companion forge
-// opens for whoever is currently focused.
+// All agents are Companions. The companion forge opens for whoever
+// is currently focused.
 window.openCompanionEditor = function() {
   const agentId = agentOrder[focusIndex];
   if (!agentId) return;
@@ -2469,10 +2468,9 @@ window.closeCompanionEditor = function(e) {
   if (forgeCompanionSprite) { forgeCompanionSprite.dispose(); forgeCompanionSprite = null; }
   editorAgentId = null;
 };
-// ── SPIRIT FORGE — removed in v3.1.1 ──────────────────────────────────
-// (all agents are companions now; the spirit editor is no longer wired
-// to anything. The save path also unified: saveCompanion handles both
-// editing an existing companion and creating a new one.)
+// (Spirit editor was removed in v3.1.1 — all agents are companions and
+// saveCompanion handles both editing an existing companion and creating
+// a new one.)
 
 // Save companion (pixel sprite, no skills)
 window.saveCompanion = async function() {
@@ -2509,7 +2507,6 @@ window.saveCompanion = async function() {
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
     agent._pixelCompanionId = selectedPixelCompanion;
-    agent._spiritId = null;
     if (newName) agent.name = newName;
     agent.traits = getCheckedTraits();
     const savedModel = document.getElementById('forge-model-primary')?.value;
@@ -2541,8 +2538,8 @@ window.saveCompanion = async function() {
   }
 };
 
-// (Save spirit path removed in v3.1.1 — all agents are companions now
-// and the only save flow is window.saveCompanion.)
+// (The only save flow is window.saveCompanion, used for both editing
+// an existing companion and creating a new one.)
 
 // (populateSelect removed — pixel sprites replaced by Cybermon gallery)
 
@@ -4231,7 +4228,7 @@ window.openCompanionsView = function() {
     { id: 'boar', name: '🐗 Boar', desc: 'Strong and fierce warrior' },
     { id: 'deer', name: '🦌 Deer', desc: 'Graceful and calm observer' },
     { id: 'hare', name: '🐰 Hare', desc: 'Quick and curious explorer' },
-    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare spirit' }
+    { id: 'black_grouse', name: '🐦 Black Grouse', desc: 'Proud and rare companion' }
   ];
 
   const current = currentCompanionId || localStorage.getItem('cyberclaw-selected-companion') || 'boar';
@@ -4377,17 +4374,5 @@ window.focusCompanionFromView = function(agentId) {
     updateCarousel();
   }
   window.closeCompanionsView();
-};
-
-// (Spirits view removed in v3.1.0 — companion visuals are managed through
-// the Companion Forge. The previous no-op stubs are deleted in v3.1.1
-// since nothing references them anymore.)
-
-window.editSpiritFromView = function(agentId) {
-  setTimeout(function() {
-    var idx = agentOrder.indexOf(agentId);
-    if (idx >= 0) focusIndex = idx;
-    openCompanionForge(agentId);
-  }, 150);
 };
 

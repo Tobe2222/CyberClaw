@@ -1,9 +1,10 @@
 try { require('fs').appendFileSync(require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-arena.js TOP\n`); } catch {}
 /* ============================================================
-   PixelArena — Shared 2D arena with Companion + Spirits
+   PixelArena — Shared 2D arena with Companions
    
-   Companion = main agent (party leader), large pixel sprite, center
-   Spirits   = helper agents, small spirit PNG sprites, orbit around
+   Companion = an agent's visual representation in the arena.
+   Each agent renders as one or more companions positioned across
+   the arena width.
    ============================================================ */
 
 const _path = require('path');
@@ -28,9 +29,7 @@ class PixelArena {
     // this.companion is a convenience ref to the first one for back-compat.
     this.companions = [];
     this.companion = null;
-    // Spirits (spirit PNGs, small, orbiting)
-    this.spirits = [];
-    
+
     this.animId = null;
     this.lastTime = 0;
 
@@ -72,15 +71,6 @@ class PixelArena {
       const rect = this.canvas.getBoundingClientRect();
       const mx = (e.clientX - rect.left) * (this.width / rect.width);
       const my = (e.clientY - rect.top) * (this.height / rect.height);
-
-      // Check spirits first (they're on top visually at smaller size)
-      for (const spirit of this.spirits) {
-        if (mx >= spirit.x && mx <= spirit.x + spirit.size &&
-            my >= spirit.y && my <= spirit.y + spirit.size) {
-          if (this.onSelect) this.onSelect(spirit.id);
-          return;
-        }
-      }
 
       // Check companion
       if (this.companion) {
@@ -144,7 +134,16 @@ class PixelArena {
   // and addCompanion). Returns the companion, doesn't mutate state.
   // v3.1.6: accepts an optional `scale` (defaults to 5) so the
   // companion's saved size from the sprite config is honored.
+  // v3.1.7: restore the missing catalog lookup (regressed in the
+  // v3.1.5 refactor — _buildCompanion was referencing an undefined
+  // compData, so every addCompanion() threw and no companions rendered).
   async _buildCompanion(agentId, pixelCompanionId, name, scale) {
+    const catalog = window.loadPixelCatalog ? window.loadPixelCatalog() : { companions: [] };
+    const compData = catalog.companions.find(c => c.id === pixelCompanionId);
+    if (!compData) {
+      console.warn('[PixelArena] No catalog entry for', pixelCompanionId);
+      return null;
+    }
 
     // Load sprite images
     const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
@@ -239,53 +238,6 @@ class PixelArena {
     newC.sleepState = this.companions[idx].sleepState;
     this.companions[idx] = newC;
     if (this.companion && this.companion.id === agentId) this.companion = newC;
-  }
-
-  // ── SPIRITS (helpers, spirit PNGs) ────────────────────────
-
-  async addSpirit(agentId, spiritId, name) {
-    if (this.spirits.find(s => s.id === agentId)) return;
-
-    // Load spirit PNG
-    const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
-    const imgPath = _path.join(assetsDir, 'spirits', `${spiritId}.png`);
-    let img = null;
-    try {
-      img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = `file://${imgPath}`;
-      });
-    } catch {
-      return; // skip if image missing
-    }
-
-    // Random position spread across the arena
-    const cx = this.width * (0.2 + Math.random() * 0.6);
-    const cy = this.height * (0.15 + Math.random() * 0.6);
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 40 + Math.random() * 60;
-
-    this.spirits.push({
-      id: agentId,
-      name: name || spiritId,
-      spiritId,
-      img,
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      vx: 0,
-      vy: 0,
-      size: 36 + Math.random() * 12, // small spirit size
-      state: 'idle',
-      stateTimer: 1000 + Math.random() * 4000,
-      bobPhase: Math.random() * Math.PI * 2, // floating bob
-      wanderAngle: Math.random() * Math.PI * 2,
-    });
-  }
-
-  removeSpirit(agentId) {
-    this.spirits = this.spirits.filter(s => s.id !== agentId);
   }
 
   // ── SPEECH BUBBLE ────────────────────────────────────────────
@@ -513,24 +465,8 @@ class PixelArena {
       toy.age += dt;
       toy.bouncePhase += dt * 0.004;
 
-      // Skip physics for dragged toy (user controls position) but still do collisions below
+      // Skip physics for dragged toy (user controls position)
       if (isDragged) {
-        // Collide dragged toy with spirits
-        var dToyCX = toy.x + toy.radius;
-        var dToyCY = toy.y + toy.radius;
-        var dSpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
-        var dForce = Math.max(dSpeed, 0.06); // dragged = always strong push
-        for (var si = 0; si < this.spirits.length; si++) {
-          var sp = this.spirits[si];
-          var sdx = (sp.x + sp.size / 2) - dToyCX;
-          var sdy = (sp.y + sp.size / 2) - dToyCY;
-          var sdist = Math.sqrt(sdx * sdx + sdy * sdy);
-          var shitDist = toy.radius + sp.size / 2;
-          if (sdist < shitDist && sdist > 0) {
-            sp.vx += (sdx / sdist) * dForce;
-            sp.vy += (sdy / sdist) * dForce;
-          }
-        }
         continue; // skip rest of physics
       }
 
@@ -637,27 +573,6 @@ class PixelArena {
         toy.lastTouched = performance.now();
       }
 
-      // Collide with spirits — knock them sideways (any moving toy, including falling)
-      const toyCX = toy.x + toy.radius;
-      const toyCY = toy.y + toy.radius;
-      if (toySpeed > 0.003 || toy.airborne) {
-        const effectiveSpeed = Math.max(toySpeed, 0.03); // minimum knock force
-        for (const spirit of this.spirits) {
-          const sCX = spirit.x + spirit.size / 2;
-          const sCY = spirit.y + spirit.size / 2;
-          const dx = sCX - toyCX;
-          const dy = sCY - toyCY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const hitDist = toy.radius + spirit.size / 2;
-          if (dist < hitDist && dist > 0) {
-            const knockForce = effectiveSpeed * 1.5;
-            spirit.vx += (dx / dist) * knockForce;
-            spirit.vy += (dy / dist) * knockForce;
-            toy.vx *= 0.6;
-            toy.vy *= 0.6;
-          }
-        }
-      }
     }
 
     // Remove toys idle for 20 seconds (not moving + not touched)
@@ -981,70 +896,6 @@ class PixelArena {
     if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); }
   }
 
-  _updateSpirit(spirit, dt) {
-    spirit.stateTimer -= dt;
-    spirit.bobPhase += dt * 0.003; // gentle floating bob
-
-    if (spirit.stateTimer <= 0) {
-      const roll = Math.random();
-      if (roll < 0.4) {
-        // Idle near companion
-        spirit.state = 'idle';
-        spirit.vx = 0;
-        spirit.vy = 0;
-        spirit.stateTimer = 2000 + Math.random() * 3000;
-      } else {
-        // Wander around companion
-        spirit.state = 'wander';
-        spirit.wanderAngle = Math.random() * Math.PI * 2;
-        const speed = 0.02 + Math.random() * 0.015;
-        spirit.vx = Math.cos(spirit.wanderAngle) * speed;
-        spirit.vy = Math.sin(spirit.wanderAngle) * speed;
-        spirit.stateTimer = 1500 + Math.random() * 2500;
-      }
-    }
-
-    // Move
-    spirit.x += spirit.vx * dt;
-    spirit.y += spirit.vy * dt;
-
-    // Orbit pull — spirits stay near the companion
-    if (this.companion) {
-      const compCenterX = this.companion.x + (this.companion.data.frameSize[0] * this.companion.scale) / 2;
-      const compCenterY = this.companion.y + (this.companion.data.frameSize[1] * this.companion.scale) / 2;
-      const dx = spirit.x - compCenterX;
-      const dy = spirit.y - compCenterY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const maxOrbit = 300;
-      const minOrbit = 80;
-
-      if (dist > maxOrbit) {
-        // Pull back toward companion (gentle)
-        const pull = 0.00012;
-        spirit.vx -= (dx / dist) * pull * dt;
-        spirit.vy -= (dy / dist) * pull * dt;
-      } else if (dist < minOrbit) {
-        // Push away slightly
-        spirit.vx += (dx / dist) * 0.0001 * dt;
-        spirit.vy += (dy / dist) * 0.0001 * dt;
-      }
-    }
-
-    // Clamp velocity to prevent teleporting
-    const maxSpeed = 0.08;
-    if (spirit.vx > maxSpeed) spirit.vx = maxSpeed;
-    if (spirit.vx < -maxSpeed) spirit.vx = -maxSpeed;
-    if (spirit.vy > maxSpeed) spirit.vy = maxSpeed;
-    if (spirit.vy < -maxSpeed) spirit.vy = -maxSpeed;
-
-    // Hard bounds
-    const margin = 10;
-    if (spirit.x < margin) { spirit.x = margin; spirit.vx = Math.abs(spirit.vx) * 0.5; }
-    if (spirit.x > this.width - spirit.size - margin) { spirit.x = this.width - spirit.size - margin; spirit.vx = -Math.abs(spirit.vx) * 0.5; }
-    if (spirit.y < margin) { spirit.y = margin; spirit.vy = Math.abs(spirit.vy) * 0.5; }
-    if (spirit.y > this.height - spirit.size - margin) { spirit.y = this.height - spirit.size - margin; spirit.vy = -Math.abs(spirit.vy) * 0.5; }
-  }
-
   // ── DRAW ────────────────────────────────────────────────────
 
   _drawCompanion(comp) {
@@ -1080,39 +931,6 @@ class PixelArena {
     }
   }
 
-  _drawSpirit(spirit) {
-    const bob = Math.sin(spirit.bobPhase) * 3; // gentle float
-    const x = spirit.x;
-    const y = spirit.y + bob;
-    const s = spirit.size;
-
-    // Soft glow
-    this.ctx.save();
-    this.ctx.globalAlpha = 0.15;
-    this.ctx.fillStyle = '#00aaff';
-    this.ctx.beginPath();
-    this.ctx.ellipse(x + s / 2, y + s / 2, s * 0.7, s * 0.7, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-    this.ctx.restore();
-
-    // Shadow
-    this.ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    this.ctx.beginPath();
-    this.ctx.ellipse(x + s / 2, spirit.y + s + 2, s * 0.3, 3, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // Cybermon image
-    if (!spirit.img || !spirit.img.complete || spirit.img.naturalWidth === 0) return;
-    this.ctx.imageSmoothingEnabled = true;
-    this.ctx.drawImage(spirit.img, x, y, s, s);
-
-    // Name label — subtle
-    this.ctx.fillStyle = 'rgba(200,220,255,0.6)';
-    this.ctx.font = '9px Orbitron, monospace';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText(spirit.name, x + s / 2, spirit.y - 4);
-  }
-
   _drawGround() {
     if (this.bgImage && this.bgImage.complete && this.bgImage.naturalWidth > 0) {
       // Draw background image covering the whole arena
@@ -1142,7 +960,6 @@ class PixelArena {
 
     // Update
     for (const c of this.companions) this._updateCompanion(c, dt);
-    for (const spirit of this.spirits) this._updateSpirit(spirit, dt);
     this._updateToys(dt);
 
     // Update treat age and grace timer
@@ -1201,14 +1018,10 @@ class PixelArena {
     for (const c of this.companions) {
       entities.push({ type: 'companion', obj: c, y: c.y + (c.data.frameSize[1] * c.scale) });
     }
-    for (const spirit of this.spirits) {
-      entities.push({ type: 'spirit', obj: spirit, y: spirit.y + spirit.size });
-    }
     entities.sort((a, b) => a.y - b.y);
 
     for (const ent of entities) {
-      if (ent.type === 'companion') this._drawCompanion(ent.obj);
-      else this._drawSpirit(ent.obj);
+      this._drawCompanion(ent.obj);
     }
 
     // Update speech bubble position
@@ -1223,9 +1036,8 @@ class PixelArena {
     if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
     // v3.1.5: support multiple companions. this.companions is the array;
     // this.companion is a convenience ref to the first one for back-compat.
-    this.companions = [];    this.companion = null;
     this.companions = [];
-    this.spirits = [];
+    this.companion = null;
   }
 
   // ── GET ENTITY BOUNDS (for camera crop) ─────────────────────
@@ -1238,10 +1050,6 @@ class PixelArena {
         const dh = (c.data.frameSize[1] || 32) * c.scale;
         return { x: c.x, y: c.y, w: dw, h: dh };
       }
-    }
-    const spirit = this.spirits.find(s => s.id === agentId);
-    if (spirit) {
-      return { x: spirit.x, y: spirit.y, w: spirit.size, h: spirit.size };
     }
     return null;
   }
@@ -1282,11 +1090,6 @@ class PixelArena {
       companionName: this.companion?.name,
       companionAgentId: this.companion?.id,
       horizonLine: this.horizonLine,
-      spirits: this.spirits.map(s => ({
-        id: s.id,
-        name: s.name,
-        spiritId: s.spiritId,
-      })),
     };
   }
 }

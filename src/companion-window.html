@@ -56,9 +56,6 @@
       if (state.companionId) {
         await arena.setCompanion(state.companionAgentId, state.companionId, state.companionName);
       }
-      for (const spirit of (state.spirits || [])) {
-        await arena.addSpirit(spirit.id, spirit.spiritId, spirit.name);
-      }
     })();
 
     // Listen for companion changes from main process
