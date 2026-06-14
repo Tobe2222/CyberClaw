@@ -24,6 +24,9 @@ class PixelArena {
     this.container.appendChild(this.canvas);
 
     // Main companion (pixel sprite, big)
+    // v3.1.5: support multiple companions. this.companions is the array;
+    // this.companion is a convenience ref to the first one for back-compat.
+    this.companions = [];
     this.companion = null;
     // Spirits (spirit PNGs, small, orbiting)
     this.spirits = [];
@@ -137,10 +140,12 @@ class PixelArena {
 
   // ── COMPANION (main, pixel sprite) ──────────────────────────
 
-  async setCompanion(agentId, pixelCompanionId, name) {
+  // v3.1.5: Helper to build a companion object (used by setCompanion
+  // and addCompanion). Returns the companion, doesn't mutate state.
+  async _buildCompanion(agentId, pixelCompanionId, name) {
     const catalog = loadPixelCatalog();
     const compData = catalog.companions.find(c => c.id === pixelCompanionId);
-    if (!compData) return;
+    if (!compData) return null;
 
     // Load sprite images
     const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
@@ -158,7 +163,7 @@ class PixelArena {
       images[animName] = { img, frames: animData.frames, cols: animData.cols || animData.frames };
     }
 
-    this.companion = {
+    return {
       id: agentId,
       name: name || 'Companion',
       pixelCompanionId,
@@ -178,6 +183,63 @@ class PixelArena {
       scale: 5, // big companion
       sleepState: 'awake', // v3.1.4: 'awake' | 'sleeping' — set by app.js toggle
     };
+  }
+
+  // Public: clear all companions and add a single one (legacy API).
+  async setCompanion(agentId, pixelCompanionId, name) {
+    const c = await this._buildCompanion(agentId, pixelCompanionId, name);
+    if (!c) return;
+    this.companions = [c];
+    this.companion = c;
+  }
+
+  // Public: add a companion alongside existing ones. Positioned by
+  // index in the companions array, evenly spread horizontally.
+  async addCompanion(agentId, pixelCompanionId, name) {
+    if (this.companions.find(c => c.id === agentId)) return;
+    const c = await this._buildCompanion(agentId, pixelCompanionId, name);
+    if (!c) return;
+    this.companions.push(c);
+    this._repositionCompanions();
+    if (!this.companion) this.companion = c;
+  }
+
+  // Remove a specific companion by agentId
+  removeCompanion(agentId) {
+    this.companions = this.companions.filter(c => c.id !== agentId);
+    if (this.companion && this.companion.id === agentId) {
+      this.companion = this.companions[0] || null;
+    }
+    this._repositionCompanions();
+  }
+
+  // Spread existing companions evenly across the arena width.
+  _repositionCompanions() {
+    const n = this.companions.length;
+    if (!n) return;
+    for (let i = 0; i < n; i++) {
+      this.companions[i].x = this.width * (i + 1) / (n + 1);
+      this.companions[i].y = this.height * Math.max(this.horizonLine + 0.1, 0.5);
+    }
+  }
+
+  // v3.1.5: Replace the sprite of an existing companion (e.g. when the
+  // user picks a new sprite for a companion in the picker). Keeps the
+  // companion in the same slot in the layout.
+  async swapCompanionSprite(agentId, pixelCompanionId, name) {
+    const idx = this.companions.findIndex(c => c.id === agentId);
+    if (idx < 0) {
+      // Not in the arena — fall back to setCompanion
+      return this.setCompanion(agentId, pixelCompanionId, name);
+    }
+    const newC = await this._buildCompanion(agentId, pixelCompanionId, name);
+    if (!newC) return;
+    // Preserve position and sleep state from the existing companion
+    newC.x = this.companions[idx].x;
+    newC.y = this.companions[idx].y;
+    newC.sleepState = this.companions[idx].sleepState;
+    this.companions[idx] = newC;
+    if (this.companion && this.companion.id === agentId) this.companion = newC;
   }
 
   // ── SPIRITS (helpers, spirit PNGs) ────────────────────────
@@ -1080,7 +1142,7 @@ class PixelArena {
     this.lastTime = now;
 
     // Update
-    if (this.companion) this._updateCompanion(this.companion, dt);
+    for (const c of this.companions) this._updateCompanion(c, dt);
     for (const spirit of this.spirits) this._updateSpirit(spirit, dt);
     this._updateToys(dt);
 
@@ -1137,8 +1199,8 @@ class PixelArena {
 
     // Collect all entities for Y-sort depth ordering
     const entities = [];
-    if (this.companion) {
-      entities.push({ type: 'companion', obj: this.companion, y: this.companion.y + (this.companion.data.frameSize[1] * this.companion.scale) });
+    for (const c of this.companions) {
+      entities.push({ type: 'companion', obj: c, y: c.y + (c.data.frameSize[1] * c.scale) });
     }
     for (const spirit of this.spirits) {
       entities.push({ type: 'spirit', obj: spirit, y: spirit.y + spirit.size });
@@ -1160,18 +1222,23 @@ class PixelArena {
     if (this.animId) cancelAnimationFrame(this.animId);
     if (this.resizeObs) this.resizeObs.disconnect();
     if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
-    this.companion = null;
+    // v3.1.5: support multiple companions. this.companions is the array;
+    // this.companion is a convenience ref to the first one for back-compat.
+    this.companions = [];    this.companion = null;
+    this.companions = [];
     this.spirits = [];
   }
 
   // ── GET ENTITY BOUNDS (for camera crop) ─────────────────────
 
   getEntityBounds(agentId) {
-    if (this.companion && this.companion.id === agentId) {
-      const c = this.companion;
-      const dw = (c.data.frameSize[0] || 32) * c.scale;
-      const dh = (c.data.frameSize[1] || 32) * c.scale;
-      return { x: c.x, y: c.y, w: dw, h: dh };
+    // v3.1.5: search all companions
+    for (const c of this.companions) {
+      if (c.id === agentId) {
+        const dw = (c.data.frameSize[0] || 32) * c.scale;
+        const dh = (c.data.frameSize[1] || 32) * c.scale;
+        return { x: c.x, y: c.y, w: dw, h: dh };
+      }
     }
     const spirit = this.spirits.find(s => s.id === agentId);
     if (spirit) {

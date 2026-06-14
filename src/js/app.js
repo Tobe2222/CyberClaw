@@ -247,23 +247,28 @@ async function initArenaCompanions() {
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
 
-  // v3.1.3: no more leader concept. The arena shows the active chat
-  // companion if visible, or the first non-hidden agent as a fallback.
-  const arenaId = (activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) && agents[activeChatAgentId])
-    || agentOrder.find(id => !hiddenCompanions.has(id))
-    || agentOrder[0];
-  window.leaderId = arenaId; // legacy field name; still used by mobile sync etc.
+  // v3.1.5: every non-hidden companion is rendered in the arena. The
+  // pixelArena spreads them horizontally based on count. The active
+  // chat companion (if visible) is added first so it gets the center slot.
+  const visibleOrder = [
+    ...(activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
+    ...agentOrder.filter(id =>
+      id !== activeChatAgentId && !hiddenCompanions.has(id)
+    ),
+  ];
+  const primaryId = visibleOrder[0] || null;
+  window.leaderId = primaryId; // legacy field name; still used by mobile sync etc.
 
-  debugLog(`[Arena] Arena companion: ${arenaId}, Agents: ${agentOrder.length}, Companion catalog: ${defaultCompanions.length}`);
+  debugLog(`[Arena] ${visibleOrder.length} visible companion(s), catalog size: ${defaultCompanions.length}`);
 
-  for (let i = 0; i < agentOrder.length; i++) {
-    const id = agentOrder[i];
+  for (let i = 0; i < visibleOrder.length; i++) {
+    const id = visibleOrder[i];
     const agent = agents[id];
+    if (!agent) continue;
     let pixelId = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
       pixelId = config?.pixelCompanionId;
-      debugLog('[Arena] ' + id + ' config: ' + JSON.stringify(config));
     } catch (e) { debugLog('[Arena] ERROR ' + id + ' config: ' + e.message); }
 
     if (!pixelId && defaultCompanions.length > 0) {
@@ -274,25 +279,22 @@ async function initArenaCompanions() {
 
     agent._pixelCompanionId = pixelId;
     try {
-      if (id === arenaId) {
-        currentCompanionId = pixelId;
-        localStorage.setItem('cyberclaw-selected-companion', pixelId);
-        await pixelArena.setCompanion(id, pixelId, agent.name);
-        // Apply the saved sleep state to the sprite (v3.1.4: the arena's
-        // update loop honours comp.sleepState, so just set it there).
-        if (pixelArena.companion) {
-          pixelArena.companion.sleepState = agent.sleepState || 'awake';
-        }
-        debugLog('[Arena] Companion set: ' + agent.name + ' (' + pixelId + ')');
-      } else {
-        // Future: render sidekick companions in a sidebar slot.
-        // The pixelArena only supports one center companion at the moment,
-        // so non-arena companions are not rendered visually but remain
-        // available via the carousel / channel tabs.
-      }
-    } catch (e) { debugLog('[Arena] ERROR set companion for ' + id + ': ' + e.message + '\n' + e.stack); }
+      // Add ALL visible companions; the pixelArena positions them in
+      // even slots across the width. The first one (the active chat
+      // companion, if visible) becomes the "primary" (this.companion).
+      await pixelArena.addCompanion(id, pixelId, agent.name);
+      // Apply the saved sleep state to the sprite we just added.
+      const added = pixelArena.companions.find(c => c.id === id);
+      if (added) added.sleepState = agent.sleepState || 'awake';
+      debugLog('[Arena] Companion added: ' + agent.name + ' (' + pixelId + ')');
+    } catch (e) { debugLog('[Arena] ERROR add companion for ' + id + ': ' + e.message + '\n' + e.stack); }
   }
-  debugLog('[Arena] Init complete. Companion: ' + (pixelArena.companion ? 'yes' : 'no'));
+  // Set the legacy "selected companion" for currentCompanionId / mobile sync
+  if (primaryId && agents[primaryId]?._pixelCompanionId) {
+    currentCompanionId = agents[primaryId]._pixelCompanionId;
+    localStorage.setItem('cyberclaw-selected-companion', currentCompanionId);
+  }
+  debugLog('[Arena] Init complete. Companions in arena: ' + pixelArena.companions.length);
 }
 
 // Camera view render loop — renders a cropped arena view into inspect panel
@@ -480,14 +482,37 @@ function renderArenaSettingsCompanions() {
   }
 }
 
-// Apply the current hiddenCompanions set to the pixelArena. We don't have
-// a true multi-companion arena yet (the existing pixelArena only renders
-// one companion), so this hook is a stub for the future. The hidden flag
-// primarily affects carousel + channel tab display.
-function applyCompanionVisibility() {
+// Apply the current hiddenCompanions set to the pixelArena. v3.1.5:
+// each hidden companion is removed from the arena; each newly-visible
+// companion is added. The set is also persisted to localStorage so
+// the choice survives a reload.
+async function applyCompanionVisibility() {
   if (!pixelArena) return;
-  // Future: if pixelArena.companions becomes an array, filter out hidden ids.
-  // For now we just persist the set to localStorage so the choice survives a reload.
+  // Remove companions that are now hidden
+  for (const c of [...pixelArena.companions]) {
+    if (hiddenCompanions.has(c.id)) pixelArena.removeCompanion(c.id);
+  }
+  // Add companions that are now visible
+  for (const id of agentOrder) {
+    if (hiddenCompanions.has(id)) continue;
+    if (pixelArena.companions.find(c => c.id === id)) continue;
+    const agent = agents[id];
+    if (!agent) continue;
+    let pixelId = agent._pixelCompanionId;
+    if (!pixelId) {
+      const cfg = await cyberclaw.agents.getSpriteConfig(id).catch(() => null);
+      pixelId = cfg?.pixelCompanionId;
+    }
+    if (!pixelId) {
+      const cat = loadPixelCatalog();
+      const def = cat.companions?.[0]?.id;
+      if (def) pixelId = def;
+    }
+    if (!pixelId) continue;
+    await pixelArena.addCompanion(id, pixelId, agent.name);
+    const added = pixelArena.companions.find(c => c.id === id);
+    if (added) added.sleepState = agent.sleepState || 'awake';
+  }
   try { localStorage.setItem('cyberclaw-hidden-companions', JSON.stringify([...hiddenCompanions])); } catch {}
 }
 
@@ -3266,7 +3291,13 @@ try {
 
         console.log('[App] Updating arena from mobile:', companionId);
         localStorage.setItem('cyberclaw-selected-companion', companionId);
-        window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
+        // v3.1.5: swap the sprite of the leader in-place so the other
+        // companions in the arena aren't removed.
+        if (window.pixelArena && window.pixelArena.swapCompanionSprite) {
+          window.pixelArena.swapCompanionSprite(window.leaderId, companionId, companionName);
+        } else {
+          window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
+        }
         console.log('[App] Arena updated from mobile successfully');
 
         // Update settings selector dropdown
@@ -4263,13 +4294,19 @@ window.openCompanionsView = function() {
           const leader = (window.agents && leaderId) ? window.agents[leaderId] : null;
           const displayName = (leader && leader.name) || companionId;
           console.log('[Companions] leaderId:', leaderId);
-          if (leaderId && window.pixelArena.setCompanion) {
-            console.log('[Companions] Calling setCompanion with:', leaderId, companionId, displayName);
+          if (leaderId) {
+            console.log('[Companions] Calling swapCompanionSprite with:', leaderId, companionId, displayName);
             try {
-              window.pixelArena.setCompanion(leaderId, companionId, displayName);
+              // v3.1.5: swap sprite in place so other companions in the
+              // arena aren't removed.
+              if (window.pixelArena.swapCompanionSprite) {
+                window.pixelArena.swapCompanionSprite(leaderId, companionId, displayName);
+              } else {
+                window.pixelArena.setCompanion(leaderId, companionId, displayName);
+              }
               console.log('[Companions] Arena updated successfully');
             } catch (e) {
-              console.error('[Companions] setCompanion error:', e);
+              console.error('[Companions] swap error:', e);
             }
           } else {
             console.log('[Companions] Missing leaderId or setCompanion:', { leaderId, hasSetCompanion: window.pixelArena.setCompanion ? 'yes' : 'no' });
