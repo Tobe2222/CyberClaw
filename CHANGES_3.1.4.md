@@ -1,8 +1,70 @@
-# Changelog — v3.1.1 + v3.1.2 + v3.1.3 (session 2026-06-14)
+# Changelog — v3.1.1 through v3.1.4 (session 2026-06-14)
 
-All changes from Tobe's four turns in this session. Branch:
+All changes from Tobe's five turns in this session. Branch:
 `feature/companion-improvements`. To test: `npm start` from the
 project root.
+
+---
+
+## v3.1.4 (fifth turn)
+
+### Sleep animation actually applied to the sprite
+
+The pixelArena's `_updateCompanion` had hard-coded time-based
+sleep logic that reset `comp.animation = 'idle'` on every frame
+whenever it wasn't night-time. So manually setting
+`comp.animation = 'death'` got clobbered on the next tick and the
+sprite never actually laid down to sleep.
+
+- New `comp.sleepState` field on the sprite (default `'awake'`).
+- `isAsleep = (sleepState === 'sleeping') || (time-based)`.
+- Both use the `'death'` sprite frame as the sleeping pose (the
+  only existing animation that looks like a sleeping pose).
+- `toggleCompanionSleep`, `sendChat` (auto-wake), and
+  `sendChatMessage` (auto-wake) all set both
+  `agent.sleepState` and `pixelArena.companion.sleepState` so
+  the arena loop honours the manual toggle.
+- `initArenaCompanions` reads the saved sleep state on first
+  render so a companion that was asleep at last shutdown stays
+  asleep.
+
+### Swapped "Abilities" / "Skills" labels
+
+- The categories section (Coding / Writing / Game / etc. with
+  XP bars) is now called **Skills** (matches openclaw's
+  terminology).
+- The equip/learn section (with the two buttons) is now called
+  **Abilities**.
+
+### Removed the "Companion" badge; centered the status row
+
+- The "Companion" badge below the companion name was redundant
+  noise (every companion is just a Companion), so the badge is
+  gone. Removed the `inspect-type-label` from updateInspect
+  and the HTML.
+- The status row (status dot + "Online" / "Sleeping" label +
+  Sleep/Wake button) is now `justify-content: center` so it
+  lines up under the centered companion name.
+
+### Auto-sleep on inactivity
+
+- Each agent gets `bootTs` and `lastInteractionTs` on creation.
+- New `scheduleAutoSleep()` runs every 60 seconds and sleeps any
+  companion whose last interaction was more than
+  `AUTO_SLEEP_AFTER_MS` (12 minutes) ago.
+- `bumpCompanionInteraction(id)` resets the timer. Called from
+  `updateCarousel` (focus change), `sendChat`, `sendChatMessage`,
+  and the manual `toggleCompanionSleep`.
+- When a companion auto-sleeps: their `sleepState` flips, the
+  arena sprite enters the death pose, and a system message
+  ("💤 X fell asleep") is posted to their chat channel.
+
+### Verification (v3.1.4)
+
+- `node --check` passes on main.js, preload.js, app.js,
+  pixel-arena.js.
+- Headless electron boots clean.
+- v3.1.0 through v3.1.3 features preserved untouched.
 
 ---
 
