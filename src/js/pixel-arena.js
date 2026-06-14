@@ -142,10 +142,9 @@ class PixelArena {
 
   // v3.1.5: Helper to build a companion object (used by setCompanion
   // and addCompanion). Returns the companion, doesn't mutate state.
-  async _buildCompanion(agentId, pixelCompanionId, name) {
-    const catalog = loadPixelCatalog();
-    const compData = catalog.companions.find(c => c.id === pixelCompanionId);
-    if (!compData) return null;
+  // v3.1.6: accepts an optional `scale` (defaults to 5) so the
+  // companion's saved size from the sprite config is honored.
+  async _buildCompanion(agentId, pixelCompanionId, name, scale) {
 
     // Load sprite images
     const assetsDir = window._assetsDir || _path.join(__dirname, '..', 'assets');
@@ -180,14 +179,14 @@ class PixelArena {
       frameSpeed: 150,
       state: 'idle',
       stateTimer: 3000 + Math.random() * 3000,
-      scale: 5, // big companion
+      scale: (typeof scale === 'number' && scale >= 1 && scale <= 8) ? scale : 5,
       sleepState: 'awake', // v3.1.4: 'awake' | 'sleeping' — set by app.js toggle
     };
   }
 
   // Public: clear all companions and add a single one (legacy API).
-  async setCompanion(agentId, pixelCompanionId, name) {
-    const c = await this._buildCompanion(agentId, pixelCompanionId, name);
+  async setCompanion(agentId, pixelCompanionId, name, scale) {
+    const c = await this._buildCompanion(agentId, pixelCompanionId, name, scale);
     if (!c) return;
     this.companions = [c];
     this.companion = c;
@@ -195,9 +194,9 @@ class PixelArena {
 
   // Public: add a companion alongside existing ones. Positioned by
   // index in the companions array, evenly spread horizontally.
-  async addCompanion(agentId, pixelCompanionId, name) {
+  async addCompanion(agentId, pixelCompanionId, name, scale) {
     if (this.companions.find(c => c.id === agentId)) return;
-    const c = await this._buildCompanion(agentId, pixelCompanionId, name);
+    const c = await this._buildCompanion(agentId, pixelCompanionId, name, scale);
     if (!c) return;
     this.companions.push(c);
     this._repositionCompanions();
@@ -226,13 +225,13 @@ class PixelArena {
   // v3.1.5: Replace the sprite of an existing companion (e.g. when the
   // user picks a new sprite for a companion in the picker). Keeps the
   // companion in the same slot in the layout.
-  async swapCompanionSprite(agentId, pixelCompanionId, name) {
+  async swapCompanionSprite(agentId, pixelCompanionId, name, scale) {
     const idx = this.companions.findIndex(c => c.id === agentId);
     if (idx < 0) {
       // Not in the arena — fall back to setCompanion
-      return this.setCompanion(agentId, pixelCompanionId, name);
+      return this.setCompanion(agentId, pixelCompanionId, name, scale);
     }
-    const newC = await this._buildCompanion(agentId, pixelCompanionId, name);
+    const newC = await this._buildCompanion(agentId, pixelCompanionId, name, scale);
     if (!newC) return;
     // Preserve position and sleep state from the existing companion
     newC.x = this.companions[idx].x;

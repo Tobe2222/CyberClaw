@@ -266,9 +266,16 @@ async function initArenaCompanions() {
     const agent = agents[id];
     if (!agent) continue;
     let pixelId = null;
+    let savedScale = null;
     try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
       pixelId = config?.pixelCompanionId;
+      // v3.1.6: read the saved size too so the arena sprite matches
+      // what the user picked in the forge.
+      if (config && typeof config.scale === 'number') {
+        savedScale = config.scale;
+        agent._pixelCompanionScale = savedScale;
+      }
     } catch (e) { debugLog('[Arena] ERROR ' + id + ' config: ' + e.message); }
 
     if (!pixelId && defaultCompanions.length > 0) {
@@ -282,11 +289,11 @@ async function initArenaCompanions() {
       // Add ALL visible companions; the pixelArena positions them in
       // even slots across the width. The first one (the active chat
       // companion, if visible) becomes the "primary" (this.companion).
-      await pixelArena.addCompanion(id, pixelId, agent.name);
+      await pixelArena.addCompanion(id, pixelId, agent.name, savedScale);
       // Apply the saved sleep state to the sprite we just added.
       const added = pixelArena.companions.find(c => c.id === id);
       if (added) added.sleepState = agent.sleepState || 'awake';
-      debugLog('[Arena] Companion added: ' + agent.name + ' (' + pixelId + ')');
+      debugLog('[Arena] Companion added: ' + agent.name + ' (' + pixelId + ', scale=' + (savedScale || 5) + ')');
     } catch (e) { debugLog('[Arena] ERROR add companion for ' + id + ': ' + e.message + '\n' + e.stack); }
   }
   // Set the legacy "selected companion" for currentCompanionId / mobile sync
@@ -499,9 +506,14 @@ async function applyCompanionVisibility() {
     const agent = agents[id];
     if (!agent) continue;
     let pixelId = agent._pixelCompanionId;
+    let savedScale = agent._pixelCompanionScale;
     if (!pixelId) {
       const cfg = await cyberclaw.agents.getSpriteConfig(id).catch(() => null);
       pixelId = cfg?.pixelCompanionId;
+      if (!savedScale && cfg && typeof cfg.scale === 'number') {
+        savedScale = cfg.scale;
+        agent._pixelCompanionScale = savedScale;
+      }
     }
     if (!pixelId) {
       const cat = loadPixelCatalog();
@@ -509,7 +521,7 @@ async function applyCompanionVisibility() {
       if (def) pixelId = def;
     }
     if (!pixelId) continue;
-    await pixelArena.addCompanion(id, pixelId, agent.name);
+    await pixelArena.addCompanion(id, pixelId, agent.name, savedScale);
     const added = pixelArena.companions.find(c => c.id === id);
     if (added) added.sleepState = agent.sleepState || 'awake';
   }
@@ -2384,14 +2396,11 @@ function updateForgeSize(value) {
   if (lbl) lbl.textContent = currentForgeScale + '×';
   // Re-create the preview at the new scale (preserves the picked sprite)
   if (selectedPixelCompanion) showForgeCompanion(selectedPixelCompanion);
-  // Persist to the sprite config so it survives a reload
-  if (editorAgentId) {
-    cyberclaw.agents.getSpriteConfig(editorAgentId).then(cfg => {
-      cfg = cfg || {};
-      cfg.scale = currentForgeScale;
-      return cyberclaw.agents.saveSpriteConfig(editorAgentId, cfg);
-    }).catch(e => console.warn('save scale:', e));
-  }
+  // v3.1.6: don't write to the sprite config here — the value is
+  // captured in currentForgeScale and saved by saveCompanion together
+  // with the rest of the form. (Previously we'd write the scale
+  // immediately, but that raced with the final saveCompanion write
+  // and the user-visible bug was that the size "didn't stick".)
 }
 
 function openCompanionForge(agentId) {
@@ -2495,6 +2504,7 @@ window.saveCompanion = async function() {
       traits: getCheckedTraits(),
       primaryModel: document.getElementById('forge-model-primary')?.value || agent.primaryModel,
       secondaryModel: document.getElementById('forge-model-secondary')?.value || '',
+      scale: currentForgeScale, // v3.1.6: persist the size slider value
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
@@ -3288,15 +3298,16 @@ try {
         // the companion, not its visual.
         const leader = window.agents && window.agents[window.leaderId];
         const companionName = (leader && leader.name) || companionId;
+        const savedScale = leader?._pixelCompanionScale;
 
         console.log('[App] Updating arena from mobile:', companionId);
         localStorage.setItem('cyberclaw-selected-companion', companionId);
         // v3.1.5: swap the sprite of the leader in-place so the other
         // companions in the arena aren't removed.
         if (window.pixelArena && window.pixelArena.swapCompanionSprite) {
-          window.pixelArena.swapCompanionSprite(window.leaderId, companionId, companionName);
+          window.pixelArena.swapCompanionSprite(window.leaderId, companionId, companionName, savedScale);
         } else {
-          window.pixelArena.setCompanion(window.leaderId, companionId, companionName);
+          window.pixelArena.setCompanion(window.leaderId, companionId, companionName, savedScale);
         }
         console.log('[App] Arena updated from mobile successfully');
 
@@ -4293,6 +4304,7 @@ window.openCompanionsView = function() {
           const leaderId = window.leaderId;
           const leader = (window.agents && leaderId) ? window.agents[leaderId] : null;
           const displayName = (leader && leader.name) || companionId;
+          const savedScale = leader?._pixelCompanionScale;
           console.log('[Companions] leaderId:', leaderId);
           if (leaderId) {
             console.log('[Companions] Calling swapCompanionSprite with:', leaderId, companionId, displayName);
@@ -4300,9 +4312,9 @@ window.openCompanionsView = function() {
               // v3.1.5: swap sprite in place so other companions in the
               // arena aren't removed.
               if (window.pixelArena.swapCompanionSprite) {
-                window.pixelArena.swapCompanionSprite(leaderId, companionId, displayName);
+                window.pixelArena.swapCompanionSprite(leaderId, companionId, displayName, savedScale);
               } else {
-                window.pixelArena.setCompanion(leaderId, companionId, displayName);
+                window.pixelArena.setCompanion(leaderId, companionId, displayName, savedScale);
               }
               console.log('[Companions] Arena updated successfully');
             } catch (e) {
