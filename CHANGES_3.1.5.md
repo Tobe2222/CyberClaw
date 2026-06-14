@@ -381,3 +381,62 @@ git checkout main
 # or:
 git revert 3639987
 ```
+
+---
+
+## v3.1.5 (sixth turn) — multi-companion arena
+
+The bug: only one companion was rendered in the arena at a
+time, even though multiple agents were loaded. Tobe's
+screenshot showed Clawsuu but no Lamasuu.
+
+### What changed
+
+`pixelArena` was refactored from a single-slot design
+(`this.companion`) to a multi-slot design (`this.companions[]`):
+
+- `this.companion` stays as a ref to the first/active
+  companion (back-compat for camera view, bubble, etc).
+- New `_buildCompanion(agentId, pixelCompanionId, name)` helper
+  constructs a companion object without mutating state.
+- `setCompanion(agentId, pixelCompanionId, name)` clears the
+  array and adds a single one (legacy API, unchanged contract).
+- `addCompanion(agentId, pixelCompanionId, name)` appends to
+  the array and positions the new companion based on count
+  (evenly spread across the arena width).
+- `swapCompanionSprite(agentId, pixelCompanionId, name)` is
+  the in-place sprite swap (preserves slot position and sleep
+  state). Used when the user picks a new sprite in the picker.
+- `removeCompanion(agentId)` and `_repositionCompanions()`
+  round out the API.
+- The render loop iterates `this.companions[]` and Y-sorts
+  for correct depth.
+- The update loop iterates `this.companions[]`.
+- `getEntityBounds()` searches `this.companions[]`.
+
+### app.js
+
+- `initArenaCompanions` now adds every non-hidden companion to
+  the arena via `addCompanion`. The active chat companion
+  goes first so it gets the center slot.
+- The mobile-set-companion IPC and `openCompanionsView` card
+  click both use `swapCompanionSprite` so the other companions
+  aren't removed when the user changes one sprite.
+- `applyCompanionVisibility` (called from the Arena Settings
+  hide/show toggles) now actually adds/removes from the arena.
+
+### Result
+
+With clawsuu + lamasuu loaded, both boar sprites render in
+the arena, side by side, each with their name above.
+Selecting a companion in the channel tabs swaps the active
+chat companion in the center; the others stay put. The
+camera view in the inspect panel follows whichever
+companion is being inspected.
+
+### Footgun note
+
+`setCompanion` is now destructive (clears all companions
+and adds one). All user-facing sprite-swap flows must use
+`swapCompanionSprite` instead. If new `setCompanion` call
+sites get added later, they need to be changed.
