@@ -1,6 +1,10 @@
+## 2026-06-14 19:10 (channel: #cyber-dev)
+- **User:** Showed screenshot — the ilammy/msvc-dev-cmd fix didn't work, the windows build is still failing at `findVisualStudio`. Same `find-visualstudio.js:118` error.
+- **You:** Root cause: as of June 8-15 2026, GitHub is migrating `windows-latest` to Windows Server 2025 with VS 2026 (runner-images#14017). The `ilammy/msvc-dev-cmd` action doesn't recognize VS 2026 (version 18.5), so it silently doesn't set up the dev cmd env. Two-pronged fix: (1) pin `runs-on` to `windows-2022` which still has VS 2022 Build Tools at a known path — unblocks today. (2) Use `vswhere.exe` to auto-detect whatever VS is actually installed and source its vcvarsall.bat — works for any VS version (2017+, including 2026) so the same workflow works when we eventually migrate off windows-2022. vcvarsall.bat is now sourced in the same cmd shell that runs electron-rebuild, so the env vars are guaranteed visible to the rebuild subprocess. Moved v3.1.7 tag to include this commit. Pushed.
+
 ## 2026-06-14 19:00 (channel: #cyber-dev)
 - **User:** Showed screenshot of failed Windows CI build for v3.1.7. The `npx electron-rebuild -f -w node-pty` step was failing with `VisualStudioFinder.fail` — node-gyp couldn't find MSVC on the windows-latest runner.
-- **You:** Diagnosed: GitHub-hosted windows-latest has VS 2022 Build Tools preinstalled but node-gyp's auto-detect doesn't work in the Actions environment. Added `ilammy/msvc-dev-cmd@v1` step before the rebuild — this sources vcvarsall.bat and exports the MSVC env vars (PATH/INCLUDE/LIB/LIBPATH) so node-gyp can find the compiler. Moved the v3.1.7 tag to include this commit so the next time the workflow runs from v3.1.7, the Windows build will succeed. No equivalent step needed for linux/mac — they auto-detect gcc/clang.
+- **You:** Diagnosed: GitHub-hosted windows-latest has VS 2022 Build Tools preinstalled but node-gyp's auto-detect doesn't work in the Actions environment. Added `ilammy/msvc-dev-cmd@v1` step before the rebuild. (This turned out to be insufficient once GitHub started migrating to VS 2026 — see next entry.)
 
 ## 2026-06-14 17:36 (channel: #cyber-dev)
 - **User:** said the companion forge/edit size slider didn't stick on save; asked me to update myself on the project and find the cause.
