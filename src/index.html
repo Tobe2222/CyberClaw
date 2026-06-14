@@ -192,69 +192,62 @@
         </div>
       </div>
 
-      <!-- Terminal strip with companion chat channels (left) and system tabs (right) -->
+      <!-- Terminal strip: tabs on top (companion channels left, system views right) -->
       <div id="terminal-strip">
-        <div class="terminal-pane">
-          <!-- Left: companion chat channel tabs -->
-          <div class="channel-tabs channel-tabs-left" id="companion-channel-tabs">
-            <div class="channel-tabs-title" title="Companion chat channels">CHANNELS</div>
+        <div class="terminal-tabs-bar">
+          <!-- Left: companion chat channel tabs (dynamically populated) -->
+          <div class="tab-group tab-group-left" id="companion-channel-tabs">
+            <div class="tab-group-label" title="Companion chat channels">🐾 CHANNELS</div>
             <!-- Populated dynamically by renderCompanionChannelTabs() -->
           </div>
 
-          <!-- Center: the active view -->
-          <div class="channel-pane-content">
-            <div id="view-chat" class="term-view active">
-              <div id="chat-header">
-                <span id="chat-header-avatar"></span>
-                <span id="chat-header-name">No companion</span>
-                <span id="chat-header-status" class="chat-header-status"></span>
-              </div>
-              <div id="chat-messages"></div>
-              <div id="chat-resizer" title="Drag to resize chat / input">
-                <span class="resizer-grip"></span>
-              </div>
-              <div id="chat-input-area">
-                <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
-                <div id="chat-image-preview" class="chat-image-preview hidden">
-                  <img id="chat-preview-img" src="" alt="preview" />
-                  <button class="chat-preview-remove" onclick="clearImageAttachment()" title="Remove image">✕</button>
-                </div>
-                <div id="chat-input-row">
-                  <button id="chat-attach" onclick="pickImageAttachment()" title="Attach image">📎</button>
-                  <textarea id="chat-input" rows="2" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
-                  <button id="chat-voice" onclick="toggleVoiceInput()" title="Voice input">🎤</button>
-                </div>
-              </div>
-            </div>
-            <div id="view-events" class="term-view">
-              <div id="event-messages"></div>
-            </div>
-            <div id="view-terminal" class="term-view">
-              <div id="terminal-container"></div>
-            </div>
-            <div id="view-logs" class="term-view">
-              <div id="log-messages" style="font-family:monospace;font-size:12px;padding:8px;overflow-y:auto;height:100%;"></div>
-            </div>
-          </div>
-
-          <!-- Right: system tabs -->
-          <div class="channel-tabs channel-tabs-right" id="system-tabs">
-            <div class="channel-tabs-title" title="System views">SYSTEM</div>
-            <button class="channel-tab" data-tab="events" onclick="switchTermTab('events')" title="Events">
-              <span class="tab-icon">📜</span>
-              <span class="tab-label">Events</span>
+          <!-- Right: system view tabs -->
+          <div class="tab-group tab-group-right" id="system-tabs">
+            <button class="term-tab" data-tab="events" onclick="switchTermTab('events')" title="Events">
+              <span class="tab-icon">📜</span> Events
             </button>
-            <button class="channel-tab" data-tab="terminal" onclick="switchTermTab('terminal')" title="OpenClaw terminal">
-              <span class="tab-icon">⚔️</span>
-              <span class="tab-label">OpenClaw</span>
+            <button class="term-tab" data-tab="terminal" onclick="switchTermTab('terminal')" title="OpenClaw terminal">
+              <span class="tab-icon">⚔️</span> OpenClaw
             </button>
-            <button class="channel-tab" data-tab="logs" onclick="switchTermTab('logs')" title="App logs">
-              <span class="tab-icon">🪵</span>
-              <span class="tab-label">Logs</span>
+            <button class="term-tab" data-tab="logs" onclick="switchTermTab('logs')" title="App logs">
+              <span class="tab-icon">🪵</span> Logs
             </button>
-            <div class="channel-tabs-spacer"></div>
             <button class="term-tab-toggle" onclick="toggleTerminal()" title="Expand/Collapse">▼</button>
           </div>
+        </div>
+
+        <!-- Active view (fills the rest of the strip) -->
+        <div id="view-chat" class="term-view active">
+          <div id="chat-header">
+            <span id="chat-header-avatar"></span>
+            <span id="chat-header-name">No companion</span>
+            <span id="chat-header-status" class="chat-header-status"></span>
+          </div>
+          <div id="chat-messages"></div>
+          <div id="chat-resizer" title="Drag to resize chat / input">
+            <span class="resizer-grip"></span>
+          </div>
+          <div id="chat-input-area">
+            <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
+            <div id="chat-image-preview" class="chat-image-preview hidden">
+              <img id="chat-preview-img" src="" alt="preview" />
+              <button class="chat-preview-remove" onclick="clearImageAttachment()" title="Remove image">✕</button>
+            </div>
+            <div id="chat-input-row">
+              <button id="chat-attach" onclick="pickImageAttachment()" title="Attach image">📎</button>
+              <textarea id="chat-input" rows="2" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
+              <button id="chat-voice" onclick="toggleVoiceInput()" title="Voice input">🎤</button>
+            </div>
+          </div>
+        </div>
+        <div id="view-events" class="term-view">
+          <div id="event-messages"></div>
+        </div>
+        <div id="view-terminal" class="term-view">
+          <div id="terminal-container"></div>
+        </div>
+        <div id="view-logs" class="term-view">
+          <div id="log-messages" style="font-family:monospace;font-size:12px;padding:8px;overflow-y:auto;height:100%;"></div>
         </div>
       </div>
     </main>

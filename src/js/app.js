@@ -1154,11 +1154,11 @@ function rebuildLeftPanel() {
 // Terminal
 // ---------------------------------------------------------------------------
 window.switchTermTab = function(tabName) {
-  // Chat is now controlled separately (switchActiveChat). For system tabs
-  // (events / terminal / logs) we still show their view in the center pane.
-  document.querySelectorAll('.channel-tabs-right .channel-tab').forEach(t => t.classList.remove('active'));
+  // System tabs (events / terminal / logs). The companion chat is
+  // controlled separately via switchActiveChat.
+  document.querySelectorAll('#system-tabs .term-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.term-view').forEach(v => v.classList.remove('active'));
-  const tab = document.querySelector(`.channel-tabs-right .channel-tab[data-tab="${tabName}"]`);
+  const tab = document.querySelector(`#system-tabs .term-tab[data-tab="${tabName}"]`);
   if (tab) tab.classList.add('active');
   const view = document.getElementById(`view-${tabName}`);
   if (view) view.classList.add('active');
@@ -1177,7 +1177,7 @@ window.switchActiveChat = function(agentId) {
     if (t.dataset.agentId === agentId) t.classList.remove('has-unread');
   });
   // Show the chat view (in case a system view is active)
-  document.querySelectorAll('.channel-tabs-right .channel-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#system-tabs .term-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.term-view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-chat').classList.add('active');
   // Update the chat header
@@ -1249,26 +1249,20 @@ function updateChatHeader(agentId) {
   }
 }
 
-// Populate the left-side companion channel tabs. Should be called whenever
-// the agent list changes.
+// Populate the companion channel tabs (top-left of the terminal strip).
+// Should be called whenever the agent list changes.
 function renderCompanionChannelTabs() {
   const container = document.getElementById('companion-channel-tabs');
   if (!container) return;
-  // Preserve the title div
-  const title = container.querySelector('.channel-tabs-title');
+  // Preserve the label
+  const label = container.querySelector('.tab-group-label');
   container.innerHTML = '';
-  if (title) container.appendChild(title); else {
-    const t = document.createElement('div');
-    t.className = 'channel-tabs-title';
-    t.title = 'Companion chat channels';
-    t.textContent = 'CHANNELS';
-    container.appendChild(t);
-  }
+  if (label) container.appendChild(label);
   for (const id of agentOrder) {
     const agent = agents[id];
     if (!agent) continue;
     const tab = document.createElement('button');
-    tab.className = 'channel-tab channel-tab-companion';
+    tab.className = 'channel-tab-companion';
     tab.dataset.agentId = id;
     tab.title = `Chat with ${agent.name}`;
     tab.onclick = () => { window.switchActiveChat(id); focusIndex = agentOrder.indexOf(id); updateCarousel(); };
@@ -1285,7 +1279,7 @@ function renderCompanionChannelTabs() {
       em.textContent = agent.emoji || '🤖';
       tab.appendChild(em);
     }
-    const name = document.createElement('div');
+    const name = document.createElement('span');
     name.className = 'companion-tab-name';
     name.textContent = agent.name;
     tab.appendChild(name);
@@ -1718,7 +1712,7 @@ function addEventMsg(text) {
   evts.scrollTop = evts.scrollHeight;
 
   // Flash the events tab if not active
-  var evtTab = document.querySelector('.channel-tabs-right .channel-tab[data-tab="events"]');
+  var evtTab = document.querySelector('#system-tabs .term-tab[data-tab="events"]');
   if (evtTab && !evtTab.classList.contains('active')) {
     evtTab.classList.add('tab-flash');
     setTimeout(function() { evtTab.classList.remove('tab-flash'); }, 2000);
