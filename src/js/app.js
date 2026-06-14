@@ -377,6 +377,128 @@ window.closeBgSelector = function(e) {
   document.getElementById('bg-selector-overlay').classList.add('hidden');
 };
 
+// ---------------------------------------------------------------------------
+// Arena Settings — background picker + companion show/hide
+// ---------------------------------------------------------------------------
+window.openArenaSettings = function() {
+  const overlay = document.getElementById('arena-settings-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  // Populate background grid
+  const bgGrid = document.getElementById('arena-settings-bg-grid');
+  if (bgGrid) {
+    bgGrid.innerHTML = '';
+    for (const bg of BACKGROUNDS) {
+      const card = document.createElement('div');
+      card.className = `bg-card${bg.id === currentBgId ? ' selected' : ''}`;
+      const imgPath = path.join(__dirname, 'assets', 'backgrounds', bg.file);
+      card.innerHTML = `<img src="file://${imgPath}" alt="${escHtml(bg.label)}"><div class="bg-card-label">${escHtml(bg.label)}</div>`;
+      card.addEventListener('click', () => {
+        applyBackground(bg.id);
+        bgGrid.querySelectorAll('.bg-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+      bgGrid.appendChild(card);
+    }
+  }
+  // Populate companion show/hide list
+  renderArenaSettingsCompanions();
+};
+
+window.closeArenaSettings = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('arena-settings-overlay').classList.add('hidden');
+};
+
+function renderArenaSettingsCompanions() {
+  const wrap = document.getElementById('arena-settings-companions');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (!agentOrder.length) {
+    wrap.innerHTML = '<div style="color:var(--text-muted);font-size:10px;padding:4px 0;">No companions yet.</div>';
+    return;
+  }
+  for (const id of agentOrder) {
+    const agent = agents[id];
+    if (!agent) continue;
+    const isLeader = !!agent.isMain;
+    const hidden = hiddenCompanions.has(id);
+
+    const row = document.createElement('label');
+    row.className = 'arena-companion-row' + (isLeader ? ' is-leader' : '') + (hidden ? ' hidden-from-arena' : '');
+
+    // Avatar
+    const avatar = document.createElement('span');
+    avatar.className = 'arena-companion-avatar';
+    if (agent.avatar && String(agent.avatar).startsWith('data:')) {
+      avatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
+    } else {
+      avatar.textContent = agent.emoji || '🤖';
+    }
+    row.appendChild(avatar);
+
+    // Info
+    const info = document.createElement('div');
+    info.className = 'arena-companion-info';
+    const name = document.createElement('div');
+    name.className = 'arena-companion-name';
+    name.textContent = agent.name + (isLeader ? ' ★' : '');
+    const cls = document.createElement('div');
+    cls.className = 'arena-companion-class';
+    cls.textContent = agent.class || agent.id;
+    info.appendChild(name);
+    info.appendChild(cls);
+    row.appendChild(info);
+
+    // Toggle
+    const lbl = document.createElement('span');
+    lbl.className = 'arena-companion-toggle';
+    lbl.title = isLeader ? 'Leader is always shown' : 'Show / hide in the arena';
+    const sw = document.createElement('span');
+    sw.className = 'toggle-switch' + (isLeader || !hidden ? ' on' : '');
+    if (isLeader) sw.style.opacity = '0.5';
+    const lblText = document.createElement('span');
+    lblText.textContent = (isLeader || !hidden) ? 'shown' : 'hidden';
+    lbl.appendChild(sw);
+    lbl.appendChild(lblText);
+    // Prevent the leader from being hidden
+    if (!isLeader) {
+      sw.style.cursor = 'pointer';
+      lbl.style.cursor = 'pointer';
+      const toggle = () => {
+        if (hiddenCompanions.has(id)) {
+          hiddenCompanions.delete(id);
+          sw.classList.add('on');
+          lblText.textContent = 'shown';
+          row.classList.remove('hidden-from-arena');
+        } else {
+          hiddenCompanions.add(id);
+          sw.classList.remove('on');
+          lblText.textContent = 'hidden';
+          row.classList.add('hidden-from-arena');
+        }
+        applyCompanionVisibility();
+      };
+      lbl.addEventListener('click', (e) => { e.preventDefault(); toggle(); });
+    } else {
+      lbl.style.opacity = '0.6';
+    }
+    row.appendChild(lbl);
+    wrap.appendChild(row);
+  }
+}
+
+// Apply the current hiddenCompanions set to the pixelArena. We don't have
+// a true multi-companion arena yet (the existing pixelArena only renders
+// one companion), so this hook is a stub for the future. The hidden flag
+// primarily affects carousel + channel tab display.
+function applyCompanionVisibility() {
+  if (!pixelArena) return;
+  // Future: if pixelArena.companions becomes an array, filter out hidden ids.
+  // For now we just persist the set to localStorage so the choice survives a reload.
+  try { localStorage.setItem('cyberclaw-hidden-companions', JSON.stringify([...hiddenCompanions])); } catch {}
+}
+
 // Pop-out companion window via Electron BrowserWindow
 let arenaExpanded = false;
 window.toggleArenaExpand = function() {
@@ -417,7 +539,14 @@ function updateCarousel() {
   updateInspect(focusedId);
   updateChatTarget();
 
-  // Arena uses companion/spirit model now — no focus cycling needed
+  // Switching the carousel also switches the chat channel so the user is
+  // always talking to the currently-focused companion.
+  if (focusedId && focusedId !== activeChatAgentId) {
+    switchActiveChat(focusedId);
+  } else {
+    // Just refresh the channel tabs (e.g. avatar may have updated)
+    renderCompanionChannelTabs();
+  }
 }
 
 window.carouselNext = function() {
@@ -1025,12 +1154,148 @@ function rebuildLeftPanel() {
 // Terminal
 // ---------------------------------------------------------------------------
 window.switchTermTab = function(tabName) {
-  document.querySelectorAll('.term-tab').forEach(t => t.classList.remove('active'));
+  // Chat is now controlled separately (switchActiveChat). For system tabs
+  // (events / terminal / logs) we still show their view in the center pane.
+  document.querySelectorAll('.channel-tabs-right .channel-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.term-view').forEach(v => v.classList.remove('active'));
-  document.querySelector(`.term-tab[data-tab="${tabName}"]`).classList.add('active');
-  document.getElementById(`view-${tabName}`).classList.add('active');
+  const tab = document.querySelector(`.channel-tabs-right .channel-tab[data-tab="${tabName}"]`);
+  if (tab) tab.classList.add('active');
+  const view = document.getElementById(`view-${tabName}`);
+  if (view) view.classList.add('active');
   setTimeout(() => { mainFit?.fit(); }, 50);
 };
+
+// Switch the chat pane to a specific companion. Re-renders that companion's
+// history into the chat-messages container and updates the channel tabs.
+window.switchActiveChat = function(agentId) {
+  if (!agentId) return;
+  activeChatAgentId = agentId;
+  lastReadTsByAgent[agentId] = Date.now();
+  // Update the channel tabs' active highlight + clear unread
+  document.querySelectorAll('.channel-tab-companion').forEach(t => {
+    t.classList.toggle('active', t.dataset.agentId === agentId);
+    if (t.dataset.agentId === agentId) t.classList.remove('has-unread');
+  });
+  // Show the chat view (in case a system view is active)
+  document.querySelectorAll('.channel-tabs-right .channel-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.term-view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-chat').classList.add('active');
+  // Update the chat header
+  updateChatHeader(agentId);
+  // Re-render the chat-messages container from the per-agent history
+  const msgs = document.getElementById('chat-messages');
+  if (msgs) {
+    msgs.innerHTML = '';
+    const hist = chatHistoryByAgent[agentId] || [];
+    // Re-render in chronological order; suppress the last-separator cursor
+    // so the first message after a switch gets a fresh separator.
+    delete lastChatDateByAgent[agentId];
+    for (const m of hist) {
+      _renderStoredChatMsg(m, msgs, agentId);
+    }
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+};
+
+function _renderStoredChatMsg(m, container, agentId) {
+  const now = new Date(m.ts || Date.now());
+  const cursor = lastChatDateByAgent[agentId] || null;
+  lastChatDateByAgent[agentId] = checkDateSeparator(cursor, now, container);
+  const div = document.createElement('div');
+  const id = `chat-msg-${++chatMsgId}`;
+  div.id = id;
+  div.className = `chat-msg ${m.type}`;
+  switch (m.type) {
+    case 'user':
+      div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      break;
+    case 'agent':
+      div.innerHTML = `<span class="msg-prefix">${m.emoji || '🤖'} [${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      break;
+    case 'typing':
+      div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(m.text)}</span>`;
+      break;
+    case 'error':
+      div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(m.text)}</span>`;
+      break;
+  }
+  container.appendChild(div);
+}
+
+function updateChatHeader(agentId) {
+  const headerName = document.getElementById('chat-header-name');
+  const headerAvatar = document.getElementById('chat-header-avatar');
+  const headerStatus = document.getElementById('chat-header-status');
+  if (!headerName) return;
+  const agent = agents[agentId];
+  if (!agent) {
+    headerName.textContent = 'No companion';
+    if (headerAvatar) headerAvatar.innerHTML = '';
+    if (headerStatus) headerStatus.textContent = '';
+    return;
+  }
+  headerName.textContent = agent.name;
+  if (headerAvatar) {
+    if (agent.avatar && String(agent.avatar).startsWith('data:')) {
+      headerAvatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
+    } else {
+      headerAvatar.innerHTML = agent.emoji || '🤖';
+    }
+  }
+  if (headerStatus) {
+    const isLeader = agent.isMain;
+    headerStatus.textContent = isLeader ? '★ leader · online' : 'online';
+    headerStatus.className = 'chat-header-status online';
+  }
+}
+
+// Populate the left-side companion channel tabs. Should be called whenever
+// the agent list changes.
+function renderCompanionChannelTabs() {
+  const container = document.getElementById('companion-channel-tabs');
+  if (!container) return;
+  // Preserve the title div
+  const title = container.querySelector('.channel-tabs-title');
+  container.innerHTML = '';
+  if (title) container.appendChild(title); else {
+    const t = document.createElement('div');
+    t.className = 'channel-tabs-title';
+    t.title = 'Companion chat channels';
+    t.textContent = 'CHANNELS';
+    container.appendChild(t);
+  }
+  for (const id of agentOrder) {
+    const agent = agents[id];
+    if (!agent) continue;
+    const tab = document.createElement('button');
+    tab.className = 'channel-tab channel-tab-companion';
+    tab.dataset.agentId = id;
+    tab.title = `Chat with ${agent.name}`;
+    tab.onclick = () => { window.switchActiveChat(id); focusIndex = agentOrder.indexOf(id); updateCarousel(); };
+    // Avatar (image or emoji)
+    if (agent.avatar && String(agent.avatar).startsWith('data:')) {
+      const img = document.createElement('img');
+      img.className = 'companion-tab-avatar';
+      img.src = agent.avatar;
+      img.alt = agent.name;
+      tab.appendChild(img);
+    } else {
+      const em = document.createElement('div');
+      em.className = 'companion-tab-emoji';
+      em.textContent = agent.emoji || '🤖';
+      tab.appendChild(em);
+    }
+    const name = document.createElement('div');
+    name.className = 'companion-tab-name';
+    name.textContent = agent.name;
+    tab.appendChild(name);
+    if (id === activeChatAgentId) tab.classList.add('active');
+    if (lastReadTsByAgent[id] && (chatHistoryByAgent[id] || []).some(m => m.ts > (lastReadTsByAgent[id] || 0))) {
+      tab.classList.add('has-unread');
+    }
+    container.appendChild(tab);
+  }
+}
 
 window.toggleTerminal = function() {
   const strip = document.getElementById('terminal-strip');
@@ -1282,9 +1547,19 @@ window.sendChatMessage = async function(message) {
 };
 
 let chatMsgId = 0;
-let chatHistory = []; // Keep in-memory chat history for mobile sync
-// Track last date for separators
-let lastChatDate = null;
+let chatHistory = []; // Backwards-compat flat history (also kept in sync for mobile)
+// Each companion has its own chat history. Keys are agent ids. The view shows
+// only the active companion's messages. We also keep the flat `chatHistory`
+// mirror in sync for mobile sync.
+let chatHistoryByAgent = {};
+let activeChatAgentId = null;
+// Companions hidden from the arena (still editable, still chatable — just
+// not rendered in the pixel arena). Keys are agent ids.
+let hiddenCompanions = new Set();
+// Last-read timestamp per companion (for unread badges in the channel tabs).
+let lastReadTsByAgent = {};
+// Track last date for separators (one cursor per companion)
+let lastChatDateByAgent = {};
 let lastEventDate = null;
 
 // Helper to format date separator
@@ -1327,11 +1602,24 @@ function checkDateSeparator(lastDate, newDate, container) {
   return lastDate;
 }
 
+// Map a display name back to an agentId. Used to bucket chat messages
+// into the right per-companion history. Returns null if not found.
+function agentIdForName(name) {
+  if (!name) return null;
+  for (const id of agentOrder) {
+    if (agents[id] && agents[id].name === name) return id;
+  }
+  return null;
+}
+
 function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
   }
+
+  // Resolve the agent id for per-companion bucketing
+  const agentId = agentIdForName(name) || activeChatAgentId || (agentOrder[focusIndex]) || null;
 
   // Keep in-memory chat history for mobile sync
   if (type === 'agent' || type === 'user') {
@@ -1344,6 +1632,14 @@ function addChatMsg(type, text, name, emoji) {
     // Keep only last 100 messages
     if (chatHistory.length > 100) {
       chatHistory = chatHistory.slice(-100);
+    }
+    // Per-companion history
+    if (agentId) {
+      if (!chatHistoryByAgent[agentId]) chatHistoryByAgent[agentId] = [];
+      chatHistoryByAgent[agentId].push({ type, text, name, emoji, ts: Date.now() });
+      if (chatHistoryByAgent[agentId].length > 200) {
+        chatHistoryByAgent[agentId] = chatHistoryByAgent[agentId].slice(-200);
+      }
     }
   }
 
@@ -1360,9 +1656,19 @@ function addChatMsg(type, text, name, emoji) {
     } catch {}
   }
 
+  // Skip the visible render if this message belongs to a companion whose
+  // channel isn't currently shown.
+  if (agentId && activeChatAgentId && agentId !== activeChatAgentId && type !== 'typing') {
+    // Mark the channel tab as having unread content
+    markChannelUnread(agentId);
+    return null;
+  }
+
   const msgs = document.getElementById('chat-messages');
+  if (!msgs) return null;
   const now = new Date();
-  lastChatDate = checkDateSeparator(lastChatDate, now, msgs);
+  const cursor = (agentId && lastChatDateByAgent[agentId]) || null;
+  lastChatDateByAgent[agentId || '_'] = checkDateSeparator(cursor, now, msgs);
   const div = document.createElement('div');
   const id = `chat-msg-${++chatMsgId}`;
   div.id = id;
@@ -1388,6 +1694,14 @@ function addChatMsg(type, text, name, emoji) {
   return id;
 }
 
+// Mark a companion's channel tab as having unread messages.
+function markChannelUnread(agentId) {
+  if (!agentId) return;
+  const tab = document.querySelector(`.channel-tab-companion[data-agent-id="${agentId}"]`);
+  if (tab) tab.classList.add('has-unread');
+  lastReadTsByAgent[agentId] = lastReadTsByAgent[agentId] || Date.now();
+}
+
 let eventMsgId = 0;
 function addEventMsg(text) {
   const evts = document.getElementById('event-messages');
@@ -1404,7 +1718,7 @@ function addEventMsg(text) {
   evts.scrollTop = evts.scrollHeight;
 
   // Flash the events tab if not active
-  var evtTab = document.querySelector('.term-tab[data-tab="events"]');
+  var evtTab = document.querySelector('.channel-tabs-right .channel-tab[data-tab="events"]');
   if (evtTab && !evtTab.classList.contains('active')) {
     evtTab.classList.add('tab-flash');
     setTimeout(function() { evtTab.classList.remove('tab-flash'); }, 2000);
@@ -1422,6 +1736,7 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+function escAttr(s) { return escapeAttr(s); }
 
 // Runtime counter
 setInterval(() => {
@@ -1478,6 +1793,12 @@ function debugLog(msg) {
 // Boot
 document.addEventListener('DOMContentLoaded', async () => {
   debugLog('=== CyberClaw Boot ===');
+  // Restore hidden-companions set from localStorage
+  try {
+    const stored = JSON.parse(localStorage.getItem('cyberclaw-hidden-companions') || '[]');
+    hiddenCompanions = new Set(Array.isArray(stored) ? stored : []);
+  } catch {}
+
   // Discover agents from OpenClaw
   await loadAgents();
 
@@ -1495,6 +1816,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     startCameraLoop();
   } catch (e) {
     debugLog('buildCarousel CRASHED: ' + e.message + '\n' + e.stack);
+  }
+  // Initialise the chat channel tabs and pick the default chat target
+  // (the party leader, falling back to the first agent).
+  renderCompanionChannelTabs();
+  const initialChat = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
+  if (initialChat) {
+    activeChatAgentId = initialChat;
+    const focusIdx = agentOrder.indexOf(initialChat);
+    if (focusIdx >= 0) focusIndex = focusIdx;
+    switchActiveChat(initialChat);
   }
   updateSystemInfo();
 
@@ -1846,6 +2177,7 @@ window.openCompanionEditor = function() {
 //
 // The save flow is patched with a guard requiring both a sprite and a name.
 let _creatingNewAgent = false; // true while the editor is in "create" mode
+let pendingNewCompanionId = null; // set by createNewCompanion's patched save; consumed by saveCompanion
 
 window.createNewCompanion = function() {
   // Don't gate on a focused agent — we may be creating from the
@@ -1917,6 +2249,7 @@ window.createNewCompanion = function() {
     // Restore the original saveCompanion and call it to handle sprite/avatar
     window.saveCompanion = origSave;
     _creatingNewAgent = false;
+    pendingNewCompanionId = id;
     editorAgentId = id; // point the original save at the new agent
     // Reload the agents list from openclaw so the new entry is known
     try {
@@ -1932,6 +2265,8 @@ window.createNewCompanion = function() {
         if (!agentOrder.includes(id)) agentOrder.push(id);
       }
     } catch (e) { console.warn('reload agents:', e); }
+    // Refresh channel tabs so the new companion appears as a tab
+    renderCompanionChannelTabs();
     return origSave.apply(this, arguments);
   };
 
@@ -2086,10 +2421,23 @@ window.saveCompanion = async function() {
     agent.secondaryModel = savedModel2 || '';
 
     buildCarousel();
+    // If the create flow set a pending new id, switch the chat to the new
+    // companion's channel so the user can keep chatting with them.
+    if (pendingNewCompanionId) {
+      const newId = pendingNewCompanionId;
+      pendingNewCompanionId = null;
+      const newIdx = agentOrder.indexOf(newId);
+      if (newIdx >= 0) {
+        focusIndex = newIdx;
+        switchActiveChat(newId);
+      }
+    }
+    renderCompanionChannelTabs();
     closeCompanionEditor();
   } catch (e) {
     debugLog('[Save] ERROR: ' + e.message + '\n' + e.stack);
     alert('Save failed: ' + e.message);
+    pendingNewCompanionId = null;
   }
 };
 
