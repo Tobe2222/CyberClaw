@@ -1,8 +1,100 @@
-# Changelog — v3.1.1 + v3.1.2 (session 2026-06-14)
+# Changelog — v3.1.1 + v3.1.2 + v3.1.3 (session 2026-06-14)
 
-All changes from Tobe's three turns in this session. Branch:
+All changes from Tobe's four turns in this session. Branch:
 `feature/companion-improvements`. To test: `npm start` from the
 project root.
+
+---
+
+## v3.1.3 (fourth turn)
+
+### 1. Removed arena background button (bottom-right)
+
+The bottom-right background button (`#arena-bg-btn`) and its
+label are gone. Background picker still lives in the **Arena
+Settings** modal (top-left gear button).
+
+### 2. Removed the leader concept
+
+- `isMain` is no longer derived during agent sort; the field is
+  kept on agents (always `false`) for back-compat only.
+- `assignRarity` no longer grants a "legendary" tier to the first
+  agent. Every agent is now rare/epic/uncommon like the others.
+- The "Companion · Leader" badge is now just "Companion". The
+  chat header no longer says "★ leader · online".
+- The arena now shows the **active chat companion** (or the first
+  non-hidden one as a fallback) — there's no fixed leader slot.
+- **Arena Settings**: every companion can be hidden, no leader
+  exemption.
+- A new helper `pickCurrentCompanionId()` replaces all the old
+  "find the leader" lookups. Preference: active chat channel >
+  first non-hidden agent > first agent.
+- Boot messages: "Companion: X" / "N spirits detected" became
+  "Chatting with: X" / "N other companion(s) available".
+
+### 3. Redesigned Skills in the inspect panel
+
+- The section that shows the categories (Coding / Writing / Game
+  / etc. with XP bars) is now called **Abilities** to avoid the
+  duplicate "Skills" name.
+- The "Skills" section itself is now just two buttons:
+  - **📚 Learn New Skill** — opens a chat-driven LLM guide that
+    walks the user through creating a custom skill.
+  - **📋 Learned Skills** — new modal that lists the companion's
+    equipped skills with descriptions and a "✕ Forget" button
+    per row. Built-in skills get a cyan accent border.
+- The old gear grid + 🔍 search bar + "No equipment yet" text
+  are gone.
+- New CSS: `.learned-skills-panel`, `.learned-skill-row`, etc.
+- New JS: `openLearnedSkillsModal`, `closeLearnedSkillsModal`,
+  `forgetLearnedSkill`.
+
+### 4. Arena + idle chatter routing
+
+- The arena previously only showed one companion (the leader)
+  because `pixelArena.setCompanion` overwrites itself. Now it
+  shows the active chat companion, so when you switch channels
+  via the top tabs, the arena updates too (sprite config and
+  sprite reloads — minor).
+- `promptCompanionReaction` no longer routes to a leader. It
+  routes to `pickCurrentCompanionId()`, so idle chatter now
+  lands in the chat channel of the companion the user is
+  currently looking at.
+- **Idle chatter frequency bumped from 19-31 min to 60-90 min.**
+  The "playful comment about being bored" prompt was removed
+  (a primary source of the "play with me" spam).
+- `togglePlayMenu` is debounced — the LLM reaction fires at
+  most once per 30 seconds, so rapidly opening/closing the toy
+  menu no longer spams LLM calls.
+
+### 5. Sleep/wake toggle (per-companion)
+
+- Each agent has a new `sleepState` field: `'awake'` (default)
+  or `'sleeping'`.
+- **Inspect panel** now has a row with the status indicator
+  ("Online" / "Sleeping") plus a button:
+  - `💤 Sleep` when awake (sets the companion to sleeping,
+    plays the "death" sprite as a sleeping pose)
+  - `☀️ Wake` when sleeping (wakes the companion, returns the
+    sprite to "idle")
+  - Manual toggle posts a system message in chat so the user
+    gets feedback.
+- **Auto-wake on chat**: `sendChat()` and `sendChatMessage()`
+  now wake the target companion if they're sleeping, so
+  messages always get a response.
+- **Sleeping companions** are skipped by:
+  - `promptCompanionReaction` (no idle chatter / reactions)
+  - `scheduleIdleChatter` (no periodic comments)
+- The chat header shows the active companion's state:
+  - green dot + "online" when awake
+  - cyan dot + "💤 sleeping" when sleeping
+
+### Verification (v3.1.3)
+
+- `node --check` passes on main.js, preload.js, app.js
+- Headless electron boots clean (SyncServer listening, no JS
+  errors)
+- All v3.1.0/v3.1.1/v3.1.2 features preserved untouched
 
 ---
 
