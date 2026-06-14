@@ -1,8 +1,69 @@
-# Changelog — v3.1.1 (session 2026-06-14)
+# Changelog — v3.1.1 + v3.1.2 (session 2026-06-14)
 
-Six follow-up changes from Tobe's second turn. Branch:
+All changes from Tobe's three turns in this session. Branch:
 `feature/companion-improvements`. To test: `npm start` from the
 project root.
+
+---
+
+## v3.1.2 (third turn)
+
+### Per-companion chat channels (one per agent)
+
+- `chatHistory` is now `chatHistoryByAgent = { agentId: [...] }`.
+  Each companion has their own chat thread.
+- `addChatMsg` buckets the message into the right agent's history
+  (via name → agentId lookup) and only renders it in the active
+  view. Non-active channels get an unread badge.
+- `switchActiveChat(agentId)` re-renders the chat-messages
+  container from the per-agent history, updates the channel tabs,
+  and updates the chat header.
+- `updateCarousel()` now also calls `switchActiveChat` when the
+  focused agent changes, so carousel selection = chat target.
+- The boot flow picks the leader (or first agent) as the initial
+  active chat.
+- The `createNewCompanion` flow sets `pendingNewCompanionId` so
+  `saveCompanion` switches the chat to the new companion's
+  channel after a successful create.
+
+### Channel tabs on the sides
+
+- **Left column** (`#companion-channel-tabs`): companion chat
+  channels, one tab per agent, with avatar/emoji and the agent's
+  name. Clicking a tab switches the chat.
+- **Right column** (`#system-tabs`): system tabs (Events,
+  OpenClaw, Logs) plus the existing collapse/expand toggle.
+- The chat-messages / chat-input area is now in the center.
+- The chat view got a `#chat-header` that shows the active
+  companion's avatar, name, and "online" status.
+- Old top-mounted `.term-tab` / `.terminal-tabs` design is gone.
+
+### Arena Settings (top-left button on the arena)
+
+- New `#arena-settings-btn` (gear icon) in the top-left of the
+  arena. Sits next to the existing logo.
+- New `#arena-settings-overlay` modal with two sections:
+  - **Background picker** (moved here from the bottom-right
+    gear button which is still there as a legacy shortcut).
+  - **Companion show/hide list.** Each row: avatar, name, class,
+    toggle switch. The leader is always shown (toggle disabled).
+  - Hidden state persists to localStorage as
+    `cyberclaw-hidden-companions` (a Set of agent ids).
+- `applyCompanionVisibility()` hook ready for the future
+  multi-companion arena (currently the pixelArena renders only
+  one companion, so the hidden flag is mostly cosmetic until
+  that refactor lands).
+
+### Verification (v3.1.2)
+
+- `node --check` passes on main.js, preload.js, app.js
+- Headless electron boots clean (SyncServer listening, no JS
+  errors)
+- Previous v3.1.1 features preserved untouched
+
+---
+
+## v3.1.1 (second turn)
 
 ## 1. Chat resizer direction was inverted ✅
 
