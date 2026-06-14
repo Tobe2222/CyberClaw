@@ -139,10 +139,8 @@
           </div>
         </div>
 
-        <!-- Background selector (bottom right) -->
-        <span id="arena-bg-label" class="arena-bg-label"></span>
-        <button id="arena-bg-btn" onclick="openBgSelector()" title="Change background">🖼️</button>
-
+        <!-- (Background selector moved into Arena Settings — see gear button
+             in the top-left. The bottom-right shortcut was removed in v3.1.3.) -->
 
       </div>
 
@@ -188,6 +186,19 @@
                 <!-- Populated dynamically. Each row: avatar, name, toggle switch. -->
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Learned Skills modal — v3.1.3: list of saved/equipped skills with descriptions -->
+      <div id="learned-skills-overlay" class="modal-overlay hidden" onclick="closeLearnedSkillsModal(event)">
+        <div class="modal-panel learned-skills-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon">📋</span> <span id="learned-skills-title">LEARNED SKILLS</span>
+            <button class="modal-close" onclick="closeLearnedSkillsModal()">✕</button>
+          </div>
+          <div id="learned-skills-list" class="learned-skills-list">
+            <!-- Populated dynamically -->
           </div>
         </div>
       </div>
@@ -264,8 +275,11 @@
         <div id="inspect-header-block">
           <div id="inspect-name" class="legendary-text">Codesuu</div>
           <div id="inspect-type-label" class="inspect-type-badge">Companion</div>
-          <div class="inspect-status" id="inspect-status">
-            <span class="status-dot online"></span> Online
+          <div class="inspect-status-row">
+            <div class="inspect-status" id="inspect-status">
+              <span class="status-dot online"></span> Online
+            </div>
+            <button id="inspect-sleep-btn" class="inspect-sleep-btn" onclick="toggleCompanionSleep()" title="Put companion to sleep / wake up">💤 Sleep</button>
           </div>
         </div>
         <div id="inspect-id" style="display:none">anthropic-hiveclaw</div>
@@ -294,23 +308,20 @@
           </div>
         </div>
 
-        <!-- Skills -->
+        <!-- Abilities (v3.1.3: renamed from "Skills" to avoid confusion
+             with the gear-grid "Skills" section below) -->
         <div class="inspect-section">
-          <div class="section-title">Skills</div>
+          <div class="section-title">Abilities</div>
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Learn Skill — hidden for spirits -->
-        <div class="inspect-section" id="inspect-equipment-section">
-          <div class="section-title">Skills <button class="equip-search-btn" onclick="toggleEquipSearch()" title="Search skills">🔍</button></div>
-          <div id="equip-search-panel" class="equip-search hidden">
-            <input type="text" id="equip-search-input" placeholder="Search skills..." oninput="searchEquipment()" />
-            <div id="equip-search-results" class="equip-results"></div>
+        <!-- Skills (v3.1.3: simplified to two buttons + modal lists) -->
+        <div class="inspect-section" id="inspect-skills-section">
+          <div class="section-title">Skills</div>
+          <div class="inspect-skills-actions">
+            <button class="learn-skill-btn" onclick="learnNewSkill()" title="Search and equip a new skill">📚 Learn New Skill</button>
+            <button class="learned-skills-btn" onclick="openLearnedSkillsModal()" title="View the skills this companion already knows">📋 Learned Skills</button>
           </div>
-          <div class="gear-grid" id="inspect-gear">
-            <!-- Populated dynamically from installed skills -->
-          </div>
-          <button class="learn-skill-btn" onclick="learnNewSkill()" title="Teach your companion a new skill">📚 Learn New Skill</button>
         </div>
 
         <!-- Spacer to push Channel + Model to bottom -->

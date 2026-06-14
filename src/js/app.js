@@ -52,9 +52,9 @@ let terminalExpanded = false;
 let mainTerminal = null, mainFit = null;
 let startTime = Date.now();
 
-// Rarity assignment based on role/binding
+// Rarity assignment based on role/binding (v3.1.3: no more "legendary
+// leader" tier — first agent is now a plain rare/epic like the others).
 function assignRarity(agent, index) {
-  if (agent.isMain && index === 0) return 'legendary';
   if (agent.channel !== 'None') return 'epic';
   if (agent.status === 'online') return 'rare';
   if (agent.sessionCount > 0) return 'uncommon';
@@ -93,21 +93,14 @@ async function loadAgents() {
       return false; // unbound + default workspace = skip
     });
 
-    // Sort: party leader first (clawsuu or default-bound), then by name
-    const sorted = filtered.sort((a, b) => {
-      // Party leader: agent whose class contains "party leader" or is the default binding
-      const aLeader = a.class.toLowerCase().includes('party leader');
-      const bLeader = b.class.toLowerCase().includes('party leader');
-      if (aLeader && !bLeader) return -1;
-      if (!aLeader && bLeader) return 1;
-      if (a.isMain && !b.isMain) return -1;
-      if (!a.isMain && b.isMain) return 1;
-      return a.name.localeCompare(b.name);
-    });
+    // Sort: by name. (v3.1.3 removed the "party leader" concept — all
+    // agents are treated equally. The arena shows the first non-hidden
+    // companion, or whatever the user selects via the carousel / chat
+    // channel tabs.)
+    const sorted = filtered.sort((a, b) => a.name.localeCompare(b.name));
 
     sorted.forEach((a, i) => {
-      const isPartyLeader = i === 0 && (a.class.toLowerCase().includes('party leader') || a.isMain);
-      const rarity = isPartyLeader ? 'legendary' : assignRarity(a, i);
+      const rarity = assignRarity(a, i);
       const stats = defaultStats(rarity);
 
       // Clean up class label — remove generic "Agent" suffix
@@ -146,7 +139,8 @@ async function loadAgents() {
         mp: stats.mp,
         xp: stats.xp,
         status: a.status,
-        isMain: isPartyLeader,
+        isMain: false, // legacy field, kept false (no leader concept in v3.1.3+)
+        sleepState: 'awake', // 'awake' or 'sleeping' — toggled manually or auto on chat
         skills: defaultSkills,
       };
       agentOrder.push(a.id);
@@ -247,20 +241,19 @@ function buildCarousel() {
 async function initArenaCompanions() {
   if (!pixelArena) { debugLog('[Arena] ERROR: No pixelArena!'); return; }
   debugLog('[Arena] initArenaCompanions called, agents: ' + agentOrder.join(', '));
-  debugLog('[Arena] isMain flags: ' + agentOrder.map(id => `${id}=${agents[id]?.isMain}`).join(', '));
 
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
-  const fallbackCompanionId = defaultCompanions[0]?.id || 'boar';
 
-  // Find party leader (main agent) — first agent with isMain, else first in order
-  const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
-  window.leaderId = leaderId;
+  // v3.1.3: no more leader concept. The arena shows the active chat
+  // companion if visible, or the first non-hidden agent as a fallback.
+  const arenaId = (activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) && agents[activeChatAgentId])
+    || agentOrder.find(id => !hiddenCompanions.has(id))
+    || agentOrder[0];
+  window.leaderId = arenaId; // legacy field name; still used by mobile sync etc.
 
-  debugLog(`[Arena] Leader: ${leaderId}, Agents: ${agentOrder.length}, Companion catalog: ${defaultCompanions.length}`);
+  debugLog(`[Arena] Arena companion: ${arenaId}, Agents: ${agentOrder.length}, Companion catalog: ${defaultCompanions.length}`);
 
-  // Every agent gets a Companion sprite (no more spirits)
-  // The leader gets the arena center; everyone else gets a sidebar slot.
   for (let i = 0; i < agentOrder.length; i++) {
     const id = agentOrder[i];
     const agent = agents[id];
@@ -271,7 +264,6 @@ async function initArenaCompanions() {
       debugLog('[Arena] ' + id + ' config: ' + JSON.stringify(config));
     } catch (e) { debugLog('[Arena] ERROR ' + id + ' config: ' + e.message); }
 
-    // Default to a rotating companion sprite if none assigned
     if (!pixelId && defaultCompanions.length > 0) {
       pixelId = defaultCompanions[i % defaultCompanions.length].id;
     }
@@ -280,16 +272,20 @@ async function initArenaCompanions() {
 
     agent._pixelCompanionId = pixelId;
     try {
-      if (id === leaderId) {
-        // Center companion
+      if (id === arenaId) {
         currentCompanionId = pixelId;
         localStorage.setItem('cyberclaw-selected-companion', pixelId);
         await pixelArena.setCompanion(id, pixelId, agent.name);
+        // Apply the saved sleep state to the sprite
+        if (pixelArena.companion && agent.sleepState === 'sleeping') {
+          pixelArena.companion.animation = 'death';
+        }
         debugLog('[Arena] Companion set: ' + agent.name + ' (' + pixelId + ')');
       } else {
-        // Sidebar companion — same sprite catalogue, just placed off-center
-        await pixelArena.setCompanion(id, pixelId, agent.name, { isSidekick: true, sidekickIndex: i });
-        debugLog('[Arena] Sidekick set: ' + agent.name + ' (' + pixelId + ')');
+        // Future: render sidekick companions in a sidebar slot.
+        // The pixelArena only supports one center companion at the moment,
+        // so non-arena companions are not rendered visually but remain
+        // available via the carousel / channel tabs.
       }
     } catch (e) { debugLog('[Arena] ERROR set companion for ' + id + ': ' + e.message + '\n' + e.stack); }
   }
@@ -303,7 +299,7 @@ function startCameraLoop() {
   function renderCamera() {
     if (pixelArena && window._inspectAgentId) {
       const agent = agents[window._inspectAgentId];
-      const zoom = agent && agent.isMain ? 1.2 : 1.5;
+      const zoom = 1.2; // (v3.1.3: no leader/non-leader distinction in camera zoom)
       pixelArena.renderCameraView(cam, window._inspectAgentId, zoom);
     }
     requestAnimationFrame(renderCamera);
@@ -421,11 +417,10 @@ function renderArenaSettingsCompanions() {
   for (const id of agentOrder) {
     const agent = agents[id];
     if (!agent) continue;
-    const isLeader = !!agent.isMain;
     const hidden = hiddenCompanions.has(id);
 
     const row = document.createElement('label');
-    row.className = 'arena-companion-row' + (isLeader ? ' is-leader' : '') + (hidden ? ' hidden-from-arena' : '');
+    row.className = 'arena-companion-row' + (hidden ? ' hidden-from-arena' : '');
 
     // Avatar
     const avatar = document.createElement('span');
@@ -442,7 +437,7 @@ function renderArenaSettingsCompanions() {
     info.className = 'arena-companion-info';
     const name = document.createElement('div');
     name.className = 'arena-companion-name';
-    name.textContent = agent.name + (isLeader ? ' ★' : '');
+    name.textContent = agent.name;
     const cls = document.createElement('div');
     cls.className = 'arena-companion-class';
     cls.textContent = agent.class || agent.id;
@@ -450,39 +445,33 @@ function renderArenaSettingsCompanions() {
     info.appendChild(cls);
     row.appendChild(info);
 
-    // Toggle
+    // Toggle — v3.1.3: every companion can be hidden, no leader exemption
     const lbl = document.createElement('span');
     lbl.className = 'arena-companion-toggle';
-    lbl.title = isLeader ? 'Leader is always shown' : 'Show / hide in the arena';
+    lbl.title = 'Show / hide in the arena';
     const sw = document.createElement('span');
-    sw.className = 'toggle-switch' + (isLeader || !hidden ? ' on' : '');
-    if (isLeader) sw.style.opacity = '0.5';
+    sw.className = 'toggle-switch' + (!hidden ? ' on' : '');
     const lblText = document.createElement('span');
-    lblText.textContent = (isLeader || !hidden) ? 'shown' : 'hidden';
+    lblText.textContent = !hidden ? 'shown' : 'hidden';
     lbl.appendChild(sw);
     lbl.appendChild(lblText);
-    // Prevent the leader from being hidden
-    if (!isLeader) {
-      sw.style.cursor = 'pointer';
-      lbl.style.cursor = 'pointer';
-      const toggle = () => {
-        if (hiddenCompanions.has(id)) {
-          hiddenCompanions.delete(id);
-          sw.classList.add('on');
-          lblText.textContent = 'shown';
-          row.classList.remove('hidden-from-arena');
-        } else {
-          hiddenCompanions.add(id);
-          sw.classList.remove('on');
-          lblText.textContent = 'hidden';
-          row.classList.add('hidden-from-arena');
-        }
-        applyCompanionVisibility();
-      };
-      lbl.addEventListener('click', (e) => { e.preventDefault(); toggle(); });
-    } else {
-      lbl.style.opacity = '0.6';
-    }
+    sw.style.cursor = 'pointer';
+    lbl.style.cursor = 'pointer';
+    const toggle = () => {
+      if (hiddenCompanions.has(id)) {
+        hiddenCompanions.delete(id);
+        sw.classList.add('on');
+        lblText.textContent = 'shown';
+        row.classList.remove('hidden-from-arena');
+      } else {
+        hiddenCompanions.add(id);
+        sw.classList.remove('on');
+        lblText.textContent = 'hidden';
+        row.classList.add('hidden-from-arena');
+      }
+      applyCompanionVisibility();
+    };
+    lbl.addEventListener('click', (e) => { e.preventDefault(); toggle(); });
     row.appendChild(lbl);
     wrap.appendChild(row);
   }
@@ -498,6 +487,39 @@ function applyCompanionVisibility() {
   // For now we just persist the set to localStorage so the choice survives a reload.
   try { localStorage.setItem('cyberclaw-hidden-companions', JSON.stringify([...hiddenCompanions])); } catch {}
 }
+
+// v3.1.3: manual sleep / wake toggle for the currently-focused companion.
+// The button text and sprite animation both reflect the new state. When
+// the user sends a chat message, sendChat() auto-wakes the target so the
+// companion can reply.
+window.toggleCompanionSleep = function() {
+  const id = agentOrder[focusIndex] || pickCurrentCompanionId();
+  if (!id) return;
+  const agent = agents[id];
+  if (!agent) return;
+  if (agent.sleepState === 'sleeping') {
+    agent.sleepState = 'awake';
+    // Wake the arena sprite if this is the one currently shown
+    if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
+      pixelArena.companion.animation = 'idle';
+      pixelArena.companion.vx = 0;
+      pixelArena.companion.vy = 0;
+      pixelArena.companion.frame = 0;
+    }
+    addChatMsg('system', `☀️ ${agent.name} woke up`);
+  } else {
+    agent.sleepState = 'sleeping';
+    if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
+      pixelArena.companion.animation = 'death';
+      pixelArena.companion.vx = 0;
+      pixelArena.companion.vy = 0;
+    }
+    addChatMsg('system', `💤 ${agent.name} is sleeping`);
+  }
+  // Refresh the inspect panel and the channel header
+  if (window._inspectAgentId === id) updateInspect(id);
+  if (activeChatAgentId === id) updateChatHeader(id);
+};
 
 // Pop-out companion window via Electron BrowserWindow
 let arenaExpanded = false;
@@ -581,20 +603,19 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  // Set type badge — all agents are Companions now (no more spirits)
+  // Set type badge — v3.1.3: every companion is just a "Companion",
+  // no more leader sub-label.
   const typeBadge = document.getElementById('inspect-type-label');
   if (typeBadge) {
-    const isLeader = agent.isMain;
-    typeBadge.textContent = isLeader ? 'Companion · Leader' : 'Companion';
+    typeBadge.textContent = 'Companion';
     typeBadge.className = 'inspect-type-badge companion';
   }
 
   // Camera view — track the currently inspected agent ID for the render loop
   window._inspectAgentId = agentId;
 
-  // Equipment is available for all companions
-  const equipSection = document.getElementById('inspect-equipment-section');
-  if (equipSection) equipSection.style.display = '';
+  // (v3.1.3: the inspect-equipment-section was removed; the new
+  // "Skills" section has its own #inspect-skills-section.)
 
   document.getElementById('inspect-name').textContent = agent.name;
   document.getElementById('inspect-name').className = `${agent.rarity}-text`;
@@ -602,7 +623,17 @@ function updateInspect(agentId) {
   document.getElementById('inspect-id').textContent = agent.id;
 
   const statusEl = document.getElementById('inspect-status');
-  statusEl.innerHTML = `<span class="status-dot ${agent.status}"></span> ${agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}`;
+  // v3.1.3: status reflects the manual sleep/wake toggle, not the openclaw status.
+  const sleeping = agent.sleepState === 'sleeping';
+  statusEl.innerHTML = `<span class="status-dot ${sleeping ? 'sleeping' : 'online'}"></span> ${sleeping ? 'Sleeping' : 'Online'}`;
+
+  // Sleep/wake button text + state
+  const sleepBtn = document.getElementById('inspect-sleep-btn');
+  if (sleepBtn) {
+    sleepBtn.textContent = sleeping ? '☀️ Wake' : '💤 Sleep';
+    sleepBtn.classList.toggle('is-sleeping', sleeping);
+    sleepBtn.title = sleeping ? `Wake ${agent.name} up` : `Put ${agent.name} to sleep`;
+  }
 
   // Channel info (bottom section)
   const platformEl = document.getElementById('inspect-channel-platform');
@@ -698,7 +729,7 @@ function updateInspect(agentId) {
     const displaySkills = allSkillDefs;
     
     const skills = stats.skills || {};
-    if (displaySkills.length === 0 && !agent.isMain) {
+    if (displaySkills.length === 0) {
       skillsEl.innerHTML = '<div style="color:var(--text-muted);font-size:9px;padding:2px">No specializations assigned</div>';
     } else {
       skillsEl.innerHTML = displaySkills.map(s => {
@@ -1243,9 +1274,9 @@ function updateChatHeader(agentId) {
     }
   }
   if (headerStatus) {
-    const isLeader = agent.isMain;
-    headerStatus.textContent = isLeader ? '★ leader · online' : 'online';
-    headerStatus.className = 'chat-header-status online';
+    const sleeping = agent.sleepState === 'sleeping';
+    headerStatus.textContent = sleeping ? '💤 sleeping' : 'online';
+    headerStatus.className = 'chat-header-status ' + (sleeping ? 'sleeping' : 'online');
   }
 }
 
@@ -1356,8 +1387,14 @@ window.sendChat = async function() {
   const message = input.value.trim();
   if (!message || chatBusy || agentOrder.length === 0) return;
 
-  // Wake companion if sleeping
-  nudgeNightWake();
+  // v3.1.3: auto-wake the target companion so they can reply.
+  const targetId = agentOrder[focusIndex] || pickCurrentCompanionId();
+  if (targetId && agents[targetId] && agents[targetId].sleepState === 'sleeping') {
+    agents[targetId].sleepState = 'awake';
+    if (pixelArena && pixelArena.companion && pixelArena.companion.id === targetId) {
+      pixelArena.companion.animation = 'idle';
+    }
+  }
 
   const agent = agents[agentOrder[focusIndex]];
   if (!agent) return;
@@ -1366,8 +1403,8 @@ window.sendChat = async function() {
   addChatMsg('user', message, agent.name);
   input.value = '';
 
-  // Always chat through the party leader
-  const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
+  // The chat target is the active companion (v3.1.3: no leader concept).
+  const mainAgentId = pickCurrentCompanionId();
   if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
   // Build message with context
@@ -1489,8 +1526,16 @@ window.sendChatMessage = async function(message) {
     }
   }
 
-  const mainAgentId = agentOrder.find(id => agents[id]?.isMain);
+  const mainAgentId = pickCurrentCompanionId();
   if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
+
+  // v3.1.3: auto-wake the target companion so they can reply.
+  if (agents[mainAgentId].sleepState === 'sleeping') {
+    agents[mainAgentId].sleepState = 'awake';
+    if (pixelArena && pixelArena.companion && pixelArena.companion.id === mainAgentId) {
+      pixelArena.companion.animation = 'idle';
+    }
+  }
 
   const agent = agents[mainAgentId];
   if (!agent) return;
@@ -1604,6 +1649,15 @@ function agentIdForName(name) {
     if (agents[id] && agents[id].name === name) return id;
   }
   return null;
+}
+
+// Pick the "current" companion for chat / idle / reaction flows in v3.1.3+.
+// Preference order: active chat channel > first non-hidden > first agent.
+function pickCurrentCompanionId() {
+  if (activeChatAgentId && agents[activeChatAgentId]) return activeChatAgentId;
+  const first = agentOrder.find(id => !hiddenCompanions.has(id));
+  if (first) return first;
+  return agentOrder[0] || null;
 }
 
 function addChatMsg(type, text, name, emoji) {
@@ -1811,10 +1865,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {
     debugLog('buildCarousel CRASHED: ' + e.message + '\n' + e.stack);
   }
-  // Initialise the chat channel tabs and pick the default chat target
-  // (the party leader, falling back to the first agent).
+  // Initialise the chat channel tabs and pick the default chat target.
+  // v3.1.3: no leader — default to the first agent in sort order (which
+  // is now alphabetical after we removed the party-leader-first sort).
   renderCompanionChannelTabs();
-  const initialChat = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
+  const initialChat = pickCurrentCompanionId() || agentOrder[0];
   if (initialChat) {
     activeChatAgentId = initialChat;
     const focusIdx = agentOrder.indexOf(initialChat);
@@ -1947,7 +2002,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           var arena = window.pixelArena;
           if (arena && arena.showBubble) arena.showBubble(msg, 8000);
           // Also add to chat (no agent call — instant reaction)
-          var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+          var agentId = pickCurrentCompanionId();
           var agent = agentId ? agents[agentId] : null;
           if (agent) addChatMsg('agent', msg, agent.name, agent.emoji);
         }
@@ -1965,12 +2020,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   ];
 
   if (agentOrder.length > 0) {
-    const mainId = agentOrder.find(id => agents[id]?.isMain);
-    const leader = mainId ? agents[mainId] : agents[agentOrder[0]];
-    const sidekickCount = agentOrder.length - 1;
-    bootMsgs.push({ d: 900, t: `> Companion: ${leader?.name || 'Unknown'}` });
-    if (sidekickCount > 0) {
-      bootMsgs.push({ d: 1200, t: `> ${sidekickCount} companion${sidekickCount > 1 ? 's' : ''} ready` });
+    const mainId = pickCurrentCompanionId();
+    const focus = mainId ? agents[mainId] : agents[agentOrder[0]];
+    const otherCount = agentOrder.length - 1;
+    bootMsgs.push({ d: 900, t: `> Chatting with: ${focus?.name || 'Unknown'}` });
+    if (otherCount > 0) {
+      bootMsgs.push({ d: 1200, t: `> ${otherCount} other companion${otherCount > 1 ? 's' : ''} available — use the channel tabs to switch` });
     }
     bootMsgs.push({
       d: 1500,
@@ -3455,7 +3510,7 @@ window.sendChat = async function() {
     input.value = '';
 
     // Send to agent with image context
-    const mainAgentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+    const mainAgentId = pickCurrentCompanionId();
     if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
     let fullMessage = (message || 'Describe this image') + '\n[Image attached: ' + imgData.filename + ']';
@@ -3573,6 +3628,73 @@ window.learnNewSkill = function() {
   }
 };
 
+// v3.1.3: Learned Skills modal — shows the companion's equipped/known skills
+// (built-in equipment + openclaw skills) with descriptions and an option
+// to forget one.
+window.openLearnedSkillsModal = async function() {
+  const id = agentOrder[focusIndex] || pickCurrentCompanionId();
+  if (!id) return;
+  const agent = agents[id];
+  if (!agent) return;
+  const overlay = document.getElementById('learned-skills-overlay');
+  const list = document.getElementById('learned-skills-list');
+  const title = document.getElementById('learned-skills-title');
+  if (title) title.textContent = `${agent.name.toUpperCase()} · LEARNED SKILLS`;
+  if (!overlay || !list) return;
+  list.innerHTML = '<div class="learned-skill-empty">Loading…</div>';
+  overlay.classList.remove('hidden');
+
+  // Load sprite config (which has the equipped skills list)
+  const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
+  const equipped = cfg.equipment || [];
+
+  // Build a lookup of all known skills (built-in + cached openclaw skills)
+  const allItems = [...BUILTIN_EQUIPMENT, ...(allSkillsCache || [])];
+  const byName = {};
+  for (const s of allItems) {
+    if (s && s.name) byName[s.name] = s;
+  }
+
+  if (!equipped.length) {
+    list.innerHTML = '<div class="learned-skill-empty">No skills learned yet. Click "Learn New Skill" to get started.</div>';
+    return;
+  }
+
+  list.innerHTML = equipped.map(e => {
+    const meta = byName[e.skill] || byName[e.name] || {};
+    const desc = e.description || meta.description || '(no description)';
+    const icon = e.icon || meta.icon || '🔧';
+    const isBuiltin = !!(BUILTIN_EQUIPMENT.find(s => s.name === e.skill));
+    return `
+      <div class="learned-skill-row${isBuiltin ? ' is-builtin' : ''}">
+        <div class="learned-skill-name"><span class="learned-skill-icon">${icon}</span> ${escapeHtml(e.name || e.skill)}</div>
+        <div class="learned-skill-desc">${escapeHtml(desc)}</div>
+        <div class="learned-skill-actions">
+          <button class="learned-skill-remove-btn" onclick="forgetLearnedSkill('${escapeAttr(e.skill || e.name)}')">✕ Forget</button>
+        </div>
+      </div>`;
+  }).join('');
+};
+
+window.closeLearnedSkillsModal = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  const overlay = document.getElementById('learned-skills-overlay');
+  if (overlay) overlay.classList.add('hidden');
+};
+
+window.forgetLearnedSkill = async function(skillName) {
+  const id = agentOrder[focusIndex] || pickCurrentCompanionId();
+  if (!id) return;
+  if (!confirm(`Forget "${skillName}"?`)) return;
+  const cfg = await cyberclaw.agents.getSpriteConfig(id) || {};
+  cfg.equipment = (cfg.equipment || []).filter(e => (e.skill || e.name) !== skillName);
+  await cyberclaw.agents.saveSpriteConfig(id, cfg);
+  // Re-render the modal
+  await window.openLearnedSkillsModal();
+  // Also refresh the inspect panel's gear area if it still exists
+  try { loadEquipment(id); } catch {}
+};
+
 // ═══════════════════════════════════════════════════════════
 //  HAPPINESS SYSTEM
 // ═══════════════════════════════════════════════════════════
@@ -3659,6 +3781,7 @@ window.toggleFeedMenu = function() {
   }
 };
 
+var _lastPlayReactionTs = 0;
 window.togglePlayMenu = function() {
   var menu = document.getElementById('play-menu');
   if (!menu) return;
@@ -3671,7 +3794,13 @@ window.togglePlayMenu = function() {
   if (wasHidden) {
     var arena = window.pixelArena;
     if (arena) arena.companionEmoji = { emoji: '🎾', timer: 3000 };
-    promptCompanionReaction('The user wants to play with you! They opened the toy box. Give a short excited reaction about playtime.');
+    // v3.1.3: only fire the "play with me" reaction at most once per
+    // 30 seconds so opening/closing the menu rapidly doesn't spam LLM calls.
+    var now = Date.now();
+    if (now - _lastPlayReactionTs > 30000) {
+      _lastPlayReactionTs = now;
+      promptCompanionReaction('The user wants to play with you! They opened the toy box. Give a short excited reaction about playtime.');
+    }
   }
   if (!wasHidden) {
     selectedTreat = null;
@@ -3800,14 +3929,18 @@ setTimeout(setupArenaDrop, 3000);
 // Prompt the companion and show response in both chat + bubble
 var reactionBusy = false;
 function promptCompanionReaction(promptText) {
-  // Silent while asleep (night + not woken by user)
-  if (isAsleep()) return;
-  var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
-  if (!agentId) return;
-  var agent = agents[agentId];
-  if (!agent) return;
+  // Skip if the active companion is sleeping (manual sleep toggle)
+  const targetId = activeChatAgentId
+    || (agentOrder.find(id => !hiddenCompanions.has(id)))
+    || agentOrder[0];
+  if (!targetId) return;
+  const target = agents[targetId];
+  if (!target) return;
+  if (target.sleepState === 'sleeping') return;
   // Don't fire if main chat or another reaction is already running
   if (chatBusy || reactionBusy) return;
+  var agentId = targetId;
+  var agent = target;
 
   var traitCtx = getTraitContext();
   var userCtx = getUserContext();
@@ -3859,9 +3992,15 @@ function getCheckedTraits() {
 }
 
 function getTraitContext() {
-  var agentId = agentOrder.find(function(id) { return agents[id] && agents[id].isMain; });
+  // Use the active chat companion (or the arena companion as a fallback).
+  // v3.1.3: no leader concept — traits are about the companion you're
+  // currently talking to.
+  var agentId = activeChatAgentId
+    || (agentOrder.find(id => !hiddenCompanions.has(id)))
+    || agentOrder[0];
   if (!agentId) return '';
   var agent = agents[agentId];
+  if (!agent) return '';
   var traits = agent.traits || [];
   if (!traits.length) return '';
   return traits.map(function(t) { return TRAIT_DESCRIPTIONS[t]; }).filter(Boolean).join(' ');
@@ -3908,7 +4047,6 @@ var IDLE_PROMPTS = [
   'Say something curious or funny about what might be lurking in the forest nearby.',
   'Make a short observation about the weather or time of day.',
   'Ask the user if they have any cool quests or tasks to work on today.',
-  'Make a playful comment about being bored and suggest something fun to do.',
   'Say something quirky about being a digital creature living on a computer.',
   'Make a short comment about food or treats (hint that you\'re hungry).',
   'Ask the user what they\'re working on today in a curious way.',
@@ -3959,14 +4097,15 @@ function nudgeNightWake() {
 }
 
 function scheduleIdleChatter() {
-  // Random interval between 19 and 31 minutes (~20% less frequent than before)
-  var minMs = 19 * 60 * 1000;
-  var maxMs = 31 * 60 * 1000;
+  // v3.1.3: bumped from ~20min to ~60-90min so chatter stays sparse.
+  var minMs = 60 * 60 * 1000;
+  var maxMs = 90 * 60 * 1000;
   var delay = minMs + Math.random() * (maxMs - minMs);
 
   setTimeout(function() {
-    // Silent while asleep
-    if (!isAsleep()) {
+    // v3.1.3: skip if the current companion is manually sleeping
+    const cid = pickCurrentCompanionId();
+    if (cid && agents[cid] && agents[cid].sleepState !== 'sleeping') {
       var userCtx = getUserContext();
       var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
       var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +
