@@ -51,6 +51,16 @@ window.cyberclaw = {
     save: (provider) => ipcRenderer.invoke('providers:save', provider),
     delete: (id) => ipcRenderer.invoke('providers:delete', id),
   },
+  openclaw: {
+    readConfig: () => ipcRenderer.invoke('openclaw:read-config'),
+    listProviders: () => ipcRenderer.invoke('openclaw:list-providers'),
+    upsertProvider: (provider) => ipcRenderer.invoke('openclaw:upsert-provider', provider),
+    deleteProvider: (id) => ipcRenderer.invoke('openclaw:delete-provider', id),
+    listAgents: () => ipcRenderer.invoke('openclaw:list-agents'),
+    createAgent: (agent) => ipcRenderer.invoke('openclaw:create-agent', agent),
+    updateAgent: (id, updates) => ipcRenderer.invoke('openclaw:update-agent', id, updates),
+    deleteAgent: (id) => ipcRenderer.invoke('openclaw:delete-agent', id),
+  },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),
     install: (pkg) => ipcRenderer.invoke('wizard:install', pkg),

@@ -207,9 +207,8 @@
             </div>
             <div id="chat-input-row">
               <button id="chat-attach" onclick="pickImageAttachment()" title="Attach image">📎</button>
-              <textarea id="chat-input" rows="2" placeholder="Type a message... (Shift+Enter for newline)"></textarea>
+              <textarea id="chat-input" rows="2" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
               <button id="chat-voice" onclick="toggleVoiceInput()" title="Voice input">🎤</button>
-              <button id="chat-send" onclick="sendChat()">⚔️</button>
             </div>
           </div>
         </div>
@@ -553,6 +552,15 @@
         <div class="forge-companion-preview">
           <button class="forge-change-btn" onclick="toggleCompanionPicker()">🔄 Change Companion</button>
           <div id="forge-companion-viewer"></div>
+        </div>
+
+        <!-- Size scale -->
+        <div class="forge-traits-section forge-size-section">
+          <div class="forge-traits-title">📐 Size</div>
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">Scale <span id="forge-size-value">4×</span></span>
+            <input type="range" id="forge-size-slider" min="1" max="8" step="1" value="4" class="settings-slider" oninput="updateForgeSize(this.value)" />
+          </div>
         </div>
 
         <!-- Companion picker (hidden by default) -->

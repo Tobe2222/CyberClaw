@@ -251,79 +251,49 @@ async function initArenaCompanions() {
 
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
+  const fallbackCompanionId = defaultCompanions[0]?.id || 'boar';
 
-  // Load spirit catalog for spirits
-  let spirits = [];
-  try {
-    const cmPath = path.join(__dirname, 'assets', 'spirits', 'catalog.json');
-    const fs = require('fs');
-    if (fs.existsSync(cmPath)) {
-      spirits = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).spirits || [];
-    }
-  } catch {}
-
-  // Find party leader (main agent) — becomes the Companion
+  // Find party leader (main agent) — first agent with isMain, else first in order
   const leaderId = agentOrder.find(id => agents[id]?.isMain) || agentOrder[0];
   window.leaderId = leaderId;
-  
-  debugLog(`[Arena] Leader: ${leaderId}, Agents: ${agentOrder.length}, Spirits catalog: ${spirits.length}`);
 
-  if (leaderId) {
-    const leader = agents[leaderId];
+  debugLog(`[Arena] Leader: ${leaderId}, Agents: ${agentOrder.length}, Companion catalog: ${defaultCompanions.length}`);
+
+  // Every agent gets a Companion sprite (no more spirits)
+  // The leader gets the arena center; everyone else gets a sidebar slot.
+  for (let i = 0; i < agentOrder.length; i++) {
+    const id = agentOrder[i];
+    const agent = agents[id];
     let pixelId = null;
     try {
-      const config = await cyberclaw.agents.getSpriteConfig(leaderId);
-      pixelId = config?.pixelCompanionId;
-      debugLog('[Arena] Leader config: ' + JSON.stringify(config));
-    } catch (e) { debugLog('[Arena] ERROR leader config: ' + e.message); }
-
-    // Default to first pixel companion if none assigned
-    if (!pixelId && defaultCompanions.length > 0) {
-      pixelId = defaultCompanions[0].id;
-    }
-
-    if (pixelId) {
-      leader._pixelCompanionId = pixelId;
-      try {
-        currentCompanionId = pixelId;
-      localStorage.setItem('cyberclaw-selected-companion', pixelId);
-      await pixelArena.setCompanion(leaderId, pixelId, leader.name);
-        debugLog(`[Arena] Companion set: ${leader.name} (${pixelId})`);
-      } catch (e) { debugLog('[Arena] ERROR set companion: ' + e.message + '\n' + e.stack); }
-    } else {
-      debugLog('[Arena] WARN: No pixelId for leader');
-    }
-  }
-
-  // All other agents become Spirits (use spirit sprites)
-  let spiritIdx = 0;
-  for (const id of agentOrder) {
-    if (id === leaderId) continue; // skip the companion
-    const agent = agents[id];
-
-    // Check if spirit has a saved spirit (support legacy spiritId key)
-    let spiritId = null;
-    try {
       const config = await cyberclaw.agents.getSpriteConfig(id);
-      spiritId = config?.spiritId || config?.spiritId;
-    } catch {}
+      pixelId = config?.pixelCompanionId;
+      debugLog('[Arena] ' + id + ' config: ' + JSON.stringify(config));
+    } catch (e) { debugLog('[Arena] ERROR ' + id + ' config: ' + e.message); }
 
-    // Auto-assign a spirit if none saved
-    if (!spiritId && spirits.length > 0) {
-      spiritId = spirits[spiritIdx % spirits.length].id;
+    // Default to a rotating companion sprite if none assigned
+    if (!pixelId && defaultCompanions.length > 0) {
+      pixelId = defaultCompanions[i % defaultCompanions.length].id;
     }
 
-    debugLog(`[Arena] Spirit ${id}: spiritId=${spiritId}`);
-    if (spiritId) {
-      agent._spiritId = spiritId;
-      try {
-        await pixelArena.addSpirit(id, spiritId, agent.name);
-        debugLog(`[Arena] Added spirit ${agent.name} (${spiritId})`);
-      } catch (e) { debugLog(`[Arena] ERROR Failed to add spirit ${id}:`, e); }
-    }
-    spiritIdx++;
+    if (!pixelId) { debugLog('[Arena] WARN: No pixelId for ' + id); continue; }
+
+    agent._pixelCompanionId = pixelId;
+    try {
+      if (id === leaderId) {
+        // Center companion
+        currentCompanionId = pixelId;
+        localStorage.setItem('cyberclaw-selected-companion', pixelId);
+        await pixelArena.setCompanion(id, pixelId, agent.name);
+        debugLog('[Arena] Companion set: ' + agent.name + ' (' + pixelId + ')');
+      } else {
+        // Sidebar companion — same sprite catalogue, just placed off-center
+        await pixelArena.setCompanion(id, pixelId, agent.name, { isSidekick: true, sidekickIndex: i });
+        debugLog('[Arena] Sidekick set: ' + agent.name + ' (' + pixelId + ')');
+      }
+    } catch (e) { debugLog('[Arena] ERROR set companion for ' + id + ': ' + e.message + '\n' + e.stack); }
   }
-  debugLog(`[Arena] Init complete. Companion: ${pixelArena.companion ? 'yes' : 'no'}, Spirits: ${pixelArena.spirits.length}`);
+  debugLog('[Arena] Init complete. Companion: ' + (pixelArena.companion ? 'yes' : 'no'));
 }
 
 // Camera view render loop — renders a cropped arena view into inspect panel
@@ -482,19 +452,20 @@ function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
 
-  // Set type badge
+  // Set type badge — all agents are Companions now (no more spirits)
   const typeBadge = document.getElementById('inspect-type-label');
   if (typeBadge) {
-    typeBadge.textContent = agent.isMain ? 'Companion' : 'Spirit';
-    typeBadge.className = `inspect-type-badge ${agent.isMain ? 'companion' : 'spirit'}`;
+    const isLeader = agent.isMain;
+    typeBadge.textContent = isLeader ? 'Companion · Leader' : 'Companion';
+    typeBadge.className = 'inspect-type-badge companion';
   }
 
   // Camera view — track the currently inspected agent ID for the render loop
   window._inspectAgentId = agentId;
 
-  // Hide equipment for spirits
+  // Equipment is available for all companions
   const equipSection = document.getElementById('inspect-equipment-section');
-  if (equipSection) equipSection.style.display = agent.isMain ? '' : 'none';
+  if (equipSection) equipSection.style.display = '';
 
   document.getElementById('inspect-name').textContent = agent.name;
   document.getElementById('inspect-name').className = `${agent.rarity}-text`;
@@ -594,11 +565,8 @@ function updateInspect(agentId) {
       { name: 'General', icon: '✨' },
     ];
     
-    // Spirits only show their assigned focus skills
-    const focusSkills = agent.focusSkills || [];
-    const displaySkills = agent.isMain
-      ? allSkillDefs
-      : allSkillDefs.filter(s => focusSkills.includes(s.name));
+    // All companions show their full skill set (no more spirits with focus-only)
+    const displaySkills = allSkillDefs;
     
     const skills = stats.skills || {};
     if (displaySkills.length === 0 && !agent.isMain) {
@@ -1588,8 +1556,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
+      // The resizer sits at the TOP of the input area. When the user drags
+      // DOWN by +delta, the resizer should follow the mouse down (so its
+      // Y position on screen increases), which means the input area must
+      // get TALLER. Conversely, dragging up should make it shorter.
+      // In the flex column, taller input = resizer moves up on screen.
+      // So the sign is INVERTED vs. a typical bottom-edge resize handle.
       const delta = e.clientY - startY;
-      let newH = Math.max(MIN_INPUT, Math.min(MAX_INPUT, startH + delta));
+      let newH = Math.max(MIN_INPUT, Math.min(MAX_INPUT, startH - delta));
       inputArea.style.flexBasis = newH + 'px';
       inputArea.style.flexGrow = '0';
       inputArea.style.flexShrink = '0';
@@ -1897,12 +1871,7 @@ window.selectPixelCompanion = function(id) {
   });
 
   // Update forge preview
-  const viewer = document.getElementById('forge-companion-viewer');
-  if (viewer) {
-    if (forgeCompanionSprite) forgeCompanionSprite.dispose();
-    forgeCompanionSprite = new PixelSprite(viewer, { scale: 4, direction: 0, animation: 'idle' });
-    forgeCompanionSprite.show(id);
-  }
+  showForgeCompanion(id);
 };
 
 // ---------------------------------------------------------------------------
@@ -1910,47 +1879,51 @@ window.selectPixelCompanion = function(id) {
 // ---------------------------------------------------------------------------
 let editorAgentId = null;
 
-// Open the correct forge based on agent type
+// All agents are Companions now (no more spirits). The companion forge
+// opens for whoever is currently focused.
 window.openCompanionEditor = function() {
   const agentId = agentOrder[focusIndex];
   if (!agentId) return;
-  const agent = agents[agentId];
-
-  if (agent.isMain) {
-    openCompanionForge(agentId);
-  } else {
-    openSpiritForge(agentId);
-  }
+  openCompanionForge(agentId);
 };
 
-// Open the forge pre-configured for a brand-new companion: name is empty,
-// no sprite is pre-selected, and the sprite picker is shown so the user
-// must pick a visual before they can save. The save will update the
-// current leader's sprite + name in place.
+// Open the forge pre-configured for a brand-new companion. This is a true
+// "create" — saving will register a new agent in the openclaw config
+// (under `agents.list`) AND create the corresponding sprite/avatar data,
+// then reload the agent list so the new companion appears in the carousel
+// and the arena.
+//
+// The save flow is patched with a guard requiring both a sprite and a name.
+let _creatingNewAgent = false; // true while the editor is in "create" mode
+
 window.createNewCompanion = function() {
-  const agentId = agentOrder[focusIndex] || (window.leaderId) || (agentOrder.find(id => agents[id]?.isMain));
-  if (!agentId) {
-    addChatMsg('error', 'No agent available to attach the new companion to.');
+  // Don't gate on a focused agent — we may be creating from the
+  // main companion section. We just need *some* baseline config.
+  const baseline = agents[agentOrder[focusIndex]] || agents[window.leaderId] || Object.values(agents)[0];
+  if (!baseline) {
+    addChatMsg('error', 'No existing agent to use as a config baseline.');
     return;
   }
-  editorAgentId = agentId;
-  const agent = agents[agentId];
+  _creatingNewAgent = true;
+  editorAgentId = null; // will be assigned by saveCompanion
   selectedPixelCompanion = null;
 
   // Clear the name field — force the user to type one
   const nameEl = document.getElementById('editor-name');
-  if (nameEl) { nameEl.value = ''; nameEl.placeholder = 'Name your new companion...'; nameEl.focus(); }
+  if (nameEl) { nameEl.value = ''; nameEl.placeholder = 'Name your new companion…'; nameEl.focus(); }
 
   // Uncheck all trait checkboxes (start fresh)
   document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(cb => { cb.checked = false; });
 
+  // Reset size slider to default
+  currentForgeScale = 4;
+  const slider = document.getElementById('forge-size-slider');
+  if (slider) slider.value = '4';
+  const lbl = document.getElementById('forge-size-value');
+  if (lbl) lbl.textContent = '4×';
+
   // Show a blank preview
-  const viewer = document.getElementById('forge-companion-viewer');
-  if (viewer) {
-    if (forgeCompanionSprite) forgeCompanionSprite.dispose();
-    forgeCompanionSprite = new PixelSprite(viewer, { scale: 4, direction: 0, animation: 'idle' });
-    forgeCompanionSprite.show('boar'); // harmless default; the picker forces a choice
-  }
+  showForgeCompanion('boar'); // harmless default; the picker forces a choice
   renderPixelGallery();
   // Open the picker so the user MUST pick a sprite before saving
   const picker = document.getElementById('companion-picker');
@@ -1958,13 +1931,14 @@ window.createNewCompanion = function() {
   // Reset model selections to defaults
   refreshForgeModelDropdowns().catch(() => {});
   const modelEl = document.getElementById('forge-model-primary');
-  if (modelEl) modelEl.value = agent.primaryModel || 'anthropic/claude-opus-4-6';
+  if (modelEl) modelEl.value = baseline.primaryModel || 'anthropic/claude-opus-4-6';
   const modelEl2 = document.getElementById('forge-model-secondary');
-  if (modelEl2) modelEl2.value = agent.secondaryModel || '';
+  if (modelEl2) modelEl2.value = '';
 
   // Patch saveCompanion briefly so it refuses to save without a sprite
+  // and creates a real openclaw agent on success.
   const origSave = window.saveCompanion;
-  window.saveCompanion = async function guardedSave() {
+  window.saveCompanion = async function guardedNewSave() {
     if (!selectedPixelCompanion) {
       addChatMsg('error', 'Pick a companion sprite before saving.');
       return;
@@ -1975,16 +1949,74 @@ window.createNewCompanion = function() {
       const ne = document.getElementById('editor-name'); if (ne) ne.focus();
       return;
     }
+    // Generate a unique id from the name
+    const baseId = newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'companion';
+    let id = baseId; let n = 2;
+    while (agents[id]) id = baseId + '-' + (n++);
+    const primaryModel = document.getElementById('forge-model-primary')?.value || baseline.primaryModel || 'anthropic/claude-opus-4-6';
+    const tools = (baseline.tools && typeof baseline.tools === 'object') ? baseline.tools : { allow: [] };
+    let res = null;
+    try {
+      res = await cyberclaw.openclaw.createAgent({ id, name: newName, workspace: baseline.workspace, model: primaryModel, tools });
+    } catch (e) { console.warn('openclaw.createAgent:', e); }
+    if (!res || !res.ok) {
+      addChatMsg('error', 'Failed to create new companion in openclaw config: ' + (res?.error || 'unknown'));
+      return;
+    }
+    // Restore the original saveCompanion and call it to handle sprite/avatar
     window.saveCompanion = origSave;
+    _creatingNewAgent = false;
+    editorAgentId = id; // point the original save at the new agent
+    // Reload the agents list from openclaw so the new entry is known
+    try {
+      const list = await cyberclaw.openclaw.listAgents();
+      const fresh = (list || []).find(a => a.id === id);
+      if (fresh) {
+        agents[id] = Object.assign({}, baseline, fresh, {
+          isMain: false,
+          primaryModel: primaryModel,
+          name: newName,
+          emoji: '🧸',
+        });
+        if (!agentOrder.includes(id)) agentOrder.push(id);
+      }
+    } catch (e) { console.warn('reload agents:', e); }
     return origSave.apply(this, arguments);
   };
 
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
-  addChatMsg('system', '✨ Pick a sprite and name your new companion.');
+  addChatMsg('system', '✨ Pick a sprite and name your new companion. It will be added to your openclaw agents.');
 };
 
 // ── COMPANION FORGE ─────────────────────────────────────────
 let forgeCompanionSprite = null;
+
+// Forge sprite size — stored per-companion on the sprite config. Default 4.
+let currentForgeScale = 4;
+
+function showForgeCompanion(pixelId) {
+  const viewer = document.getElementById('forge-companion-viewer');
+  if (!viewer) return;
+  if (forgeCompanionSprite) forgeCompanionSprite.dispose();
+  forgeCompanionSprite = new PixelSprite(viewer, { scale: currentForgeScale, direction: 0, animation: 'idle' });
+  forgeCompanionSprite.show(pixelId);
+}
+
+function updateForgeSize(value) {
+  currentForgeScale = parseInt(value, 10) || 4;
+  const lbl = document.getElementById('forge-size-value');
+  if (lbl) lbl.textContent = currentForgeScale + '×';
+  // Re-create the preview at the new scale (preserves the picked sprite)
+  if (selectedPixelCompanion) showForgeCompanion(selectedPixelCompanion);
+  // Persist to the sprite config so it survives a reload
+  if (editorAgentId) {
+    cyberclaw.agents.getSpriteConfig(editorAgentId).then(cfg => {
+      cfg = cfg || {};
+      cfg.scale = currentForgeScale;
+      return cyberclaw.agents.saveSpriteConfig(editorAgentId, cfg);
+    }).catch(e => console.warn('save scale:', e));
+  }
+}
 
 function openCompanionForge(agentId) {
   editorAgentId = agentId;
@@ -2004,13 +2036,15 @@ function openCompanionForge(agentId) {
   cyberclaw.agents.getSpriteConfig(agentId).then(config => {
     const pixelId = config?.pixelCompanionId || 'boar';
     selectedPixelCompanion = pixelId;
+    // Restore the saved scale (default 4)
+    const savedScale = parseInt(config?.scale, 10);
+    currentForgeScale = (savedScale >= 1 && savedScale <= 8) ? savedScale : 4;
+    const slider = document.getElementById('forge-size-slider');
+    if (slider) slider.value = String(currentForgeScale);
+    const lbl = document.getElementById('forge-size-value');
+    if (lbl) lbl.textContent = currentForgeScale + '×';
     // Show preview
-    const viewer = document.getElementById('forge-companion-viewer');
-    if (viewer) {
-      if (forgeCompanionSprite) forgeCompanionSprite.dispose();
-      forgeCompanionSprite = new PixelSprite(viewer, { scale: 4, direction: 0, animation: 'idle' });
-      forgeCompanionSprite.show(pixelId);
-    }
+    showForgeCompanion(pixelId);
     // Render gallery for picker
     renderPixelGallery();
     // Load saved traits
@@ -2050,41 +2084,10 @@ window.closeCompanionEditor = function(e) {
   if (forgeCompanionSprite) { forgeCompanionSprite.dispose(); forgeCompanionSprite = null; }
   editorAgentId = null;
 };
-
-// ── SPIRIT FORGE ────────────────────────────────────────────
-function openSpiritForge(agentId) {
-  editorAgentId = agentId;
-  const agent = agents[agentId];
-  selectedSpiritId = null;
-
-  document.getElementById('spirit-editor-name').value = agent.name || '';
-
-  // Render spirit gallery
-  renderSpiritGallery();
-
-  // Load saved config
-  cyberclaw.agents.getSpriteConfig(agentId).then(config => {
-    const sid = config?.spiritId || config?.spiritId;
-    if (sid) selectSpirit(sid);
-  });
-
-  // Populate skill checkboxes
-  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'Game', 'General'];
-  const skillIcons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', Game: '🎮', General: '✨' };
-  const checkboxGrid = document.getElementById('spirit-skill-checkboxes');
-  const focusSkills = agent.focusSkills || [];
-  checkboxGrid.innerHTML = skillTypes.map(s =>
-    `<label><input type="checkbox" value="${s}" ${focusSkills.includes(s) ? 'checked' : ''}> ${skillIcons[s]||'✨'} ${s}</label>`
-  ).join('');
-
-  document.getElementById('spirit-editor-overlay').classList.remove('hidden');
-}
-
-window.closeSpiritEditor = function(e) {
-  if (e && e.target !== e.currentTarget) return;
-  document.getElementById('spirit-editor-overlay').classList.add('hidden');
-  editorAgentId = null;
-};
+// ── SPIRIT FORGE — removed in v3.1.1 ──────────────────────────────────
+// (all agents are companions now; the spirit editor is no longer wired
+// to anything. The save path also unified: saveCompanion handles both
+// editing an existing companion and creating a new one.)
 
 // Save companion (pixel sprite, no skills)
 window.saveCompanion = async function() {
@@ -2139,40 +2142,8 @@ window.saveCompanion = async function() {
   }
 };
 
-// Save spirit (spirit PNG + skill focus)
-window.saveSpirit = async function() {
-  if (!editorAgentId) return;
-  try {
-    const agent = agents[editorAgentId];
-    const newName = document.getElementById('spirit-editor-name').value.trim();
-    if (!selectedSpiritId) return;
-
-    const checkboxes = document.querySelectorAll('#spirit-skill-checkboxes input[type="checkbox"]');
-    const focusSkills = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-
-    const _path = require('path');
-    const pngPath = _path.join(__dirname, 'assets', 'spirits', `${selectedSpiritId}.png`);
-
-    await cyberclaw.agents.saveSpriteConfig(editorAgentId, {
-      pixelCompanionId: null,
-      spiritId: selectedSpiritId,
-      customName: newName || undefined,
-      focusSkills,
-    });
-    await cyberclaw.agents.saveAvatar(editorAgentId, `file://${pngPath}`);
-    agent.avatar = `file://${pngPath}`;
-    agent._pixelCompanionId = null;
-    agent._spiritId = selectedSpiritId;
-    if (newName) agent.name = newName;
-    agent.focusSkills = focusSkills;
-
-    buildCarousel();
-    closeSpiritEditor();
-  } catch (e) {
-    debugLog('[Save] ERROR: ' + e.message + '\n' + e.stack);
-    alert('Save failed: ' + e.message);
-  }
-};
+// (Save spirit path removed in v3.1.1 — all agents are companions now
+// and the only save flow is window.saveCompanion.)
 
 // (populateSelect removed — pixel sprites replaced by Cybermon gallery)
 
@@ -2533,7 +2504,14 @@ window.resetSettings = function() {
 // ── Custom LLM Providers ────────────────────────────────────────
 // Each provider: { id, name, baseUrl, apiKey?, defaultModel?, api }
 // `api` is the wire format: 'openai-completions' (most) or 'anthropic-messages'.
+// CyberClaw companions mirror openclaw agents, so we read LLM providers
+// directly from `~/.openclaw/openclaw.json → models.providers`. Falls back
+// to the local CyberClaw providers.json if openclaw config is unavailable.
 async function fetchProviders() {
+  try {
+    const fromOpenClaw = await cyberclaw.openclaw.listProviders();
+    if (Array.isArray(fromOpenClaw) && fromOpenClaw.length) return fromOpenClaw;
+  } catch (e) { console.warn('openclaw listProviders:', e); }
   try { return await cyberclaw.providers.list(); } catch { return []; }
 }
 
@@ -2614,7 +2592,16 @@ window.addProvider = async function() {
     alert('Provider needs at least a name and base URL.');
     return;
   }
-  const res = await cyberclaw.providers.save({ name, baseUrl, apiKey, defaultModel, api });
+  // id is derived from the name (kebab-case)
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'provider';
+  // Write through to openclaw config first; fall back to local providers.json
+  let res = null;
+  try {
+    res = await cyberclaw.openclaw.upsertProvider({ id, name, baseUrl, apiKey, defaultModel, api });
+  } catch (e) { console.warn('openclaw.upsertProvider:', e); }
+  if (!res || !res.ok) {
+    res = await cyberclaw.providers.save({ id, name, baseUrl, apiKey, defaultModel, api });
+  }
   if (!res || !res.ok) {
     alert('Failed to save provider: ' + (res?.error || 'unknown'));
     return;
@@ -2628,7 +2615,8 @@ window.addProvider = async function() {
   if (det) det.removeAttribute('open');
   await renderProvidersList();
   await refreshDefaultModelDropdown();
-  addChatMsg('system', '✅ Provider saved: ' + name);
+  await refreshForgeModelDropdowns().catch(() => {});
+  addChatMsg('system', '✅ Provider saved to openclaw config: ' + name);
 };
 
 window.cancelAddProvider = function() {
@@ -2640,10 +2628,22 @@ window.cancelAddProvider = function() {
 };
 
 window.deleteProvider = async function(id) {
-  if (!confirm('Delete this provider? Saved models in companion configs will be kept but may stop working.')) return;
+  if (!confirm('Delete this provider? This will also remove it from openclaw config. Saved models in companion configs will be kept but may stop working.')) return;
+  // Try openclaw first, fall back to local
+  try {
+    const r = await cyberclaw.openclaw.deleteProvider(id);
+    if (r && r.ok) {
+      await renderProvidersList();
+      await refreshDefaultModelDropdown();
+      await refreshForgeModelDropdowns().catch(() => {});
+      addChatMsg('system', '🗑️ Provider deleted from openclaw config');
+      return;
+    }
+  } catch (e) { console.warn('openclaw.deleteProvider:', e); }
   await cyberclaw.providers.delete(id);
   await renderProvidersList();
   await refreshDefaultModelDropdown();
+  await refreshForgeModelDropdowns().catch(() => {});
   addChatMsg('system', '🗑️ Provider deleted');
 };
 
@@ -3866,7 +3866,7 @@ window.editSpiritFromView = function(agentId) {
   setTimeout(function() {
     var idx = agentOrder.indexOf(agentId);
     if (idx >= 0) focusIndex = idx;
-    window.openSpiritEditor();
+    openCompanionForge(agentId);
   }, 150);
 };
 

@@ -795,6 +795,128 @@ ipcMain.handle('providers:delete', (event, id) => {
   saveProviders(list);
   return { ok: true };
 });
+
+// ─── OpenClaw Config Read/Write ───────────────────────────────
+// CyberClaw companions are openclaw agents. We read `models.providers`
+// (the LLM provider list) and `agents.list` (the agent list) directly
+// from `~/.openclaw/openclaw.json` so changes in either app stay in sync.
+const OPENCLAW_CONFIG = path.join(OPENCLAW_DIR, 'openclaw.json');
+
+function readOpenClawConfig() {
+  try { return JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf8')); }
+  catch (e) { return null; }
+}
+function writeOpenClawConfig(cfg) {
+  // Atomic write: write to .tmp then rename
+  const tmp = OPENCLAW_CONFIG + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, OPENCLAW_CONFIG);
+}
+
+ipcMain.handle('openclaw:read-config', () => {
+  return readOpenClawConfig();
+});
+
+// LLM providers from openclaw config
+ipcMain.handle('openclaw:list-providers', () => {
+  const cfg = readOpenClawConfig();
+  if (!cfg) return [];
+  const providers = (cfg.models && cfg.models.providers) || {};
+  return Object.entries(providers).map(([id, p]) => ({
+    id,
+    name: p.name || id,
+    baseUrl: p.baseUrl || '',
+    apiKey: p.apiKey || '',
+    api: p.api || 'openai-completions',
+    models: (p.models || []).map(m => m.id || m.name).filter(Boolean),
+    defaultModel: (p.models && p.models[0] && (p.models[0].id || p.models[0].name)) || '',
+    source: 'openclaw-config',
+  }));
+});
+
+// Add or update a provider in openclaw config
+ipcMain.handle('openclaw:upsert-provider', (event, provider) => {
+  if (!provider || !provider.id) return { ok: false, error: 'provider.id is required' };
+  const cfg = readOpenClawConfig();
+  if (!cfg) return { ok: false, error: 'Could not read openclaw.json' };
+  cfg.models = cfg.models || {};
+  cfg.models.providers = cfg.models.providers || {};
+  const existing = cfg.models.providers[provider.id] || { models: [] };
+  const next = Object.assign({}, existing, {
+    baseUrl: provider.baseUrl || existing.baseUrl,
+    apiKey: provider.apiKey != null ? provider.apiKey : (existing.apiKey || ''),
+    api: provider.api || existing.api || 'openai-completions',
+  });
+  // If a defaultModel is provided and not already in models, add it as a stub
+  if (provider.defaultModel && !next.models.find(m => (m.id || m.name) === provider.defaultModel)) {
+    next.models = next.models.concat([{ id: provider.defaultModel, name: provider.defaultModel, input: ['text'] }]);
+  }
+  cfg.models.providers[provider.id] = next;
+  try { writeOpenClawConfig(cfg); return { ok: true, provider: { id: provider.id, ...next } }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('openclaw:delete-provider', (event, id) => {
+  if (!id) return { ok: false, error: 'id is required' };
+  const cfg = readOpenClawConfig();
+  if (!cfg || !cfg.models || !cfg.models.providers) return { ok: false, error: 'No providers' };
+  delete cfg.models.providers[id];
+  try { writeOpenClawConfig(cfg); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
+// Agents in openclaw config
+ipcMain.handle('openclaw:list-agents', () => {
+  const cfg = readOpenClawConfig();
+  if (!cfg) return [];
+  return (cfg.agents && cfg.agents.list) || [];
+});
+
+// Create a new agent in openclaw config
+ipcMain.handle('openclaw:create-agent', (event, agent) => {
+  if (!agent || !agent.id) return { ok: false, error: 'agent.id is required' };
+  const cfg = readOpenClawConfig();
+  if (!cfg) return { ok: false, error: 'Could not read openclaw.json' };
+  cfg.agents = cfg.agents || { list: [] };
+  if (cfg.agents.list.find(a => a.id === agent.id)) {
+    return { ok: false, error: 'Agent id "' + agent.id + '" already exists' };
+  }
+  const entry = {
+    id: agent.id,
+    name: agent.name || agent.id,
+    workspace: agent.workspace || path.join(OPENCLAW_DIR, 'workspaces', agent.id),
+  };
+  if (agent.model) entry.model = { primary: agent.model, fallbacks: [] };
+  if (agent.tools) entry.tools = agent.tools;
+  cfg.agents.list.push(entry);
+  try { writeOpenClawConfig(cfg); return { ok: true, agent: entry }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('openclaw:update-agent', (event, id, updates) => {
+  if (!id) return { ok: false, error: 'id is required' };
+  const cfg = readOpenClawConfig();
+  if (!cfg || !cfg.agents) return { ok: false, error: 'No agents' };
+  const idx = cfg.agents.list.findIndex(a => a.id === id);
+  if (idx < 0) return { ok: false, error: 'Agent not found' };
+  const allowed = ['name', 'workspace', 'model', 'tools'];
+  const current = cfg.agents.list[idx];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(updates || {}, k)) current[k] = updates[k];
+  }
+  try { writeOpenClawConfig(cfg); return { ok: true, agent: current }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('openclaw:delete-agent', (event, id) => {
+  if (!id) return { ok: false, error: 'id is required' };
+  const cfg = readOpenClawConfig();
+  if (!cfg || !cfg.agents) return { ok: false, error: 'No agents' };
+  cfg.agents.list = cfg.agents.list.filter(a => a.id !== id);
+  try { writeOpenClawConfig(cfg); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
 ipcMain.handle('quests:detect-version', (event, dir) => {
   if (!dir) return null;
   try {
