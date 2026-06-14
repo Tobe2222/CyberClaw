@@ -639,34 +639,7 @@
     </div>
   </div>
 
-  <!-- Spirit Forge Modal -->
-  <div id="spirit-editor-overlay" class="modal-overlay hidden" onclick="closeSpiritEditor(event)">
-    <div class="modal-panel spirit-editor" onclick="event.stopPropagation()">
-      <div class="modal-header">
-        <span class="rune-icon">✨</span> SPIRIT FORGE
-        <button class="modal-close" onclick="closeSpiritEditor()">✕</button>
-      </div>
-      <div class="editor-content">
-        <!-- Name on top -->
-        <div class="editor-name-row">
-          <input type="text" id="spirit-editor-name" class="editor-name-input" placeholder="Spirit Name" />
-        </div>
-
-        <!-- Spirit gallery -->
-        <div id="spirit-gallery" class="spirit-grid"></div>
-
-        <!-- Skill Focus -->
-        <div class="editor-field" style="padding: 8px 12px;">
-          <label>Skill Focus</label>
-          <div id="spirit-skill-checkboxes" class="skill-checkbox-grid"></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-sm btn-muted" onclick="closeSpiritEditor()">Cancel</button>
-        <button class="btn-sm btn-primary" onclick="saveSpirit()">✨ Save</button>
-      </div>
-    </div>
-  </div>
+  <!-- Spirit Forge Modal — removed in v3.1.1 (all agents are companions) -->
 
   <script src="js/companion-renderer.js"></script>
   <script>

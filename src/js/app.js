@@ -1642,10 +1642,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (agentOrder.length > 0) {
     const mainId = agentOrder.find(id => agents[id]?.isMain);
     const leader = mainId ? agents[mainId] : agents[agentOrder[0]];
-    const spiritCount = agentOrder.length - 1;
+    const sidekickCount = agentOrder.length - 1;
     bootMsgs.push({ d: 900, t: `> Companion: ${leader?.name || 'Unknown'}` });
-    if (spiritCount > 0) {
-      bootMsgs.push({ d: 1200, t: `> ${spiritCount} spirit${spiritCount > 1 ? 's' : ''} detected` });
+    if (sidekickCount > 0) {
+      bootMsgs.push({ d: 1200, t: `> ${sidekickCount} companion${sidekickCount > 1 ? 's' : ''} ready` });
     }
     bootMsgs.push({
       d: 1500,
@@ -1806,61 +1806,12 @@ function renderPixelGallery() {
   });
 }
 
-let selectedSpiritId = null;
 
-function renderSpiritGallery() {
-  const grid = document.getElementById('spirit-gallery');
-  if (!grid) return;
-  
-  let spirits = [];
-  try {
-    const cmPath = path.join(__dirname, 'assets', 'spirits', 'catalog.json');
-    const fs = require('fs');
-    if (fs.existsSync(cmPath)) {
-      spirits = JSON.parse(fs.readFileSync(cmPath, 'utf-8')).spirits || [];
-    }
-  } catch {}
-
-  if (!spirits.length) {
-    grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">No spirits found</div>';
-    return;
-  }
-
-  grid.innerHTML = '';
-  spirits.forEach(cm => {
-    const card = document.createElement('div');
-    card.className = `spirit-card ${selectedSpiritId === cm.id ? 'selected' : ''}`;
-    card.dataset.spiritId = cm.id;
-    card.onclick = () => selectSpirit(cm.id);
-
-    const imgEl = document.createElement('img');
-    imgEl.src = `file://${path.join(__dirname, 'assets', 'spirits', cm.id + '.png')}`;
-    imgEl.alt = cm.name;
-    imgEl.style.cssText = 'width:64px;height:64px;object-fit:contain;';
-
-    const label = document.createElement('div');
-    label.className = 'spirit-label';
-    label.textContent = cm.name;
-
-    card.appendChild(imgEl);
-    card.appendChild(label);
-    grid.appendChild(card);
-  });
-}
-
-window.selectSpirit = function(id) {
-  selectedSpiritId = id;
-  document.querySelectorAll('.spirit-card').forEach(card => {
-    card.classList.toggle('selected', card.dataset.spiritId === id);
-  });
-  // Also clear companion selection when picking a spirit
-  selectedPixelCompanion = null;
-  document.querySelectorAll('.pixel-companion-card').forEach(c => c.classList.remove('selected'));
-};
+// (renderSpiritGallery / selectSpirit removed in v3.1.1 — all agents are
+// companions now, no spirit selection needed)
 
 window.selectPixelCompanion = function(id) {
   selectedPixelCompanion = id;
-  selectedSpiritId = null;
 
   // Update gallery selection
   const catalog = loadPixelCatalog();
@@ -3848,19 +3799,9 @@ window.focusCompanionFromView = function(agentId) {
   window.closeCompanionsView();
 };
 
-// ═══════════════════════════════════════════════════════════
-//  SPIRITS VIEW — removed in v3.1.0+
-//  (companion visuals are now managed through the Companion Forge)
-//  Functions kept as no-op stubs for backward compatibility.
-// ═══════════════════════════════════════════════════════════
-
-window.openSpiritsView = function() {
-  /* spirits view removed */
-};
-
-window.closeSpiritsView = function(_e) {
-  /* no-op */
-};
+// (Spirits view removed in v3.1.0 — companion visuals are managed through
+// the Companion Forge. The previous no-op stubs are deleted in v3.1.1
+// since nothing references them anymore.)
 
 window.editSpiritFromView = function(agentId) {
   setTimeout(function() {
