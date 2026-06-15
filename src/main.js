@@ -1441,13 +1441,13 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
   if (syncServer) syncServer.broadcastState(state);
 });
 
-ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
-  console.log('[IPC] sync-broadcast-chat received:', { agentId, text: text.substring(0, 100), isUser });
+ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser }) => {
+  console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser });
   const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
   console.log('[IPC] _voiceReplyWs state:', wsState);
   discordLog('📡', 'Chat broadcast', `isUser=${isUser} voiceWs=${wsState}`);
   if (syncServer) {
-    syncServer.broadcastChatMessage(agentId, text, isUser);
+    syncServer.broadcastChatMessage(agentId, text, isUser, agentName);
     console.log('[IPC] Message broadcast to mobile clients');
   }
   // If this AI reply follows a voice input, synthesize TTS and send audio back
@@ -1490,6 +1490,14 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, text, isUser }) => {
 
 ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
   if (syncServer) syncServer.broadcastTyping(active);
+});
+
+// v3.1.15: broadcast the full list of agents so the mobile can mirror
+// the desktop arena (one companion per agent). Each entry has the
+// fields needed to render the sprite: id, name, sprite (companionId),
+// scale.
+ipcMain.handle('sync-broadcast-agents-list', (e, { agents }) => {
+  if (syncServer) syncServer.broadcastAgentsList(agents);
 });
 
 ipcMain.handle('sync-send-chat-history', (e, { messages }) => {

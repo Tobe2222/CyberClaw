@@ -397,11 +397,19 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'state_sync', ...state, ts: Date.now() });
   }
 
-  broadcastChatMessage(agentId, text, isUser = false) {
-    const payload = { type: 'chat_message', agentId, text, isUser, ts: Date.now() };
+  broadcastChatMessage(agentId, text, isUser = false, agentName = null) {
+    const payload = { type: 'chat_message', agentId, agentName, text, isUser, ts: Date.now() };
     // Cache last AI message for reconnect replay
     if (!isUser) this._lastChatMessage = { payload, ts: Date.now() };
     this._broadcast(payload);
+  }
+
+  // v3.1.15: broadcast the full list of agents so the mobile can mirror
+  // the desktop arena (one companion per agent, not just the active one).
+  // Each entry: { id, name, sprite, scale }
+  broadcastAgentsList(agents) {
+    if (!Array.isArray(agents) || agents.length === 0) return;
+    this._broadcast({ type: 'agents_list', agents, ts: Date.now() });
   }
 
   broadcastCompanionChange(companionId) {

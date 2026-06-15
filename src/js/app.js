@@ -302,6 +302,27 @@ async function initArenaCompanions() {
     localStorage.setItem('cyberclaw-selected-companion', currentCompanionId);
   }
   debugLog('[Arena] Init complete. Companions in arena: ' + pixelArena.companions.length);
+
+  // v3.1.15: broadcast the full agent list to mobile so it can mirror
+  // the arena (one sprite per agent). Each entry has the fields needed
+  // by the mobile arena: id, name, sprite (pixelCompanionId), scale.
+  try {
+    const mobileList = visibleOrder.map(id => {
+      const a = agents[id];
+      if (!a) return null;
+      return {
+        id: a.id,
+        name: a.name,
+        sprite: a._pixelCompanionId || null,
+        scale: a._pixelCompanionScale || null,
+      };
+    }).filter(Boolean);
+    if (mobileList.length > 0) {
+      ipcRenderer.invoke('sync-broadcast-agents-list', { agents: mobileList });
+    }
+  } catch (e) {
+    debugLog('[Arena] broadcast agents list failed: ' + e.message);
+  }
 }
 
 // Camera view render loop — renders a cropped arena view into inspect panel
@@ -1748,8 +1769,12 @@ function addChatMsg(type, text, name, emoji) {
     console.log(`[addChatMsg] Broadcasting ${type} message to mobile`);
     try {
       const { ipcRenderer } = require('electron');
+      // v3.1.15: send the resolved agentId (not just the display name)
+      // plus the display name separately, so the mobile can label chat
+      // messages correctly when multiple companions are present.
       ipcRenderer.invoke('sync-broadcast-chat', {
-        agentId: name || 'companion',
+        agentId: agentId || name || 'companion',
+        agentName: name || null,
         text: text,
         isUser: type === 'user'
       });
