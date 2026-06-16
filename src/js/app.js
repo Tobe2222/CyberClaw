@@ -250,12 +250,20 @@ async function initArenaCompanions() {
   // v3.1.5: every non-hidden companion is rendered in the arena. The
   // pixelArena spreads them horizontally based on count. The active
   // chat companion (if visible) is added first so it gets the center slot.
+  // v3.1.18: cap at 6 visible companions. The desktop UI wasn't
+  // designed for a long horizontal scroll bar of 20+ sprites; if
+  // the user has more, only the first 6 (in arena order, with the
+  // active chat companion first) are rendered. Hidden companions
+  // don't count toward the cap. The remaining companions stay
+  // selectable via the agent list / channel tabs but don't get a
+  // sprite on the arena canvas.
+  const MAX_ARENA_COMPANIONS = 6;
   const visibleOrder = [
     ...(activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
     ...agentOrder.filter(id =>
       id !== activeChatAgentId && !hiddenCompanions.has(id)
     ),
-  ];
+  ].slice(0, MAX_ARENA_COMPANIONS);
   const primaryId = visibleOrder[0] || null;
   window.leaderId = primaryId; // legacy field name; still used by mobile sync etc.
 
@@ -524,9 +532,23 @@ async function applyCompanionVisibility() {
     if (hiddenCompanions.has(c.id)) pixelArena.removeCompanion(c.id);
   }
   // Add companions that are now visible
+  // v3.1.18: cap the arena at 6. The active chat companion (if
+  // visible and not hidden) is always included; the rest are
+  // taken in `agentOrder` order until we hit the cap. If a
+  // companion is unhidden beyond the cap, we just skip the add
+  // (the user can still chat with them — they're just not
+  // rendered in the arena).
+  const MAX_ARENA_COMPANIONS = 6;
+  let arenaSlotsUsed = pixelArena.companions.length;
   for (const id of agentOrder) {
     if (hiddenCompanions.has(id)) continue;
     if (pixelArena.companions.find(c => c.id === id)) continue;
+    // Active chat companion is always allowed, even over the cap.
+    const isActiveChat = id === activeChatAgentId;
+    if (!isActiveChat && arenaSlotsUsed >= MAX_ARENA_COMPANIONS) {
+      debugLog(`[Arena] Skipping add for ${id} — arena cap of ${MAX_ARENA_COMPANIONS} reached`);
+      continue;
+    }
     const agent = agents[id];
     if (!agent) continue;
     let pixelId = agent._pixelCompanionId;
@@ -546,6 +568,7 @@ async function applyCompanionVisibility() {
     }
     if (!pixelId) continue;
     await pixelArena.addCompanion(id, pixelId, agent.name, savedScale);
+    arenaSlotsUsed++;
     const added = pixelArena.companions.find(c => c.id === id);
     if (added) added.sleepState = agent.sleepState || 'awake';
   }
