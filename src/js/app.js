@@ -1744,6 +1744,49 @@ function pickCurrentCompanionId() {
   return agentOrder[0] || null;
 }
 
+// v3.1.17: debounced persist for chatHistoryByAgent. Writes the
+// whole Record to localStorage on every change, but throttles to
+// once per 2s to avoid hammering storage on rapid messages.
+let _persistChatHistoryTimer = null;
+function schedulePersistChatHistory() {
+  if (_persistChatHistoryTimer) return;
+  _persistChatHistoryTimer = setTimeout(() => {
+    _persistChatHistoryTimer = null;
+    try {
+      localStorage.setItem('cyberclaw-chat-byagent', JSON.stringify(chatHistoryByAgent));
+    } catch (e) {
+      console.warn('[Persist] Failed to write chat-byagent:', e.message);
+    }
+  }, 2000);
+}
+
+// v3.1.17: restore chatHistoryByAgent from localStorage on app
+// start. Without this, the in-memory history is wiped on every
+// desktop restart, which leaves the mobile companion tab bar
+// showing empty chats until the user has a fresh conversation.
+function restoreChatHistory() {
+  try {
+    const raw = localStorage.getItem('cyberclaw-chat-byagent');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      chatHistoryByAgent = parsed;
+      // Also rebuild the flat `chatHistory` mirror in chronological
+      // order (oldest first) so the legacy code that reads from it
+      // still works after a restart.
+      chatHistory = [];
+      for (const [, msgs] of Object.entries(parsed)) {
+        if (Array.isArray(msgs)) chatHistory.push(...msgs);
+      }
+      chatHistory.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
+      console.log(`[Restore] Loaded ${Object.keys(parsed).length} agent chat histories from localStorage`);
+    }
+  } catch (e) {
+    console.warn('[Restore] Failed to load chat-byagent:', e.message);
+  }
+}
+
 function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
@@ -1773,6 +1816,15 @@ function addChatMsg(type, text, name, emoji) {
         chatHistoryByAgent[agentId] = chatHistoryByAgent[agentId].slice(-200);
       }
     }
+
+    // v3.1.17: persist per-companion chat history to localStorage
+    // so it survives a desktop restart. The mobile companion app
+    // also persists its own copy (cyberclaw-chat-byagent) so this
+    // is belt-and-braces — the desktop copy is the source of
+    // truth for the on-screen chat, the mobile copy is the
+    // source of truth for the tab-switch UX. Debounced to
+    // avoid hammering storage on every keystroke.
+    schedulePersistChatHistory();
   }
 
   // Broadcast to mobile companion app
@@ -1934,6 +1986,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const stored = JSON.parse(localStorage.getItem('cyberclaw-hidden-companions') || '[]');
     hiddenCompanions = new Set(Array.isArray(stored) ? stored : []);
   } catch {}
+
+  // v3.1.17: restore per-companion chat history from localStorage
+  // so the mobile companion tab bar (and the desktop chat view)
+  // show the previous conversations after a desktop restart.
+  restoreChatHistory();
 
   // Discover agents from OpenClaw
   await loadAgents();
