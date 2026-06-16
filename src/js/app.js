@@ -306,6 +306,8 @@ async function initArenaCompanions() {
   // v3.1.15: broadcast the full agent list to mobile so it can mirror
   // the arena (one sprite per agent). Each entry has the fields needed
   // by the mobile arena: id, name, sprite (pixelCompanionId), scale.
+// v3.1.17: also include emoji so the mobile companion tab bar can
+// show a per-companion avatar (e.g. 🐾 for Clawsuu, 🦙 for Lamasuu).
   try {
     const mobileList = visibleOrder.map(id => {
       const a = agents[id];
@@ -315,6 +317,7 @@ async function initArenaCompanions() {
         name: a.name,
         sprite: a._pixelCompanionId || null,
         scale: a._pixelCompanionScale || null,
+        emoji: a.emoji || null,
       };
     }).filter(Boolean);
     if (mobileList.length > 0) {
@@ -570,6 +573,14 @@ window.toggleCompanionSleep = function() {
       pixelArena.companion.frame = 0;
       pixelArena.companion.animation = 'idle';
     }
+    // v3.1.16: nudge the night-wake timer too. Without this, if it's
+    // currently night time (22:00–06:30) the arena's _updateCompanion
+    // computes `timeBasedSleep = isNight && !_nightWakeTimer` as true
+    // and the sprite stays in the 'death' pose even though the manual
+    // sleepState is awake. nudgeNightWake() is a no-op during the day
+    // and idempotent at night (it just resets the existing timer), so
+    // calling it from a wake click is always safe.
+    nudgeNightWake();
     addChatMsg('system', `☀️ ${agent.name} woke up`);
   } else {
     agent.sleepState = 'sleeping';
@@ -3279,11 +3290,36 @@ try {
       .catch(err => console.log('[App] Error sending chat history:', err));
   });
 
+  // v3.1.17: per-agent chat history for the mobile companion tab bar.
+  // Mobile sends this when the user taps a different companion tab;
+  // we send back the last 50 messages for that companion only.
+  ipcRenderer.on('mobile-request-agent-history', (e, { agentId }) => {
+    const hist = (chatHistoryByAgent[agentId] || []).slice(-50);
+    console.log(`[App] Mobile requesting agent history for ${agentId}, sending ${hist.length} messages`);
+    ipcRenderer.invoke('sync-send-agent-history', { agentId, messages: hist })
+      .then(() => console.log(`[App] Agent history sent for ${agentId}`))
+      .catch(err => console.log(`[App] Error sending agent history for ${agentId}:`, err));
+  });
+
   // Route mobile chat to companion
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
-    console.log('[mobile-chat] received:', text?.substring(0, 60), 'sendChatMessage defined:', typeof window.sendChatMessage);
+    console.log('[mobile-chat] received:', text?.substring(0, 60), 'agentId:', agentId, 'sendChatMessage defined:', typeof window.sendChatMessage);
     window.addDesktopLog?.('💬', 'Mobile chat → AI', text?.substring(0, 50), 'info');
-    addChatMsg('user', text);
+    // v3.1.17: if the mobile told us which companion the user is
+    // chatting with, switch the desktop's active chat companion to
+    // match. This keeps `pickCurrentCompanionId()` and the response
+    // `agentId` in sync with the mobile's tab bar.
+    if (agentId && agents[agentId] && agentId !== activeChatAgentId) {
+      try {
+        switchActiveChat(agentId);
+        focusIndex = agentOrder.indexOf(agentId);
+        updateCarousel();
+        console.log('[mobile-chat] switched active chat to', agentId);
+      } catch (e) {
+        console.warn('[mobile-chat] switchActiveChat failed:', e?.message);
+      }
+    }
+    addChatMsg('user', text, null);
     if (typeof window.sendChatMessage === 'function') {
       window.sendChatMessage(text);
     } else {
@@ -4136,14 +4172,24 @@ var IDLE_PROMPTS = [
 ];
 
 function isNightTime() {
-  var h = new Date().getHours();
-  return h >= 22 || h < 8;
+  // v3.1.16: night window was 22:00–08:00; tightened to 22:00–06:30
+  // so companions auto-wake at 6:30 AM (was 8:00). Use minutes-of-day
+  // for sub-hour precision (06:30 means any minute < 6*60+30 = 390).
+  const now = new Date();
+  const totalMinutes = now.getHours() * 60 + now.getMinutes();
+  return totalMinutes >= 22 * 60 || totalMinutes < 6 * 60 + 30;
 }
 
 // ── SLEEP WAKE LOGIC ────────────────────────────────────────
 var _nightWakeTimer = null;
 window._nightWakeTimer = null;
 var _wakeDurationMs = 10 * 60 * 1000; // 10 minutes
+
+// v3.1.16: expose isNightTime on window so pixel-arena.js's
+// _updateCompanion can use the same boundary as app.js. Without
+// this, the two could drift (e.g. the 06:30 cutoff lives in
+// isNightTime but the arena had a hard-coded `< 8`).
+window.isNightTime = isNightTime;
 
 function isAsleep() {
   return isNightTime() && !_nightWakeTimer;

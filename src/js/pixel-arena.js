@@ -592,12 +592,17 @@ class PixelArena {
     // v3.1.4: two sources of sleep:
     //   1. Manual: comp.sleepState === 'sleeping' (set via the inspect
     //      panel's sleep button). Takes priority.
-    //   2. Time-based: night (22:00–08:00) AND the user hasn't woken
+    //   2. Time-based: night (22:00–06:30) AND the user hasn't woken
     //      the session in the last 10 min.
     // Both use the same "death" sprite frame as a sleeping pose.
+    //
+    // v3.1.16: use the shared isNightTime() from app.js so the boundary
+    // can't drift between the two files. Defensive fallback to the old
+    // local check in case isNightTime isn't on window yet.
     const manualSleep = comp.sleepState === 'sleeping';
-    const hour = new Date().getHours();
-    const isNight = hour >= 22 || hour < 8;
+    const isNight = (typeof window.isNightTime === 'function')
+      ? window.isNightTime()
+      : (() => { const h = new Date().getHours(); return h >= 22 || h < 8; })();
     const timeBasedSleep = isNight && !window._nightWakeTimer;
     const isAsleep = manualSleep || timeBasedSleep;
     if (isAsleep) {
