@@ -1367,6 +1367,35 @@ app.whenReady().then(() => {
         console.log('[SyncServer] Main window not available!');
       }
     },
+    onRequestAgentHistory: (ws, agentId) => {
+      // v3.1.17: per-agent chat history for the mobile companion tab bar.
+      console.log(`[SyncServer] Mobile requested history for agent: ${agentId}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-request-agent-history', { agentId });
+        if (!syncServer._pendingAgentHistoryWs) syncServer._pendingAgentHistoryWs = [];
+        syncServer._pendingAgentHistoryWs.push({ ws, agentId });
+        console.log(`[SyncServer] Stored agent-history request for ${agentId}, waiting for renderer`);
+      } else {
+        console.log('[SyncServer] Main window not available!');
+      }
+    },
+    onRequestAgentsList: () => {
+      // v3.1.16: when a mobile reconnects after the desktop's
+      // initial agents_list broadcast already went out (or the
+      // cache was cleared), ask the renderer to re-broadcast the
+      // current agents list. The renderer's existing
+      // 'sync-broadcast-agents-list' IPC handler then sends the
+      // payload to the main process, which calls
+      // broadcastAgentsList — that hits the cache path in
+      // sync-server.js's _sendFullState for any subsequent
+      // reconnects.
+      console.log('[SyncServer] Asking renderer to re-broadcast agents list');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-request-agents-list', {});
+      } else {
+        console.log('[SyncServer] Main window not available!');
+      }
+    },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
         // Immediately ack receipt so mobile can show "received at desktop"
@@ -1497,6 +1526,7 @@ ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
 // fields needed to render the sprite: id, name, sprite (companionId),
 // scale.
 ipcMain.handle('sync-broadcast-agents-list', (e, { agents }) => {
+  console.log('[IPC] sync-broadcast-agents-list received:', agents?.length, 'agents:', agents?.map(a => a.id).join(','));
   if (syncServer) syncServer.broadcastAgentsList(agents);
 });
 
@@ -1505,6 +1535,17 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
   const pending = syncServer._pendingHistoryWs.splice(0);
   for (const ws of pending) {
     syncServer.sendChatHistory(ws, messages);
+  }
+});
+
+// v3.1.17: per-agent chat history for the mobile companion tab bar.
+ipcMain.handle('sync-send-agent-history', (e, { agentId, messages }) => {
+  if (!syncServer || !syncServer._pendingAgentHistoryWs) return;
+  // Drain the FIFO of ws requests for this specific agent
+  const pending = syncServer._pendingAgentHistoryWs.filter(p => p.agentId === agentId);
+  syncServer._pendingAgentHistoryWs = syncServer._pendingAgentHistoryWs.filter(p => p.agentId !== agentId);
+  for (const p of pending) {
+    syncServer.sendAgentHistory(p.ws, agentId, messages);
   }
 });
 

@@ -337,9 +337,35 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      case 'request_agent_history': {
+        if (!client.authenticated) return;
+        const aid = msg.agentId;
+        if (!aid) return;
+        if (this.onRequestAgentHistory) this.onRequestAgentHistory(ws, aid);
+        break;
+      }
+
       case 'request_state': {
         if (!client.authenticated) return;
+        console.log(`[SyncServer] Mobile requested full state (name=${client.name})`);
         this._sendFullState(ws);
+        break;
+      }
+
+      // v3.1.16: explicit agents-list refresh. The mobile can fire
+      // this if the user did something that should rebuild the
+      // companion tab bar (e.g. pulled-to-refresh, or the desktop
+      // announced a change). Same code path as request_state for
+      // the agents list half — the cache or the refresh callback
+      // is used.
+      case 'request_agents_list': {
+        if (!client.authenticated) return;
+        console.log(`[SyncServer] Mobile requested agents list refresh (name=${client.name})`);
+        if (this._lastAgentsList) {
+          this._send(ws, this._lastAgentsList.payload);
+        } else if (this.onRequestAgentsList) {
+          try { this.onRequestAgentsList(); } catch (e) { console.log('[SyncServer] onRequestAgentsList failed:', e?.message); }
+        }
         break;
       }
 
@@ -380,6 +406,27 @@ class SyncServer extends EventEmitter {
 
   _sendFullState(ws) {
     this._send(ws, { type: 'request_state_from_main' });
+    // v3.1.17: replay the latest agents list so a reconnecting
+    // mobile can rebuild its companion tab bar. Without this, only
+    // a client connected during the initial arena init would have
+    // any agents at all.
+    //
+    // v3.1.16: the previous code gated this on a 10-minute TTL
+    // `(Date.now() - this._lastAgentsList.ts) < 600000`, but that's
+    // wrong — a user who starts the desktop, walks away for an
+    // hour, then opens the mobile app would find the agents list
+    // never replays. The list itself is small and the desktop is
+    // the source of truth, so always replay it as long as the
+    // cache exists. If the cache is empty (mobile connected before
+    // the renderer's first broadcast), we ask the main process to
+    // trigger a fresh broadcast.
+    if (this._lastAgentsList) {
+      console.log(`[SyncServer] Replaying recent agents_list (${this._lastAgentsList.payload.agents.length} agents) to reconnected client`);
+      this._send(ws, this._lastAgentsList.payload);
+    } else if (this.onRequestAgentsList) {
+      console.log('[SyncServer] No cached agents_list — asking main process to refresh');
+      try { this.onRequestAgentsList(); } catch (e) { console.log('[SyncServer] onRequestAgentsList failed:', e?.message); }
+    }
     // Replay last chat message if it arrived while client was disconnected (60s window)
     if (this._lastChatMessage && (Date.now() - this._lastChatMessage.ts) < 60000) {
       console.log('[SyncServer] Replaying recent chat_message to reconnected client');
@@ -406,10 +453,16 @@ class SyncServer extends EventEmitter {
 
   // v3.1.15: broadcast the full list of agents so the mobile can mirror
   // the desktop arena (one companion per agent, not just the active one).
-  // Each entry: { id, name, sprite, scale }
+  // Each entry: { id, name, sprite, scale, emoji }
+  // v3.1.17: cache the last agents list so a reconnecting client can
+  // get the current list even if it wasn't connected during the
+  // initial arena init.
   broadcastAgentsList(agents) {
     if (!Array.isArray(agents) || agents.length === 0) return;
-    this._broadcast({ type: 'agents_list', agents, ts: Date.now() });
+    const payload = { type: 'agents_list', agents, ts: Date.now() };
+    this._lastAgentsList = { payload, ts: Date.now() };
+    console.log(`[SyncServer] Broadcasting agents_list with ${agents.length} agent(s):`, agents.map(a => a.id).join(','));
+    this._broadcast(payload);
   }
 
   broadcastCompanionChange(companionId) {
@@ -460,6 +513,14 @@ class SyncServer extends EventEmitter {
 
   sendChatHistory(ws, messages) {
     this._send(ws, { type: 'chat_history', messages, ts: Date.now() });
+  }
+
+  // v3.1.17: per-agent chat history for the mobile companion tab bar.
+  // Each tab on the mobile shows only the chat history for the
+  // selected companion. The desktop stores chatHistoryByAgent[id]
+  // so we just look up and send the requested agent's history.
+  sendAgentHistory(ws, agentId, messages) {
+    this._send(ws, { type: 'agent_history', agentId, messages, ts: Date.now() });
   }
 
   broadcastArenaEvent(event) {

@@ -3301,6 +3301,53 @@ try {
       .catch(err => console.log(`[App] Error sending agent history for ${agentId}:`, err));
   });
 
+  // v3.1.16: the sync server can ask us to re-broadcast the
+  // current agents list. This happens when a mobile reconnects and
+  // the server's cache is empty (e.g. the mobile connected before
+  // the renderer's first arena-init broadcast, or the cache was
+  // cleared). We re-run the same broadcast path that
+  // initArenaCompanions uses, which goes through the
+  // 'sync-broadcast-agents-list' IPC and lands in the server's
+  // broadcastAgentsList — populating the cache and sending the
+  // list to the requesting mobile (and any others).
+  ipcRenderer.on('mobile-request-agents-list', () => {
+    console.log('[App] Sync server requested agents list refresh');
+    try {
+      if (typeof agentOrder === 'undefined' || !Array.isArray(agentOrder) || agentOrder.length === 0) {
+        console.warn('[App] agentOrder empty, cannot refresh agents list');
+        return;
+      }
+      // Reuse the same visibleOrder construction as
+      // initArenaCompanions: active chat companion first, then the
+      // rest, minus hidden ones.
+      const visibleOrder = [
+        ...(typeof activeChatAgentId !== 'undefined' && activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
+        ...agentOrder.filter(id =>
+          id !== activeChatAgentId && !hiddenCompanions.has(id)
+        ),
+      ];
+      const mobileList = visibleOrder.map(id => {
+        const a = agents[id];
+        if (!a) return null;
+        return {
+          id: a.id,
+          name: a.name,
+          sprite: a._pixelCompanionId || null,
+          scale: a._pixelCompanionScale || null,
+          emoji: a.emoji || null,
+        };
+      }).filter(Boolean);
+      if (mobileList.length === 0) {
+        console.warn('[App] mobileList empty after filter, not broadcasting');
+        return;
+      }
+      console.log(`[App] Re-broadcasting agents list: ${mobileList.length} agent(s) (${mobileList.map(a => a.id).join(',')})`);
+      ipcRenderer.invoke('sync-broadcast-agents-list', { agents: mobileList });
+    } catch (e) {
+      console.log('[App] Error re-broadcasting agents list:', e?.message);
+    }
+  });
+
   // Route mobile chat to companion
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
     console.log('[mobile-chat] received:', text?.substring(0, 60), 'agentId:', agentId, 'sendChatMessage defined:', typeof window.sendChatMessage);
