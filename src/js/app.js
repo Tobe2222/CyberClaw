@@ -311,13 +311,32 @@ async function initArenaCompanions() {
   }
   debugLog('[Arena] Init complete. Companions in arena: ' + pixelArena.companions.length);
 
-  // v3.1.15: broadcast the full agent list to mobile so it can mirror
-  // the arena (one sprite per agent). Each entry has the fields needed
-  // by the mobile arena: id, name, sprite (pixelCompanionId), scale.
-// v3.1.17: also include emoji so the mobile companion tab bar can
-// show a per-companion avatar (e.g. 🐾 for Clawsuu, 🦙 for Lamasuu).
+  broadcastAgentsListToMobile();
+}
+
+// v3.1.20: factored out so saveCompanion (and other code that
+// mutates the agent list) can re-broadcast the mobile list
+// without duplicating the visibleOrder construction. The
+// mobile list is what the mobile arena uses to render
+// companions, so any change to the desktop's agent list
+// (sprite id, scale, name, emoji) needs to push a fresh
+// list to all connected mobiles immediately — otherwise
+// the mobile won't see the change until the next 60s
+// periodic sync. Earlier this only ran on init/reconnect,
+// which is why changing a companion's size in the forge
+// didn't update the mobile until up to 60s later.
+function broadcastAgentsListToMobile() {
   try {
-    const mobileList = visibleOrder.map(id => {
+    // Reuse the same visibleOrder construction as
+    // initArenaCompanions: active chat companion first, then
+    // the rest, minus hidden ones.
+    const order = [
+      ...(activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
+      ...agentOrder.filter(id =>
+        id !== activeChatAgentId && !hiddenCompanions.has(id)
+      ),
+    ];
+    const mobileList = order.map(id => {
       const a = agents[id];
       if (!a) return null;
       return {
@@ -2647,6 +2666,11 @@ window.saveCompanion = async function() {
     }
     renderCompanionChannelTabs();
     closeCompanionEditor();
+    // v3.1.20: re-broadcast the agents list to the mobile so
+    // changes (sprite id, scale, name, emoji) appear
+    // immediately. Without this, the mobile wouldn't see
+    // the new size until the next 60s periodic sync.
+    broadcastAgentsListToMobile();
   } catch (e) {
     debugLog('[Save] ERROR: ' + e.message + '\n' + e.stack);
     alert('Save failed: ' + e.message);
