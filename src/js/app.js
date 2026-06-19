@@ -47,12 +47,37 @@ function getSpriteIconFile(pixelId) {
   }
 }
 
-// Resolve the iconFile to a usable URL. The catalog stores
-// paths relative to the project root (e.g. "assets/icons/boar.svg");
-// for the renderer we want a file:// URL relative to index.html.
-function getSpriteIconUrl(pixelId) {
+// v3.1.29: returns the iconFile contents as a base64 data URI
+// so the mobile (React Native) can render it via <Image source={{ uri: dataUri }}>.
+// React Native's Image component doesn't resolve relative file
+// paths from a broadcast payload, but it DOES render data URIs
+// reliably. The SVG is tiny (<3KB) so the base64 overhead is
+// negligible.
+function getSpriteIconDataUri(pixelId) {
   const f = getSpriteIconFile(pixelId);
-  return f ? f : null;
+  if (!f) return null;
+  try {
+    // Resolve relative to project root (same candidates as loadPixelCatalog)
+    const candidates = [];
+    if (window._assetsDir) candidates.push(_path.join(window._assetsDir, '..', f));
+    if (typeof __dirname === 'string' && __dirname) {
+      candidates.push(_path.join(__dirname, '..', f));
+      candidates.push(_path.join(__dirname, f));
+    }
+    if (typeof process !== 'undefined' && process.cwd) {
+      candidates.push(_path.join(process.cwd(), f));
+    }
+    for (const p of candidates) {
+      try {
+        const content = _fs.readFileSync(p, 'utf-8');
+        const b64 = Buffer.from(content, 'utf-8').toString('base64');
+        return `data:image/svg+xml;base64,${b64}`;
+      } catch (_) { /* try next */ }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function formatModelName(modelId) {
@@ -397,6 +422,14 @@ function broadcastAgentsListToMobile() {
         scale: a._pixelCompanionScale || null,
         emoji: a.emoji || null,
         icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
+        // v3.1.26: also send iconFile for the Twemoji SVG so
+        // the mobile can render the bundled SVG instead of
+        // relying on the system emoji font.
+        iconFile: getSpriteIconFile(a._pixelCompanionId),
+        // v3.1.29: also send the SVG as a base64 data URI so
+        // React Native's <Image> can render it without needing
+        // to resolve a relative file path from the broadcast.
+        iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
       };
     }).filter(Boolean);
     if (mobileList.length > 0) {
@@ -3512,6 +3545,10 @@ try {
           icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
           // v3.1.26: also send iconFile for the Twemoji SVG.
           iconFile: getSpriteIconFile(a._pixelCompanionId),
+          // v3.1.29: also send the SVG as a base64 data URI so
+          // React Native's <Image> can render it without
+          // resolving a relative file path.
+          iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
         };
       }).filter(Boolean);
       if (mobileList.length === 0) {
