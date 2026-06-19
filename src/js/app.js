@@ -205,6 +205,16 @@ async function loadAgents() {
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
+          // v3.1.28: set _pixelCompanionId at load time so the chat
+          // tab icon lookup (which reads agent._pixelCompanionId)
+          // works even if initArenaCompanions hasn't run yet OR if
+          // a later code path replaces the agent object. Without
+          // this, the chat tab falls back to agent.emoji (which
+          // is often "🤖" from older defaults) instead of the
+          // sprite's catalog icon.
+          if (cfg.pixelCompanionId) {
+            agents[id]._pixelCompanionId = cfg.pixelCompanionId;
+          }
         }
       } catch {}
     }
