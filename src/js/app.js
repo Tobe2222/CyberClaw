@@ -510,7 +510,9 @@ function renderArenaSettingsCompanions() {
     if (agent.avatar && String(agent.avatar).startsWith('data:')) {
       avatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
     } else {
-      avatar.textContent = agent.emoji || '🤖';
+      // v3.1.21: prefer per-agent emoji, fall back to sprite icon
+      // from the catalog so the avatar matches the sprite.
+      avatar.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
     }
     row.appendChild(avatar);
 
@@ -1374,6 +1376,10 @@ function _renderStoredChatMsg(m, container, agentId) {
       div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'agent':
+      // v3.1.21: the desktop now passes the resolved icon
+      // (per-agent emoji → sprite catalog icon) to addChatMsg,
+      // so m.emoji is set correctly here. Old messages persisted
+      // before this version will fall back to 🤖.
       div.innerHTML = `<span class="msg-prefix">${m.emoji || '🤖'} [${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'typing':
@@ -1403,7 +1409,9 @@ function updateChatHeader(agentId) {
     if (agent.avatar && String(agent.avatar).startsWith('data:')) {
       headerAvatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
     } else {
-      headerAvatar.innerHTML = agent.emoji || '🤖';
+      // v3.1.21: prefer per-agent emoji, fall back to sprite icon
+      // from the catalog so the avatar matches the sprite.
+      headerAvatar.innerHTML = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
     }
   }
   if (headerStatus) {
@@ -1440,7 +1448,12 @@ function renderCompanionChannelTabs() {
     } else {
       const em = document.createElement('div');
       em.className = 'companion-tab-emoji';
-      em.textContent = agent.emoji || '🤖';
+      // v3.1.21: prefer the agent's own emoji (user override),
+      // then fall back to the sprite's catalog icon. The catalog
+      // icon is the source of truth for the sprite (fox → 🦊,
+      // boar → 🐗, etc.) so every fox-sprite companion shows a
+      // fox emoji unless the user has set a custom one.
+      em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
       tab.appendChild(em);
     }
     const name = document.createElement('span');
@@ -1574,7 +1587,10 @@ window.sendChat = async function() {
     if (result.ok) {
       // Show response from party leader
       const leader = agents[mainAgentId];
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+      // v3.1.21: pass the resolved icon (per-agent emoji → sprite
+      // catalog icon) so the message prefix shows the right emoji
+      // even if the user hasn't set a custom emoji on the agent.
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
 
       // Check for quest creation command in reply
       if (result.reply) {
@@ -1714,7 +1730,7 @@ window.sendChatMessage = async function(message) {
 
     if (result.ok) {
       const leader = agents[mainAgentId];
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji);
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
       window.addDesktopLog?.('💬', 'AI responded', result.reply.substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: result.reply }); } catch {}
@@ -2210,7 +2226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Also add to chat (no agent call — instant reaction)
           var agentId = pickCurrentCompanionId();
           var agent = agentId ? agents[agentId] : null;
-          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji);
+          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji || getSpriteIcon(agent._pixelCompanionId));
         }
         typingTimer = null;
       }, 30000);
@@ -3811,7 +3827,7 @@ window.sendChat = async function() {
       removeChatMsg(typingId);
       if (result.ok) {
         const leader = agents[mainAgentId];
-        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && leader.emoji);
+        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && (leader.emoji || getSpriteIcon(leader._pixelCompanionId)));
         // Check for quest creation command
         if (result.reply) {
           var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
@@ -4242,7 +4258,7 @@ function promptCompanionReaction(promptText) {
     if (result && result.ok && result.reply) {
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
-      addChatMsg('agent', reply, agent.name, agent.emoji);
+      addChatMsg('agent', reply, agent.name, agent.emoji || getSpriteIcon(agent._pixelCompanionId));
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
         var bubbleText = reply.length > 120 ? reply.substring(0, 117) + '...' : reply;
