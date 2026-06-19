@@ -14,6 +14,24 @@ const { WebLinksAddon } = require('xterm-addon-web-links');
 // ---------------------------------------------------------------------------
 // Model name formatting
 // ---------------------------------------------------------------------------
+
+// Lookup the catalog `icon` for a given pixel sprite id. Returns
+// null if the sprite isn't in the catalog or has no icon field.
+// Used to send a per-sprite emoji to the mobile so the wake
+// trainer picker (and chat tabs) can show a consistent icon per
+// companion. The mobile falls back to its own lookup or to
+// '🐾' / '🤖' when this is null.
+function getSpriteIcon(pixelId) {
+  if (!pixelId) return null;
+  try {
+    const catalog = loadPixelCatalog();
+    const sprite = (catalog.companions || []).find(c => c.id === pixelId);
+    return sprite?.icon || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function formatModelName(modelId) {
   if (!modelId) return 'Unknown';
   const parts = modelId.split('/');
@@ -345,6 +363,7 @@ function broadcastAgentsListToMobile() {
         sprite: a._pixelCompanionId || null,
         scale: a._pixelCompanionScale || null,
         emoji: a.emoji || null,
+        icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
       };
     }).filter(Boolean);
     if (mobileList.length > 0) {
@@ -3439,6 +3458,7 @@ try {
           sprite: a._pixelCompanionId || null,
           scale: a._pixelCompanionScale || null,
           emoji: a.emoji || null,
+          icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
         };
       }).filter(Boolean);
       if (mobileList.length === 0) {
