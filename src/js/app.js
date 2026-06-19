@@ -1438,24 +1438,18 @@ function renderCompanionChannelTabs() {
     tab.dataset.agentId = id;
     tab.title = `Chat with ${agent.name}`;
     tab.onclick = () => { window.switchActiveChat(id); focusIndex = agentOrder.indexOf(id); updateCarousel(); };
-    // Avatar (image or emoji)
-    if (agent.avatar && String(agent.avatar).startsWith('data:')) {
-      const img = document.createElement('img');
-      img.className = 'companion-tab-avatar';
-      img.src = agent.avatar;
-      img.alt = agent.name;
-      tab.appendChild(img);
-    } else {
-      const em = document.createElement('div');
-      em.className = 'companion-tab-emoji';
-      // v3.1.21: prefer the agent's own emoji (user override),
-      // then fall back to the sprite's catalog icon. The catalog
-      // icon is the source of truth for the sprite (fox → 🦊,
-      // boar → 🐗, etc.) so every fox-sprite companion shows a
-      // fox emoji unless the user has set a custom one.
-      em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
-      tab.appendChild(em);
-    }
+    // v3.1.22: chat tabs now use the sprite icon (per-agent
+    // emoji → sprite catalog icon → 🤖) instead of the avatar
+    // PNG. The avatar stays in the inspect panel and large
+    // displays where it's the right scale; at chat-tab size
+    // a 32x32 pixel-art PNG doesn't read well and an emoji
+    // is clearer and more consistent with the mobile UI.
+    // The avatar PNG is still used elsewhere (see lines 510,
+    // 1410) — only the chat tab swaps it for the icon.
+    const em = document.createElement('div');
+    em.className = 'companion-tab-emoji';
+    em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
+    tab.appendChild(em);
     const name = document.createElement('span');
     name.className = 'companion-tab-name';
     name.textContent = agent.name;
