@@ -10,34 +10,33 @@ try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyber
 let pixelCatalog = null;
 
 function loadPixelCatalog() {
-  if (pixelCatalog) return pixelCatalog;
-  // Try a list of candidate catalog paths. In Electron's renderer
-  // with nodeIntegration, `__dirname` for `<script>` tags is
-  // unreliable (varies between Electron versions and depends on
-  // whether the script was loaded via <script src> or require()).
-  // The catalog file lives at <srcRoot>/assets/companions/catalog.json
-  // regardless, so we try a few candidates.
+  // v3.1.27: ALWAYS re-read the catalog file. We used to cache
+  // it at module level (`pixelCatalog`), but that cached the
+  // OLD version (no iconFile field) across code updates. The
+  // catalog is tiny (<4KB) and read from disk on every call,
+  // so the cost is negligible compared to the bug we just hit.
   const candidates = [];
   if (window._assetsDir) candidates.push(_path.join(window._assetsDir, 'companions', 'catalog.json'));
   if (typeof __dirname === 'string' && __dirname) {
     candidates.push(_path.join(__dirname, '..', 'assets', 'companions', 'catalog.json'));
     candidates.push(_path.join(__dirname, 'assets', 'companions', 'catalog.json'));
   }
-  // Also try the project root resolved from cwd (dev mode runs
-  // from the project root, so cwd is the project root and the
-  // catalog is at ./src/assets/companions/catalog.json).
   if (typeof process !== 'undefined' && process.cwd) {
     candidates.push(_path.join(process.cwd(), 'src', 'assets', 'companions', 'catalog.json'));
   }
   for (const catalogPath of candidates) {
     try {
-      pixelCatalog = JSON.parse(_fs.readFileSync(catalogPath, 'utf-8'));
-      try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] loadPixelCatalog OK: ${catalogPath} (${pixelCatalog.companions.length} sprites)\n`); } catch {}
-      return pixelCatalog;
+      const fresh = JSON.parse(_fs.readFileSync(catalogPath, 'utf-8'));
+      try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] loadPixelCatalog OK: ${catalogPath} (${fresh.companions.length} sprites)\n`); } catch {}
+      pixelCatalog = fresh;
+      return fresh;
     } catch (_) { /* try next */ }
   }
   try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] loadPixelCatalog FAIL. __dirname=${typeof __dirname} cwd=${process?.cwd()} candidates=${JSON.stringify(candidates)}\n`); } catch {}
   console.error('[PixelSprite] Failed to load catalog from any candidate:', candidates);
+  // Fall back to the cached version if we have one (from an
+  // earlier successful read in this session), then to empty.
+  if (pixelCatalog) return pixelCatalog;
   pixelCatalog = { companions: [] };
   return pixelCatalog;
 }
