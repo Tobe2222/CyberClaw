@@ -618,32 +618,30 @@
   border-color: var(--border-mid); border-bottom-color: var(--bg-darkest);
 }
 .channel-tab-companion .companion-tab-avatar,
-.channel-tab-companion .companion-tab-emoji {
-  width: 30px; height: 30px; border-radius: 4px;
+.channel-tab-companion .companion-tab-emoji,
+.channel-tab-companion .companion-tab-icon-img {
+  width: 20px; height: 20px; border-radius: 3px;
   background: var(--bg-card); border: 1px solid var(--border-mid);
   object-fit: cover; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 20px; line-height: 1; flex-shrink: 0; overflow: hidden;
+  font-size: 14px; line-height: 1; flex-shrink: 0; overflow: hidden;
 }
-/* v3.1.25: chat tabs now show the emoji glyph (sprite icon),
-   not the avatar PNG. Make the emoji dramatically larger and
-   remove the box background so the emoji glyph reads cleanly
-   as a colored emoji and is unmistakable. The emoji is also
-   given a subtle dark rounded background so it pops against
-   the tab strip without competing with the active-tab
-   highlight. */
+/* v3.1.26: chat tabs render a Twemoji-style SVG (vector, smooth,
+   consistent across platforms) instead of a Unicode emoji glyph
+   (which on Linux often renders as a low-res Noto Color Emoji
+   bitmap that looks pixelated at small sizes). The img fills
+   the same 20x20 box the emoji used to use, so the tab layout
+   doesn't shift from before v3.1.21. */
+.channel-tab-companion .companion-tab-icon-img {
+  width: 20px; height: 20px; padding: 1px; box-sizing: border-box;
+  background: var(--bg-card);
+}
 .channel-tab-companion .companion-tab-emoji {
-  width: 34px; height: 34px; font-size: 26px; line-height: 32px;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
   font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne Color', 'Twemoji Mozilla', 'Noto Emoji', sans-serif;
-  font-variant-emoji: emoji;
 }
 .channel-tab-companion .companion-tab-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.channel-tab-companion.active .companion-tab-emoji {
-  background: rgba(247, 147, 26, 0.12);
-  border-color: rgba(247, 147, 26, 0.4);
-}
-.channel-tab-companion.active .companion-tab-avatar {
+.channel-tab-companion.active .companion-tab-avatar,
+.channel-tab-companion.active .companion-tab-emoji,
+.channel-tab-companion.active .companion-tab-icon-img {
   border-color: var(--cyan); box-shadow: 0 0 4px rgba(0,255,200,0.4);
 }
 .channel-tab-companion .companion-tab-name { font-weight: 500; }

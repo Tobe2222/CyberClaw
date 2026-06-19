@@ -32,6 +32,29 @@ function getSpriteIcon(pixelId) {
   }
 }
 
+// v3.1.26: returns the relative path to the sprite icon SVG
+// (Twemoji-style). Used where we want a guaranteed colorful,
+// smooth icon at any size, independent of the system emoji
+// font. Falls back to null if the sprite has no iconFile.
+function getSpriteIconFile(pixelId) {
+  if (!pixelId) return null;
+  try {
+    const catalog = loadPixelCatalog();
+    const sprite = (catalog.companions || []).find(c => c.id === pixelId);
+    return sprite?.iconFile || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Resolve the iconFile to a usable URL. The catalog stores
+// paths relative to the project root (e.g. "assets/icons/boar.svg");
+// for the renderer we want a file:// URL relative to index.html.
+function getSpriteIconUrl(pixelId) {
+  const f = getSpriteIconFile(pixelId);
+  return f ? f : null;
+}
+
 function formatModelName(modelId) {
   if (!modelId) return 'Unknown';
   const parts = modelId.split('/');
@@ -1438,18 +1461,26 @@ function renderCompanionChannelTabs() {
     tab.dataset.agentId = id;
     tab.title = `Chat with ${agent.name}`;
     tab.onclick = () => { window.switchActiveChat(id); focusIndex = agentOrder.indexOf(id); updateCarousel(); };
-    // v3.1.22: chat tabs now use the sprite icon (per-agent
-    // emoji → sprite catalog icon → 🤖) instead of the avatar
-    // PNG. The avatar stays in the inspect panel and large
-    // displays where it's the right scale; at chat-tab size
-    // a 32x32 pixel-art PNG doesn't read well and an emoji
-    // is clearer and more consistent with the mobile UI.
-    // The avatar PNG is still used elsewhere (see lines 510,
-    // 1410) — only the chat tab swaps it for the icon.
-    const em = document.createElement('div');
-    em.className = 'companion-tab-emoji';
-    em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
-    tab.appendChild(em);
+    // v3.1.26: chat tab uses the sprite icon SVG (Twemoji-style)
+    // when available — guaranteed colorful, smooth, consistent
+    // across platforms. Falls back to per-agent emoji text, then
+    // to 🤖. The avatar PNG is no longer used here (it was removed
+    // in v3.1.23 because at chat-tab size the 32x32 pixel-art PNG
+    // didn't read well).
+    const iconFile = getSpriteIconFile(agent._pixelCompanionId);
+    if (iconFile) {
+      const img = document.createElement('img');
+      img.className = 'companion-tab-icon-img';
+      img.src = iconFile;
+      img.alt = '';
+      img.draggable = false;
+      tab.appendChild(img);
+    } else {
+      const em = document.createElement('div');
+      em.className = 'companion-tab-emoji';
+      em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
+      tab.appendChild(em);
+    }
     const name = document.createElement('span');
     name.className = 'companion-tab-name';
     name.textContent = agent.name;
@@ -3469,6 +3500,8 @@ try {
           scale: a._pixelCompanionScale || null,
           emoji: a.emoji || null,
           icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
+          // v3.1.26: also send iconFile for the Twemoji SVG.
+          iconFile: getSpriteIconFile(a._pixelCompanionId),
         };
       }).filter(Boolean);
       if (mobileList.length === 0) {

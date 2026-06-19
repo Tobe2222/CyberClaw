@@ -4,6 +4,7 @@
       "id": "fox",
       "name": "Fox",
       "icon": "🦊",
+      "iconFile": "assets/icons/fox.svg",
       "folder": "Fox",
       "frameSize": [32, 32],
       "animations": {
@@ -19,6 +20,7 @@
       "id": "boar",
       "name": "Boar",
       "icon": "🐗",
+      "iconFile": "assets/icons/boar.svg",
       "folder": "Boar",
       "frameSize": [32, 32],
       "animations": {
@@ -35,6 +37,7 @@
       "id": "deer",
       "name": "Deer",
       "icon": "🦌",
+      "iconFile": "assets/icons/deer.svg",
       "folder": "Deer",
       "frameSize": [32, 32],
       "animations": {
@@ -50,6 +53,7 @@
       "id": "hare",
       "name": "Hare",
       "icon": "🐇",
+      "iconFile": "assets/icons/hare.svg",
       "folder": "Hare",
       "frameSize": [32, 32],
       "animations": {
@@ -65,6 +69,7 @@
       "id": "black_grouse",
       "name": "Black Grouse",
       "icon": "🦚",
+      "iconFile": "assets/icons/grouse.svg",
       "folder": "Black_grouse",
       "frameSize": [32, 32],
       "animations": {
