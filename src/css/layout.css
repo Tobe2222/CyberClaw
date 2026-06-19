@@ -619,14 +619,29 @@
 }
 .channel-tab-companion .companion-tab-avatar,
 .channel-tab-companion .companion-tab-emoji {
-  width: 20px; height: 20px; border-radius: 3px;
+  width: 26px; height: 26px; border-radius: 4px;
   background: var(--bg-card); border: 1px solid var(--border-mid);
   object-fit: cover; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 12px; line-height: 1; flex-shrink: 0; overflow: hidden;
+  font-size: 20px; line-height: 1; flex-shrink: 0; overflow: hidden;
+}
+/* v3.1.24: chat tabs now show the emoji glyph (sprite icon),
+   not the avatar PNG. Make the emoji visually distinct from
+   a pixel-art sprite: bigger font, no box background, no
+   border, so the emoji glyph floats cleanly. The avatar
+   branch (for users who haven't switched to emoji yet) keeps
+   its box and small font so it's visually distinct from the
+   emoji. */
+.channel-tab-companion .companion-tab-emoji {
+  background: transparent; border-color: transparent;
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne Color', 'Twemoji Mozilla', sans-serif;
+  font-size: 22px; line-height: 26px;
 }
 .channel-tab-companion .companion-tab-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.channel-tab-companion.active .companion-tab-avatar,
 .channel-tab-companion.active .companion-tab-emoji {
+  background: transparent; border-color: transparent;
+  box-shadow: none;
+}
+.channel-tab-companion.active .companion-tab-avatar {
   border-color: var(--cyan); box-shadow: 0 0 4px rgba(0,255,200,0.4);
 }
 .channel-tab-companion .companion-tab-name { font-weight: 500; }
