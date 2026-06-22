@@ -420,8 +420,23 @@ function broadcastAgentsListToMobile() {
         name: a.name,
         sprite: a._pixelCompanionId || null,
         scale: a._pixelCompanionScale || null,
-        emoji: a.emoji || null,
-        icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
+        // v3.1.30: distinguish "user explicitly set an emoji"
+        // from "no user-set emoji, fell back to the desktop's
+        // 🤖 default". The desktop stores a.emoji = a.emoji ||
+        // '🤖' in its agents dict (so its own UI can render a
+        // robot when nothing else applies), but for the mobile
+        // broadcast we want the sprite catalog icon to be the
+        // fallback, not the desktop's default. Treat the 🤖
+        // default as "not set" and let the mobile's own chain
+        // (emoji → icon → 🐾) decide.
+        emoji: a.emoji === '🤖' ? null : (a.emoji || null),
+        // v3.1.30: the sprite catalog icon is a separate
+        // concept from the user's per-agent emoji override. A
+        // cat-person wants 🦊 as the sprite icon and 😺 as their
+        // custom emoji; we shouldn't conflate them. Send the
+        // sprite icon independently of the per-agent emoji so
+        // the mobile can compose them in its own chain.
+        icon: getSpriteIcon(a._pixelCompanionId) || null,
         // v3.1.26: also send iconFile for the Twemoji SVG so
         // the mobile can render the bundled SVG instead of
         // relying on the system emoji font.
@@ -3541,8 +3556,12 @@ try {
           name: a.name,
           sprite: a._pixelCompanionId || null,
           scale: a._pixelCompanionScale || null,
-          emoji: a.emoji || null,
-          icon: a.emoji || getSpriteIcon(a._pixelCompanionId) || null,
+          // v3.1.30: same as the other broadcast site — don't
+          // send the desktop's 🤖 default as the user's emoji,
+          // and send the sprite icon independently. See the
+          // matching comment in the other broadcast site.
+          emoji: a.emoji === '🤖' ? null : (a.emoji || null),
+          icon: getSpriteIcon(a._pixelCompanionId) || null,
           // v3.1.26: also send iconFile for the Twemoji SVG.
           iconFile: getSpriteIconFile(a._pixelCompanionId),
           // v3.1.29: also send the SVG as a base64 data URI so
