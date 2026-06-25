@@ -60,6 +60,21 @@ window.cyberclaw = {
     createAgent: (agent) => ipcRenderer.invoke('openclaw:create-agent', agent),
     updateAgent: (id, updates) => ipcRenderer.invoke('openclaw:update-agent', id, updates),
     deleteAgent: (id) => ipcRenderer.invoke('openclaw:delete-agent', id),
+    setAgentModel: (agentId, model, fallbacks) => ipcRenderer.invoke('agent:set-model', { agentId, model, fallbacks }),
+  },
+  // v3.1.33: user-managed LLM endpoints. Each endpoint is
+  // an OpenAI-compatible HTTP server (Ollama, LM Studio,
+  // llama.cpp server, Jan.ai, vLLM, etc.) that exposes
+  // /v1/models + /v1/chat/completions. CyberClaw probes
+  // the endpoint to discover its available models.
+  llm: {
+    endpoints: {
+      list: () => ipcRenderer.invoke('llm:endpoints:list'),
+      add: (ep) => ipcRenderer.invoke('llm:endpoints:add', ep),
+      delete: (id) => ipcRenderer.invoke('llm:endpoints:delete', id),
+      probe: (id) => ipcRenderer.invoke('llm:endpoints:probe', id),
+      detectOllama: () => ipcRenderer.invoke('llm:endpoints:detect-ollama'),
+    },
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),

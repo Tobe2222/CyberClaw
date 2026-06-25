@@ -23,6 +23,13 @@ const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
 const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
 const PROVIDERS_FILE = path.join(CYBERCLAW_DIR, 'providers.json');
+// v3.1.33: user-managed LLM endpoints (Ollama, LM Studio,
+// llama.cpp server, etc.). Stored separately from the
+// existing providers.json (which is for API providers like
+// Anthropic/OpenAI). Endpoints expose an OpenAI-compatible
+// /v1/models + /v1/chat/completions API, so they can serve
+// any GGUF/transformer model the user has downloaded.
+const LLM_ENDPOINTS_FILE = path.join(CYBERCLAW_DIR, 'llm-endpoints.json');
 
 // Companion stats persistence (skills, XP, levels)
 function loadStats() {
@@ -796,6 +803,182 @@ ipcMain.handle('providers:delete', (event, id) => {
   return { ok: true };
 });
 
+// ─── LLM Endpoints (user-managed local model servers) ──────────
+// v3.1.33: a lightweight registry of OpenAI-compatible HTTP
+// endpoints the user has set up locally (Ollama, LM Studio,
+// llama.cpp server, Jan.ai, vLLM, etc.). Each endpoint serves
+// one or more models the user has downloaded. CyberClaw
+// doesn't manage the model downloads themselves — the user
+// brings their own model, we just point at the endpoint.
+//
+// Storage: ~/.openclaw/cyberclaw/llm-endpoints.json
+// Schema: { id, name, baseUrl, apiKey?, type, models[]?,
+//            lastProbedAt?, lastError? }
+//
+// At app startup we auto-probe localhost:11434 (the default
+// Ollama port) and add it as "Local Ollama" if it's reachable
+// and not already configured. Other endpoints are added
+// manually via Settings → LLM Endpoints.
+function loadLlmEndpoints() {
+  try { return JSON.parse(fs.readFileSync(LLM_ENDPOINTS_FILE, 'utf8')); }
+  catch { return []; }
+}
+function saveLlmEndpoints(list) {
+  if (!fs.existsSync(CYBERCLAW_DIR)) fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
+  fs.writeFileSync(LLM_ENDPOINTS_FILE, JSON.stringify(list, null, 2));
+}
+
+// Probe an OpenAI-compatible endpoint for its available
+// models. Returns { ok, models: [{id}], error? }. Handles
+// Ollama's /api/tags endpoint specially (returns different
+// shape) by detecting the response format.
+async function probeLlmEndpoint(baseUrl, apiKey) {
+  const cleanBase = String(baseUrl || '').replace(/\/+$/, '');
+  if (!cleanBase) return { ok: false, error: 'baseUrl required' };
+  const headers = {};
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  // Try OpenAI-compatible /v1/models first
+  try {
+    const r = await fetchWithAbort(`${cleanBase}/v1/models`, { headers }, 4000);
+    if (r.ok) {
+      const data = await r.json();
+      const models = Array.isArray(data?.data)
+        ? data.data.map(m => ({ id: m.id, owned_by: m.owned_by }))
+        : [];
+      return { ok: true, models, kind: 'openai' };
+    }
+  } catch (_) {}
+  // Fall back to Ollama's /api/tags
+  try {
+    const r = await fetchWithAbort(`${cleanBase}/api/tags`, { headers }, 4000);
+    if (r.ok) {
+      const data = await r.json();
+      const models = Array.isArray(data?.models)
+        ? data.models.map(m => ({ id: m.name, size: m.size }))
+        : [];
+      return { ok: true, models, kind: 'ollama' };
+    }
+  } catch (_) {}
+  return { ok: false, error: 'Endpoint not reachable on /v1/models or /api/tags' };
+}
+
+// Fetch with timeout via AbortController. Node 22's
+// built-in fetch supports { signal } for cancellation.
+async function fetchWithAbort(url, options = {}, timeoutMs = 4000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+ipcMain.handle('llm:endpoints:list', () => loadLlmEndpoints());
+
+ipcMain.handle('llm:endpoints:add', async (event, ep) => {
+  if (!ep || !ep.name || !ep.baseUrl) {
+    return { ok: false, error: 'name and baseUrl are required' };
+  }
+  const list = loadLlmEndpoints();
+  // Idempotent on baseUrl: if an endpoint with the same URL
+  // already exists, update it instead of duplicating.
+  const existingIdx = list.findIndex(e =>
+    e.baseUrl.replace(/\/+$/, '') === String(ep.baseUrl).replace(/\/+$/, '')
+  );
+  const id = (existingIdx >= 0 ? list[existingIdx].id : (ep.id ||
+    String(ep.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
+    `endpoint-${Date.now()}`
+  ));
+  const probeResult = await probeLlmEndpoint(ep.baseUrl, ep.apiKey).catch(() => ({ ok: false, error: 'probe failed' }));
+  const clean = {
+    id,
+    name: String(ep.name).trim(),
+    baseUrl: String(ep.baseUrl).trim().replace(/\/+$/, ''),
+    apiKey: ep.apiKey ? String(ep.apiKey) : '',
+    type: probeResult.kind || ep.type || 'openai',
+    models: probeResult.ok ? probeResult.models : [],
+    lastProbedAt: probeResult.ok ? Date.now() : null,
+    lastError: probeResult.ok ? null : probeResult.error,
+    autoDetected: !!ep.autoDetected,
+  };
+  if (existingIdx >= 0) list[existingIdx] = clean;
+  else list.push(clean);
+  saveLlmEndpoints(list);
+  return { ok: true, endpoint: clean, probe: probeResult };
+});
+
+ipcMain.handle('llm:endpoints:delete', (event, id) => {
+  const list = loadLlmEndpoints().filter(e => e.id !== id);
+  saveLlmEndpoints(list);
+  return { ok: true };
+});
+
+ipcMain.handle('llm:endpoints:probe', async (event, id) => {
+  const list = loadLlmEndpoints();
+  const idx = list.findIndex(e => e.id === id);
+  if (idx < 0) return { ok: false, error: 'endpoint not found' };
+  const probe = await probeLlmEndpoint(list[idx].baseUrl, list[idx].apiKey);
+  list[idx].models = probe.ok ? probe.models : [];
+  list[idx].lastProbedAt = probe.ok ? Date.now() : null;
+  list[idx].lastError = probe.ok ? null : probe.error;
+  saveLlmEndpoints(list);
+  return { ok: true, endpoint: list[idx], probe };
+});
+
+// Auto-detect Ollama at the default port. Called from
+// Settings → "Detect Ollama" button and at app startup.
+ipcMain.handle('llm:endpoints:detect-ollama', async () => {
+  const probe = await probeLlmEndpoint('http://localhost:11434');
+  if (!probe.ok) return { ok: false, error: 'Ollama not reachable at localhost:11434' };
+  const list = loadLlmEndpoints();
+  const existing = list.find(e =>
+    e.baseUrl.replace(/\/+$/, '') === 'http://localhost:11434'
+  );
+  if (existing) {
+    existing.models = probe.models;
+    existing.lastProbedAt = Date.now();
+    existing.lastError = null;
+    saveLlmEndpoints(list);
+    return { ok: true, endpoint: existing, alreadyConfigured: true };
+  }
+  const ep = {
+    id: 'ollama-local',
+    name: 'Local Ollama',
+    baseUrl: 'http://localhost:11434',
+    apiKey: '',
+    type: 'ollama',
+    models: probe.models,
+    lastProbedAt: Date.now(),
+    autoDetected: true,
+  };
+  list.push(ep);
+  saveLlmEndpoints(list);
+  return { ok: true, endpoint: ep, alreadyConfigured: false };
+});
+
+// v3.1.33: change a companion's primary model. Edits
+// openclaw.json directly (openclaw doesn't expose an
+// `agents edit --model` subcommand, so we patch the
+// config and let the gateway pick it up on next session).
+ipcMain.handle('agent:set-model', (event, { agentId, model, fallbacks }) => {
+  const cfg = readOpenClawConfig();
+  if (!cfg) return { ok: false, error: 'openclaw.json not readable' };
+  if (!cfg.agents) cfg.agents = {};
+  if (!cfg.agents.list) cfg.agents.list = [];
+  const idx = cfg.agents.list.findIndex(a => a.id === agentId);
+  if (idx < 0) return { ok: false, error: `agent '${agentId}' not found` };
+  cfg.agents.list[idx].model = cfg.agents.list[idx].model || {};
+  if (model) cfg.agents.list[idx].model.primary = model;
+  if (Array.isArray(fallbacks)) cfg.agents.list[idx].model.fallbacks = fallbacks;
+  try {
+    writeOpenClawConfig(cfg);
+    return { ok: true, agent: cfg.agents.list[idx] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // ─── OpenClaw Config Read/Write ───────────────────────────────
 // CyberClaw companions are openclaw agents. We read `models.providers`
 // (the LLM provider list) and `agents.list` (the agent list) directly
@@ -1263,20 +1446,35 @@ ipcMain.handle('wizard:create-agent', async (event, opts) => {
   const bin = findOpenClaw();
   if (!bin) throw new Error('OpenClaw not installed');
 
-  const vibeMap = {
-    helpful: 'Warm, resourceful, and reliable. Always ready to help.',
-    sharp: 'Witty, efficient, and direct. Gets things done fast.',
-    creative: 'Imaginative, curious, and playful. Thinks outside the box.',
-    technical: 'Precise, analytical, and thorough. Loves details.',
-  };
+  const name = (opts?.name || '').toString().trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+  if (!name) throw new Error('name required');
+  const model = (opts?.model || '').toString().trim();
+  const workspace = (opts?.workspace || path.join(os.homedir(), 'workspace', name)).toString();
 
-  // Create agent via CLI
+  // v3.1.33: actually pass --workspace and --model to
+  // `agents add` so the new agent is registered with the
+  // user's chosen LLM. Pre-v3.1.33 the wizard ran the
+  // command without these flags, so every new companion
+  // silently inherited the global default model.
+  const args = [`"${bin}"`, 'agents', 'add', '--non-interactive', '--workspace', `"${workspace}"`];
+  if (model) args.push('--model', `"${model}"`);
   try {
-    const result = execSync(`"${bin}" agents add --non-interactive 2>&1`, { encoding: 'utf8' });
+    const result = execSync(args.join(' ') + ' 2>&1', { encoding: 'utf8' });
     return { ok: true, output: result };
   } catch {
-    // Agent might already exist or CLI doesn't support non-interactive add
-    // Return ok to continue the flow
+    // Agent might already exist; fall through to set-model
+    // so the user's chosen model is applied even on retry.
+    try {
+      const cfg = readOpenClawConfig();
+      if (cfg?.agents?.list && model) {
+        const idx = cfg.agents.list.findIndex(a => a.id === name);
+        if (idx >= 0) {
+          cfg.agents.list[idx].model = cfg.agents.list[idx].model || {};
+          cfg.agents.list[idx].model.primary = model;
+          writeOpenClawConfig(cfg);
+        }
+      }
+    } catch (_) {}
     return { ok: true };
   }
 });
@@ -1334,6 +1532,42 @@ function cleanup() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // v3.1.33: auto-detect Ollama at the default port and
+  // register it as "Local Ollama" so the friendliest
+  // possible UX means the user's already-downloaded
+  // models are usable without manual setup. We only
+  // add it if no Ollama entry exists yet — don't
+  // stomp on a user-registered non-default port.
+  // Failures are silent (don't block app startup).
+  setImmediate(async () => {
+    try {
+      const probe = await probeLlmEndpoint('http://localhost:11434');
+      if (!probe.ok) return; // Ollama not running, no-op
+      const list = loadLlmEndpoints();
+      const existing = list.find(e =>
+        e.baseUrl.replace(/\/+$/, '') === 'http://localhost:11434'
+      );
+      if (existing) {
+        existing.models = probe.models;
+        existing.lastProbedAt = Date.now();
+        saveLlmEndpoints(list);
+      } else {
+        list.push({
+          id: 'ollama-local',
+          name: 'Local Ollama',
+          baseUrl: 'http://localhost:11434',
+          apiKey: '',
+          type: 'ollama',
+          models: probe.models,
+          lastProbedAt: Date.now(),
+          autoDetected: true,
+        });
+        saveLlmEndpoints(list);
+        console.log(`[main] Auto-detected Ollama at localhost:11434 (${probe.models.length} model${probe.models.length === 1 ? '' : 's'})`);
+      }
+    } catch (_) {}
+  });
 
   // Start sync server for mobile companion app
   syncServer = new SyncServer({

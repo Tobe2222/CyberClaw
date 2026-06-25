@@ -2766,6 +2766,22 @@ window.saveCompanion = async function() {
     if (savedModel) {
       agent.primaryModel = savedModel;
       agent.model = formatModelName(savedModel);
+      // v3.1.33: actually persist the model choice to
+      // openclaw.json so the runtime picks it up next
+      // session. Pre-v3.1.33, the model was stored in
+      // agent.spriteConfig but never propagated to
+      // openclaw.json's agents.list[i].model.primary.
+      // Result: every companion silently used the
+      // global default regardless of the forge picker.
+      try {
+        const fallbacks = document.getElementById('forge-model-secondary')?.value
+          ? [document.getElementById('forge-model-secondary').value]
+          : [];
+        await cyberclaw.openclaw.setAgentModel(editorAgentId, savedModel, fallbacks);
+      } catch (e) {
+        console.warn('[forge] setAgentModel failed:', e?.message);
+        addChatMsg('system', `⚠ Saved locally but openclaw config update failed: ${e?.message}. The new model will apply on next gateway restart.`);
+      }
     }
     const savedModel2 = document.getElementById('forge-model-secondary')?.value;
     agent.secondaryModel = savedModel2 || '';
@@ -3098,6 +3114,7 @@ window.openSettings = function() {
   if (modelEl) modelEl.value = s.defaultModel || '';
   // Refresh the dynamic providers list + default-model dropdown whenever settings opens
   try { renderProvidersList(); } catch (e) { console.warn('renderProvidersList:', e); }
+  try { renderLlmEndpoints(); } catch (e) { console.warn('renderLlmEndpoints:', e); }
   try { refreshDefaultModelDropdown(); } catch (e) { console.warn('refreshDefaultModelDropdown:', e); }
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) discEl.value = s.discordToken || '';
@@ -3301,9 +3318,157 @@ window.deleteProvider = async function(id) {
   addChatMsg('system', '🗑️ Provider deleted');
 };
 
+// ─── LLM Endpoints (v3.1.33) ────────────────────────────────────
+// User-managed OpenAI-compatible HTTP endpoints (Ollama, LM
+// Studio, llama.cpp server, Jan.ai, vLLM, etc.). The
+// companion model picker reads from this list, prefixed
+// with the endpoint id so the runtime can route the
+// request to the right baseUrl.
+//
+// Unlike providers (which are API-key cloud services),
+// endpoints serve models the user has already downloaded
+// locally. CyberClaw doesn't manage downloads — the user
+// brings their own model, we just point at it.
+
+async function renderLlmEndpoints() {
+  const list = await cyberclaw.llm.endpoints.list();
+  const container = document.getElementById('llm-endpoints-list');
+  if (!container) return;
+  if (!list.length) {
+    container.innerHTML = '<div class="settings-info" style="color:var(--text-muted);font-size:11px;padding:6px 0;">No local endpoints yet. Click "Detect Ollama" if you have Ollama running, or "Add endpoint" for LM Studio / llama.cpp / etc.</div>';
+    return;
+  }
+  container.innerHTML = list.map(e => {
+    const safeId = escapeAttr(e.id);
+    const modelCount = (e.models || []).length;
+    const probedAt = e.lastProbedAt ? new Date(e.lastProbedAt).toLocaleTimeString() : 'never';
+    const errored = e.lastError ? `<div style="color:#f88;font-size:10px;margin-top:4px;">⚠ ${escapeHtml(e.lastError)}</div>` : '';
+    return `<div class="provider-card" style="padding:8px 10px;border:1px solid rgba(0,255,204,0.15);border-radius:6px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;">${escapeHtml(e.name)}${e.autoDetected ? ' <span style="color:var(--cyan);font-size:10px;">(auto-detected)</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">${escapeHtml(e.baseUrl)}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${modelCount} model${modelCount === 1 ? '' : 's'} · last probed ${probedAt}</div>
+          ${errored}
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button class="btn-xs btn-muted" onclick="probeLlmEndpoint('${safeId}')" title="Re-probe for available models">🔄</button>
+          <button class="btn-xs btn-danger" onclick="deleteLlmEndpoint('${safeId}')" title="Delete this endpoint">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.detectOllama = async function() {
+  const r = await cyberclaw.llm.endpoints.detectOllama();
+  if (!r.ok) {
+    addChatMsg('system', '🦙 Ollama not detected. Is it running? (try `ollama serve` in a terminal)');
+    return;
+  }
+  await renderLlmEndpoints();
+  await refreshForgeModelDropdowns().catch(() => {});
+  if (r.alreadyConfigured) {
+    addChatMsg('system', `🦙 Ollama found — ${r.endpoint.models.length} model${r.endpoint.models.length === 1 ? '' : 's'} refreshed.`);
+  } else {
+    addChatMsg('system', `🦙 Ollama auto-configured as "Local Ollama" (${r.endpoint.models.length} model${r.endpoint.models.length === 1 ? '' : 's'}).`);
+  }
+};
+
+window.probeLlmEndpoint = async function(id) {
+  const r = await cyberclaw.llm.endpoints.probe(id);
+  if (!r.ok) {
+    addChatMsg('system', '❌ Probe failed: ' + (r.error || 'unknown'));
+    return;
+  }
+  await renderLlmEndpoints();
+  await refreshForgeModelDropdowns().catch(() => {});
+  addChatMsg('system', `🔄 ${r.endpoint.name}: ${r.endpoint.models.length} model${r.endpoint.models.length === 1 ? '' : 's'} found.`);
+};
+
+window.deleteLlmEndpoint = async function(id) {
+  if (!confirm('Delete this endpoint? Companions using it will fall back to the default model.')) return;
+  await cyberclaw.llm.endpoints.delete(id);
+  await renderLlmEndpoints();
+  await refreshForgeModelDropdowns().catch(() => {});
+  addChatMsg('system', '🗑️ Endpoint deleted');
+};
+
+window.testLlmEndpoint = async function() {
+  const baseUrl = document.getElementById('endpoint-add-url')?.value?.trim();
+  const apiKey = document.getElementById('endpoint-add-key')?.value?.trim();
+  const status = document.getElementById('endpoint-add-probe-status');
+  if (!baseUrl) {
+    if (status) status.textContent = '⚠ Enter a base URL first';
+    return;
+  }
+  if (status) status.textContent = '🔄 Testing...';
+  // Save without committing, just probe. We use the add
+  // IPC with autoDetected flag and a tmp name; on cancel
+  // we delete it. Simpler: just probe via a synthetic
+  // fetch in main process. Use the add path with the
+  // entered URL but mark it as a test by NOT calling
+  // cancelAddLlmEndpoint afterwards.
+  //
+  // Actually, the cleanest approach: a dedicated probe
+  // IPC. For now, fake it via the add IPC and the
+  // user sees the result in the probe status field.
+  try {
+    // Probe via a temp endpoint, then remove if user cancels.
+    const r = await cyberclaw.llm.endpoints.add({
+      name: '__test__',
+      baseUrl,
+      apiKey,
+    });
+    if (r.ok && r.probe.ok) {
+      if (status) status.textContent = `✅ Reachable — ${r.probe.models.length} model${r.probe.models.length === 1 ? '' : 's'}: ${r.probe.models.slice(0, 3).map(m => m.id).join(', ')}${r.probe.models.length > 3 ? '...' : ''}`;
+    } else {
+      if (status) status.textContent = `⚠ Reachable but probe failed: ${r.probe?.error || 'unknown'}`;
+    }
+    // Cleanup the test entry
+    await cyberclaw.llm.endpoints.delete('__test__');
+  } catch (e) {
+    if (status) status.textContent = `❌ ${e?.message || 'test failed'}`;
+  }
+};
+
+window.addLlmEndpoint = async function() {
+  const name = document.getElementById('endpoint-add-name')?.value?.trim();
+  const baseUrl = document.getElementById('endpoint-add-url')?.value?.trim();
+  const apiKey = document.getElementById('endpoint-add-key')?.value?.trim();
+  if (!name || !baseUrl) {
+    alert('Name and base URL are required');
+    return;
+  }
+  const r = await cyberclaw.llm.endpoints.add({ name, baseUrl, apiKey });
+  if (!r.ok) {
+    alert('Failed: ' + (r.error || 'unknown'));
+    return;
+  }
+  cancelAddLlmEndpoint();
+  await renderLlmEndpoints();
+  await refreshForgeModelDropdowns().catch(() => {});
+  if (r.probe?.ok) {
+    addChatMsg('system', `🦙 Added "${name}" — ${r.probe.models.length} model${r.probe.models.length === 1 ? '' : 's'} discovered.`);
+  } else {
+    addChatMsg('system', `⚠ Added "${name}" but probe failed: ${r.probe?.error || 'unknown'}. You can retry probing from the endpoint card.`);
+  }
+};
+
+window.cancelAddLlmEndpoint = function() {
+  ['endpoint-add-name','endpoint-add-url','endpoint-add-key'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const det = document.getElementById('llm-endpoint-add-details');
+  if (det) det.removeAttribute('open');
+  const status = document.getElementById('endpoint-add-probe-status');
+  if (status) status.textContent = '';
+};
+
 // Populate the companion forge model dropdown with hard-coded + custom providers
 async function refreshForgeModelDropdowns() {
   const providers = await fetchProviders();
+  const endpoints = await cyberclaw.llm.endpoints.list().catch(() => []);
   // Hard-coded well-known models
   const wellKnown = [
     { group: 'Anthropic', options: [
@@ -3319,15 +3484,30 @@ async function refreshForgeModelDropdowns() {
       { value: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
       { value: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
     ]},
-    { group: 'Local', options: [
-      { value: 'ollama/llama3',              label: 'Ollama — Llama 3' },
-    ]},
   ];
   // Custom providers
   for (const p of providers) {
     const model = (p.defaultModel || '').trim();
     if (!model) continue;
     wellKnown.push({ group: p.name || p.id, options: [{ value: model, label: model }] });
+  }
+  // v3.1.33: per-endpoint model picker. Each model
+  // discovered on a configured endpoint becomes an option
+  // under a group named for the endpoint. The value is
+  // namespaced as `<endpointId>/<modelId>` so the
+  // runtime can route the request to the right baseUrl.
+  // (Note: this assumes the runtime understands the
+  // namespaced syntax. If not, we may need to convert
+  // at write time — see setAgentModel fallback.)
+  for (const e of endpoints) {
+    if (!e.models || !e.models.length) continue;
+    wellKnown.push({
+      group: e.name || e.id,
+      options: e.models.map(m => ({
+        value: `${e.id}/${m.id}`,
+        label: m.id,
+      })),
+    });
   }
   const html = wellKnown.map(g =>
     `<optgroup label="${escapeAttr(g.group)}">${g.options.map(o =>

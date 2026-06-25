@@ -485,6 +485,45 @@
           </details>
         </div>
 
+        <!-- v3.1.33: LLM Endpoints (user-managed local model servers) -->
+        <div class="settings-section">
+          <div class="settings-section-title">🦙 Local LLM Endpoints</div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin:4px 0 8px;">
+            Point at local model servers you've already set up — Ollama, LM Studio,
+            llama.cpp server, Jan.ai, vLLM. CyberClaw discovers the available models
+            automatically. Pick one per companion in the forge.
+          </div>
+          <div id="llm-endpoints-list" class="providers-list">
+            <!-- Populated by renderLlmEndpoints() -->
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            <button class="btn-sm btn-muted" onclick="detectOllama()">🔍 Detect Ollama</button>
+            <details id="llm-endpoint-add-details" style="flex:1;min-width:240px;">
+              <summary class="btn-sm btn-muted" style="display:inline-block;cursor:pointer;">➕ Add endpoint</summary>
+              <div class="provider-add-form" style="margin-top:8px;padding:10px;border:1px solid rgba(0,255,204,0.2);border-radius:6px;">
+                <div class="settings-row" style="margin:6px 0;">
+                  <span class="settings-label">Name</span>
+                  <input type="text" class="settings-input" id="endpoint-add-name" placeholder="e.g. LM Studio" />
+                </div>
+                <div class="settings-row" style="margin:6px 0;">
+                  <span class="settings-label">Base URL</span>
+                  <input type="text" class="settings-input" id="endpoint-add-url" placeholder="http://localhost:1234/v1" />
+                </div>
+                <div class="settings-row" style="margin:6px 0;">
+                  <span class="settings-label">API Key</span>
+                  <input type="password" class="settings-input" id="endpoint-add-key" placeholder="(optional — lm-studio usually empty)" />
+                </div>
+                <div id="endpoint-add-probe-status" style="font-size:11px;color:var(--text-muted);margin:4px 0;min-height:14px;"></div>
+                <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;">
+                  <button class="btn-sm btn-muted" onclick="cancelAddLlmEndpoint()">Cancel</button>
+                  <button class="btn-sm btn-muted" onclick="testLlmEndpoint()">🧪 Test</button>
+                  <button class="btn-sm btn-primary" onclick="addLlmEndpoint()">💾 Save</button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+
         <!-- Agent Channels -->
         <div class="settings-section">
           <div class="settings-section-title">📡 Agent Channels</div>
