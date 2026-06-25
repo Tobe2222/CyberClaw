@@ -84,7 +84,7 @@ function saveQuests(quests) {
   fs.writeFileSync(QUESTS_FILE, JSON.stringify(quests, null, 2));
 }
 
-const { execSync, exec: execCb } = require('child_process');
+const { execSync, exec: execCb, spawn } = require('child_process');
 const SyncServer = require('./sync-server');
 const httpsNode = require('https');
 const osNode = require('os');
@@ -974,6 +974,147 @@ ipcMain.handle('agent:set-model', (event, { agentId, model, fallbacks }) => {
   try {
     writeOpenClawConfig(cfg);
     return { ok: true, agent: cfg.agents.list[idx] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// v3.1.36: Train a custom openWakeWord model for a companion.
+// Receives audio sample paths from the phone, runs the
+// training script, streams progress events back, and
+// returns the trained .tflite path.
+ipcMain.handle('agent:train-wake-phrase', async (event, { agentId, phrase, samplePaths }) => {
+  if (!agentId || !phrase || !Array.isArray(samplePaths) || !samplePaths.length) {
+    return { ok: false, error: 'agentId, phrase, samplePaths required' };
+  }
+  // Verify all sample paths exist
+  for (const p of samplePaths) {
+    if (!fs.existsSync(p)) {
+      return { ok: false, error: `sample not found: ${p}` };
+    }
+  }
+  // Prepare working dirs
+  const workDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'wake-training', agentId);
+  fs.mkdirSync(workDir, { recursive: true });
+  const samplesDir = path.join(workDir, 'user_samples');
+  fs.mkdirSync(samplesDir, { recursive: true });
+  // Copy user samples into the samples dir (with friendly names)
+  const localPaths = [];
+  for (let i = 0; i < samplePaths.length; i++) {
+    const src = samplePaths[i];
+    const ext = path.extname(src) || '.wav';
+    const dst = path.join(samplesDir, `sample_${i.toString().padStart(3, '0')}${ext}`);
+    fs.copyFileSync(src, dst);
+    localPaths.push(dst);
+  }
+  // Find the python interpreter and the training script
+  const scriptPath = path.join(__dirname, '..', 'scripts', 'train_wake_phrase.py');
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: `training script not found: ${scriptPath}` };
+  }
+  // Run training as a child process, stream progress
+  return new Promise((resolve) => {
+    const modelName = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const outputDir = path.join(workDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+    const proc = spawn('python3', [
+      scriptPath,
+      '--name', modelName,
+      '--samples-dir', samplesDir,
+      '--output-dir', outputDir,
+      '--n-samples', '10000',
+      '--n-samples-val', '2000',
+      '--epochs', '20',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdoutBuf = '';
+    let stderrBuf = '';
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdoutBuf += text;
+      // Forward progress events to all renderer windows
+      for (const line of text.split('\n')) {
+        if (line.startsWith('PROGRESS::')) {
+          try {
+            const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            // Send to the Electron renderer (so the desktop
+            // forge UI can show progress, if it wants to)
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('wake-training-progress', { agentId, ...payload });
+            }
+            // Send to the mobile app over the sync-server WS
+            if (syncServer) {
+              syncServer.sendToMobile({
+                type: 'wake_training_progress',
+                agentId,
+                ...payload,
+              });
+            }
+          } catch (_) {}
+        } else if (line.startsWith('OUTPUT_TFLITE::')) {
+          const tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('wake-training-done', { agentId, tflitePath });
+          }
+          if (syncServer) {
+            syncServer.sendToMobile({
+              type: 'wake_training_done',
+              agentId,
+              tflitePath,
+            });
+          }
+        } else if (line.trim()) {
+          // Surface all other stdout to the main console
+          console.log(`[train:${agentId}] ${line.trim()}`);
+        }
+      }
+    });
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderrBuf += text;
+      for (const line of text.split('\n')) {
+        if (line.trim()) console.error(`[train:${agentId}] ${line.trim()}`);
+      }
+    });
+    proc.on('error', (err) => {
+      console.error(`[train:${agentId}] spawn error: ${err.message}`);
+      resolve({ ok: false, error: err.message });
+    });
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`[train:${agentId}] exited with code ${code}`);
+        resolve({ ok: false, error: `training process exited ${code}`, stderr: stderrBuf.slice(-1000) });
+      } else {
+        // Find the output .tflite (we emitted OUTPUT_TFLITE::)
+        const modelDir = path.join(outputDir, 'model');
+        let tflitePath = null;
+        if (fs.existsSync(modelDir)) {
+          for (const f of fs.readdirSync(modelDir)) {
+            if (f.endsWith('.tflite')) {
+              tflitePath = path.join(modelDir, f);
+              break;
+            }
+          }
+        }
+        if (tflitePath) {
+          resolve({ ok: true, tflitePath, agentId });
+        } else {
+          resolve({ ok: false, error: 'no .tflite output found', stdout: stdoutBuf.slice(-1000) });
+        }
+      }
+    });
+  });
+});
+
+// v3.1.36: Read a trained wake model as base64 so the phone can
+// download it. Used by the mobile training UI to grab the
+// freshly-trained .tflite file.
+ipcMain.handle('agent:read-wake-model', (event, { tflitePath }) => {
+  if (!tflitePath || !fs.existsSync(tflitePath)) {
+    return { ok: false, error: 'file not found' };
+  }
+  try {
+    const buf = fs.readFileSync(tflitePath);
+    return { ok: true, base64: buf.toString('base64'), size: buf.length };
   } catch (e) {
     return { ok: false, error: e.message };
   }

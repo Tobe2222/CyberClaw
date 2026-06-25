@@ -61,6 +61,14 @@ window.cyberclaw = {
     updateAgent: (id, updates) => ipcRenderer.invoke('openclaw:update-agent', id, updates),
     deleteAgent: (id) => ipcRenderer.invoke('openclaw:delete-agent', id),
     setAgentModel: (agentId, model, fallbacks) => ipcRenderer.invoke('agent:set-model', { agentId, model, fallbacks }),
+    // v3.1.36: wake-phrase training pipeline. Phone records
+    // samples locally, sends paths to desktop, desktop trains
+    // via openWakeWord Python + RTX 2070, streams progress
+    // events back via 'wake-training-progress' channel.
+    trainWakePhrase: (agentId, phrase, samplePaths) =>
+      ipcRenderer.invoke('agent:train-wake-phrase', { agentId, phrase, samplePaths }),
+    readWakeModel: (tflitePath) =>
+      ipcRenderer.invoke('agent:read-wake-model', { tflitePath }),
   },
   // v3.1.33: user-managed LLM endpoints. Each endpoint is
   // an OpenAI-compatible HTTP server (Ollama, LM Studio,
