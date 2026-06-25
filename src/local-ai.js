@@ -362,31 +362,46 @@ async function transcribeAudio(audioBase64, mimeType) {
   fs.writeFileSync(tmpSrc, Buffer.from(audioBase64, 'base64'));
 
   try {
-    // Convert to 16kHz mono WAV (whisper.cpp requirement)
+    // Convert to 16kHz mono WAV (whisper.cpp requirement).
+    // v3.1.34: wrap ffmpeg/sox calls with a 30s timeout so
+    // a malformed input can't hang the voice flow forever.
+    const AUDIO_CONVERT_TIMEOUT_MS = 30000;
+    const withTimeout = (p, ms, label) => Promise.race([
+      p,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+    ]);
     if (!isWav) {
       let converted = false;
-      
+
       // Try ffmpeg first
       try {
-        await execFileAsync('ffmpeg', [
-          '-y',
-          '-i', tmpSrc,
-          '-ar', '16000',
-          '-ac', '1',
-          '-f', 'wav',
-          tmpWav
-        ]);
+        await withTimeout(
+          execFileAsync('ffmpeg', [
+            '-y',
+            '-i', tmpSrc,
+            '-ar', '16000',
+            '-ac', '1',
+            '-f', 'wav',
+            tmpWav
+          ]),
+          AUDIO_CONVERT_TIMEOUT_MS,
+          'ffmpeg'
+        );
         converted = true;
       } catch (ffmpegErr) {
         console.warn('[transcribeAudio] ffmpeg failed, trying sox:', ffmpegErr.message);
         // Try sox as fallback
         try {
-          await execFileAsync('sox', [
-            tmpSrc,
-            '-r', '16000',
-            '-c', '1',
-            tmpWav
-          ]);
+          await withTimeout(
+            execFileAsync('sox', [
+              tmpSrc,
+              '-r', '16000',
+              '-c', '1',
+              tmpWav
+            ]),
+            AUDIO_CONVERT_TIMEOUT_MS,
+            'sox'
+          );
           converted = true;
         } catch (soxErr) {
           console.error('[transcribeAudio] Both ffmpeg and sox failed:', soxErr.message);
@@ -401,16 +416,43 @@ async function transcribeAudio(audioBase64, mimeType) {
       fs.copyFileSync(tmpSrc, tmpWav);
     }
 
-    // Run whisper-cli using exec for better error capture
+    // Run whisper-cli using exec for better error capture.
+    // v3.1.34: wrap with a timeout. Without this, a hung
+    // whisper process (malformed input, voice activity
+    // detector stuck, etc.) holds the whole voice flow
+    // forever and the user sees "transcribing" indefinitely.
+    // Tobe hit this on 2026-06-25 — voice hung for 3+
+    // minutes before he closed out. The actual root cause
+    // was unclear (whisper output looked fine in isolation),
+    // but a defensive timeout here means future hangs are
+    // bounded. 60s is generous: base.en on a 30s clip is
+    // ~15s, so 60s leaves plenty of headroom for slow CPUs.
     let stdout = '';
     try {
       const cmd = `"${binaryPath}" -m "${modelPath}" -f "${tmpWav}" --language en --output-txt --output-file "${tmpWav.replace('.wav', '')}"`;
       console.log('[transcribeAudio] Running:', cmd);
-      
-      const { stdout: execStdout } = await execFileAsync('bash', ['-c', cmd]);
-      stdout = execStdout || '';
-      
-      console.log('[transcribeAudio] Whisper completed successfully');
+      const t0 = Date.now();
+      const WHISPER_TIMEOUT_MS = 60000;
+      const execPromise = execFileAsync('bash', ['-c', cmd]);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Whisper timed out after ${WHISPER_TIMEOUT_MS}ms`)), WHISPER_TIMEOUT_MS);
+      });
+      try {
+        const result = await Promise.race([execPromise, timeoutPromise]);
+        stdout = result?.stdout || '';
+        console.log(`[transcribeAudio] Whisper completed in ${Date.now() - t0}ms`);
+      } catch (raceErr) {
+        // On timeout, the underlying exec is still running.
+        // We can't kill it cleanly without child_process.kill
+        // plumbing, but since execFileAsync holds a child
+        // reference inside its internal promise, the child
+        // will be reaped when the process eventually exits.
+        // The next call to transcribeAudio will start a
+        // fresh whisper process, so a stuck one doesn't
+        // block subsequent calls.
+        console.error(`[transcribeAudio] Whisper failed/timeout: ${raceErr.message}`);
+        throw raceErr;
+      }
     } catch (execErr) {
       const stderr = execErr.stderr ? execErr.stderr.toString() : (execErr.message || 'Unknown error');
       const stdout_err = execErr.stdout ? execErr.stdout.toString() : '';
