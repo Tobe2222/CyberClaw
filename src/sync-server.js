@@ -466,7 +466,23 @@ class SyncServer extends EventEmitter {
       this._send(ws, payload);
       console.log(`[SyncServer] Sent greeting audio (${audioBase64.length} chars) to mobile`);
     } else {
-      console.warn('[SyncServer] greeting audio: ws closed before send');
+      // v3.1.32: the original WS may have reconnected
+      // during the 2-5s synthesis window. Fall back to
+      // any currently-authenticated client, same
+      // pattern as sendAudioResponse. Without this, a
+      // brief network blip between the synthesis
+      // request and the audio response would silently
+      // drop the cache write.
+      let sent = false;
+      for (const [clientWs, client] of this.clients) {
+        if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
+          this._send(clientWs, payload);
+          console.log(`[SyncServer] Sent greeting audio (${audioBase64.length} chars) to reconnected mobile`);
+          sent = true;
+          break;
+        }
+      }
+      if (!sent) console.warn('[SyncServer] greeting audio: no open client to send to');
     }
   }
 
