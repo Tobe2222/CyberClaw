@@ -401,6 +401,72 @@ class SyncServer extends EventEmitter {
         this.emit('remote_tool_result', msg);
         break;
       }
+
+      // v3.1.91: mobile asks the desktop to synthesize
+      // speech audio for the wake greeting phrase. The
+      // device-side native TTS is unavailable on some
+      // Android skins (no engine installed), so the phone
+      // has the desktop synthesize the audio and caches it
+      // locally for instant playback on wake events. The
+      // request is async: the desktop calls piper TTS via
+      // local-ai.synthesizeSpeech and sends back an
+      // audio_response tagged with requestId='greeting' so
+      // the phone can route it to the greeting cache.
+      case 'request_greeting_audio': {
+        if (!client.authenticated) return;
+        const text = (msg.text || '').trim();
+        if (!text) {
+          console.warn('[SyncServer] request_greeting_audio with empty text');
+          return;
+        }
+        console.log(`[SyncServer] Greeting audio request: "${text.substring(0, 60)}"`);
+        this._handleGreetingAudio(ws, text).catch((e) => {
+          console.error('[SyncServer] Greeting audio synthesis failed:', e.message);
+        });
+        break;
+      }
+    }
+  }
+
+  // v3.1.91: synthesize greeting audio on the desktop and
+  // send back as an audio_response tagged so the phone can
+  // route it to the greeting cache instead of the AI-reply
+  // playback path. Synthesizes with the same piper voice
+  // the desktop uses for AI replies so the greeting
+  // matches the in-conversation voice.
+  async _handleGreetingAudio(ws, text) {
+    const localAI = require('./local-ai');
+    const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+    const cleanText = stripEmojis(text);
+    if (!cleanText) {
+      console.warn('[SyncServer] greeting text was all emojis, nothing to synthesize');
+      return;
+    }
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    if (!audioBase64) {
+      console.warn('[SyncServer] synthesizeSpeech returned empty for greeting');
+      return;
+    }
+    // Tag the audio_response so the phone knows to cache
+    // it as the greeting (vs playing it immediately as an
+    // AI reply). The phone keys its cache by audio hash or
+    // stores the raw base64 with the phrase as the key.
+    const payload = {
+      type: 'audio_response',
+      audioBase64,
+      mimeType: 'audio/wav',
+      requestId: 'greeting',
+      // Echo the source text so the phone can match the
+      // audio to its cache key even if the phone's local
+      // state has changed since the request.
+      text: cleanText,
+      ts: Date.now(),
+    };
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this._send(ws, payload);
+      console.log(`[SyncServer] Sent greeting audio (${audioBase64.length} chars) to mobile`);
+    } else {
+      console.warn('[SyncServer] greeting audio: ws closed before send');
     }
   }
 
