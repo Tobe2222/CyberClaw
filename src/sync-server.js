@@ -425,6 +425,66 @@ class SyncServer extends EventEmitter {
         });
         break;
       }
+
+      // v3.2.0: mobile asks the desktop to start a custom
+      // openWakeWord training job. We just emit the request;
+      // main.js picks it up, runs the same training script
+      // that the IPC handler `agent:train-wake-phrase` uses,
+      // and routes progress + completion back to the mobile
+      // via this.syncServer.sendToMobile({type: 'wake_training_...'}).
+      //
+      // Why not call the IPC handler directly: the IPC handler
+      // is registered on the desktop renderer's webContents
+      // invocation, not from main.js itself. Going through an
+      // event gives us the same spawn-and-stream behavior with
+      // a single shared implementation.
+      case 'request_wake_training': {
+        if (!client.authenticated) return;
+        if (!msg.agentId || !msg.phrase || !Array.isArray(msg.samplePaths) || !msg.samplePaths.length) {
+          console.warn('[SyncServer] request_wake_training missing fields:', Object.keys(msg || {}));
+          this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId, phrase, samplePaths required' });
+          return;
+        }
+        console.log(`[SyncServer] Wake training request: agent=${msg.agentId} phrase="${msg.phrase}" samples=${msg.samplePaths.length}`);
+        this.emit('wake_training_request', {
+          ws,
+          agentId: msg.agentId,
+          phrase: msg.phrase,
+          samplePaths: msg.samplePaths,
+        });
+        break;
+      }
+
+      // v3.2.0: mobile asks for the bytes of a previously-trained
+      // .tflite. Returns base64. Used after wake_training_done
+      // arrives so the phone can store the model locally and
+      // hot-swap the wake interpreter.
+      case 'read_wake_model': {
+        if (!client.authenticated) return;
+        if (!msg.tflitePath) {
+          this._send(ws, { type: 'wake_model_data', ok: false, error: 'tflitePath required' });
+          return;
+        }
+        const fs = require('fs');
+        if (!fs.existsSync(msg.tflitePath)) {
+          this._send(ws, { type: 'wake_model_data', ok: false, error: 'file not found' });
+          return;
+        }
+        try {
+          const buf = fs.readFileSync(msg.tflitePath);
+          this._send(ws, {
+            type: 'wake_model_data',
+            ok: true,
+            base64: buf.toString('base64'),
+            size: buf.length,
+            tflitePath: msg.tflitePath,
+          });
+          console.log(`[SyncServer] Sent wake model (${buf.length} bytes) for ${msg.tflitePath}`);
+        } catch (e) {
+          this._send(ws, { type: 'wake_model_data', ok: false, error: e.message });
+        }
+        break;
+      }
     }
   }
 

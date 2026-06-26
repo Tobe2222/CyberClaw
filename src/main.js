@@ -1817,6 +1817,128 @@ app.whenReady().then(() => {
   });
   syncServer.start();
 
+  // v3.2.0: wake-word training request from the mobile.
+  // The mobile sends `request_wake_training` over the sync-server
+  // WebSocket. We run the same openWakeWord training script the
+  // desktop renderer's IPC handler uses, and forward progress +
+  // completion events back to the originating mobile client.
+  syncServer.on('wake_training_request', ({ ws, agentId, phrase, samplePaths }) => {
+    if (!syncServer) return;
+    console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samplePaths.length}`);
+
+    // Verify all sample paths exist
+    for (const p of samplePaths) {
+      if (!fs.existsSync(p)) {
+        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: `sample not found: ${p}` });
+        return;
+      }
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'train_wake_phrase.py');
+    if (!fs.existsSync(scriptPath)) {
+      syncServer._send(ws, { type: 'wake_training_result', ok: false, error: `training script not found: ${scriptPath}` });
+      return;
+    }
+
+    const workDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'wake-training', agentId);
+    fs.mkdirSync(workDir, { recursive: true });
+    const samplesDir = path.join(workDir, 'user_samples');
+    fs.mkdirSync(samplesDir, { recursive: true });
+
+    // Copy user samples into the work dir (same pattern as the IPC handler)
+    const localPaths = [];
+    for (let i = 0; i < samplePaths.length; i++) {
+      const src = samplePaths[i];
+      const ext = path.extname(src) || '.wav';
+      const dst = path.join(samplesDir, `sample_${i.toString().padStart(3, '0')}${ext}`);
+      fs.copyFileSync(src, dst);
+      localPaths.push(dst);
+    }
+
+    const modelName = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const outputDir = path.join(workDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const args = [
+      scriptPath,
+      '--name', modelName,
+      '--samples-dir', samplesDir,
+      '--output-dir', outputDir,
+      '--n-samples', '10000',
+      '--n-samples-val', '2000',
+      '--epochs', '20',
+    ];
+
+    const proc = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let tflitePath = null;
+    let lastError = null;
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('PROGRESS::')) {
+          try {
+            const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            // Forward to the renderer (if any) and to the mobile client
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('wake-training-progress', { agentId, ...payload });
+            }
+            syncServer._send(ws, { type: 'wake_training_progress', agentId, ...payload });
+          } catch (_) {}
+        } else if (line.startsWith('OUTPUT_TFLITE::')) {
+          tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
+        } else if (line.startsWith('OUTPUT_ONNX::')) {
+          // Fallback path: training finished but TFLite conversion failed
+          tflitePath = line.slice('OUTPUT_ONNX::'.length).trim();
+          lastError = 'tflite conversion failed; ONNX only';
+        } else if (line.trim()) {
+          console.log(`[wake-train:${agentId}] ${line.trim()}`);
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.trim()) console.error(`[wake-train:${agentId}] ${line.trim()}`);
+      }
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[wake-train:${agentId}] spawn error: ${err.message}`);
+      syncServer._send(ws, { type: 'wake_training_result', ok: false, error: err.message });
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        const errMsg = `training process exited ${code}`;
+        console.error(`[wake-train:${agentId}] ${errMsg}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('wake-training-done', { agentId, error: errMsg });
+        }
+        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: errMsg });
+        return;
+      }
+      if (!tflitePath) {
+        const errMsg = 'no .tflite output found';
+        console.error(`[wake-train:${agentId}] ${errMsg}`);
+        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: errMsg });
+        return;
+      }
+      console.log(`[wake-train:${agentId}] done -> ${tflitePath}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('wake-training-done', { agentId, tflitePath });
+      }
+      syncServer._send(ws, {
+        type: 'wake_training_result',
+        ok: true,
+        agentId,
+        tflitePath,
+        warning: lastError,
+      });
+    });
+  });
+
   // Agent Reach — initialise remote tool bridge
   const RemoteToolBridge = require('./remote-tool-bridge');
   let remoteToolBridge = null;
