@@ -983,14 +983,17 @@ ipcMain.handle('agent:set-model', (event, { agentId, model, fallbacks }) => {
 // Receives audio sample paths from the phone, runs the
 // training script, streams progress events back, and
 // returns the trained .tflite path.
-ipcMain.handle('agent:train-wake-phrase', async (event, { agentId, phrase, samplePaths }) => {
-  if (!agentId || !phrase || !Array.isArray(samplePaths) || !samplePaths.length) {
-    return { ok: false, error: 'agentId, phrase, samplePaths required' };
+ipcMain.handle('agent:train-wake-phrase', async (event, { agentId, phrase, samples }) => {
+  if (!agentId || !phrase || !Array.isArray(samples) || !samples.length) {
+    return { ok: false, error: 'agentId, phrase, samples required' };
   }
-  // Verify all sample paths exist
-  for (const p of samplePaths) {
-    if (!fs.existsSync(p)) {
-      return { ok: false, error: `sample not found: ${p}` };
+  // v3.1.37: `samples` is an array of {name, data} where data is
+  // base64-encoded audio. We decode + write into the work dir.
+  // (Previously took `samplePaths` to local files; the renderer
+  // and the phone are now expected to ship bytes.)
+  for (const s of samples) {
+    if (!s || !s.name || !s.data) {
+      return { ok: false, error: 'each sample needs {name, data}' };
     }
   }
   // Prepare working dirs
@@ -998,13 +1001,13 @@ ipcMain.handle('agent:train-wake-phrase', async (event, { agentId, phrase, sampl
   fs.mkdirSync(workDir, { recursive: true });
   const samplesDir = path.join(workDir, 'user_samples');
   fs.mkdirSync(samplesDir, { recursive: true });
-  // Copy user samples into the samples dir (with friendly names)
+  // Decode + write each sample into the samples dir (with friendly names)
   const localPaths = [];
-  for (let i = 0; i < samplePaths.length; i++) {
-    const src = samplePaths[i];
-    const ext = path.extname(src) || '.wav';
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const ext = path.extname(s.name) || '.m4a';
     const dst = path.join(samplesDir, `sample_${i.toString().padStart(3, '0')}${ext}`);
-    fs.copyFileSync(src, dst);
+    fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
     localPaths.push(dst);
   }
   // Find the python interpreter and the training script
@@ -1822,14 +1825,21 @@ app.whenReady().then(() => {
   // WebSocket. We run the same openWakeWord training script the
   // desktop renderer's IPC handler uses, and forward progress +
   // completion events back to the originating mobile client.
-  syncServer.on('wake_training_request', ({ ws, agentId, phrase, samplePaths }) => {
+  syncServer.on('wake_training_request', ({ ws, agentId, phrase, samples }) => {
     if (!syncServer) return;
-    console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samplePaths.length}`);
+    console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samples?.length || 0}`);
 
-    // Verify all sample paths exist
-    for (const p of samplePaths) {
-      if (!fs.existsSync(p)) {
-        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: `sample not found: ${p}` });
+    // v3.1.38: `samples` is now [{name, data}] (base64 audio), not
+    // file paths. The phone can't expose its filesystem to us, so
+    // we always wrote to `/data/user/0/...` which never existed
+    // here.
+    if (!Array.isArray(samples) || !samples.length) {
+      syncServer._send(ws, { type: 'wake_training_result', ok: false, error: 'no samples provided' });
+      return;
+    }
+    for (const s of samples) {
+      if (!s || !s.name || !s.data) {
+        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: 'each sample needs {name, data}' });
         return;
       }
     }
@@ -1845,13 +1855,13 @@ app.whenReady().then(() => {
     const samplesDir = path.join(workDir, 'user_samples');
     fs.mkdirSync(samplesDir, { recursive: true });
 
-    // Copy user samples into the work dir (same pattern as the IPC handler)
+    // Decode + write each sample into the work dir
     const localPaths = [];
-    for (let i = 0; i < samplePaths.length; i++) {
-      const src = samplePaths[i];
-      const ext = path.extname(src) || '.wav';
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const ext = path.extname(s.name) || '.m4a';
       const dst = path.join(samplesDir, `sample_${i.toString().padStart(3, '0')}${ext}`);
-      fs.copyFileSync(src, dst);
+      fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
       localPaths.push(dst);
     }
 

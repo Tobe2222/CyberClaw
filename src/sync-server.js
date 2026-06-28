@@ -440,17 +440,19 @@ class SyncServer extends EventEmitter {
       // a single shared implementation.
       case 'request_wake_training': {
         if (!client.authenticated) return;
-        if (!msg.agentId || !msg.phrase || !Array.isArray(msg.samplePaths) || !msg.samplePaths.length) {
+        // v3.1.38: `samples` is now [{name, data}] (base64 audio),
+        // not file paths. See OpenWakeWordTrainer.tsx + main.js.
+        if (!msg.agentId || !msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
           console.warn('[SyncServer] request_wake_training missing fields:', Object.keys(msg || {}));
-          this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId, phrase, samplePaths required' });
+          this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId, phrase, samples required' });
           return;
         }
-        console.log(`[SyncServer] Wake training request: agent=${msg.agentId} phrase="${msg.phrase}" samples=${msg.samplePaths.length}`);
+        console.log(`[SyncServer] Wake training request: agent=${msg.agentId} phrase="${msg.phrase}" samples=${msg.samples.length}`);
         this.emit('wake_training_request', {
           ws,
           agentId: msg.agentId,
           phrase: msg.phrase,
-          samplePaths: msg.samplePaths,
+          samples: msg.samples,
         });
         break;
       }

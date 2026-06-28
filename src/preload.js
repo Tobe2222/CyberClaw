@@ -62,11 +62,13 @@ window.cyberclaw = {
     deleteAgent: (id) => ipcRenderer.invoke('openclaw:delete-agent', id),
     setAgentModel: (agentId, model, fallbacks) => ipcRenderer.invoke('agent:set-model', { agentId, model, fallbacks }),
     // v3.1.36: wake-phrase training pipeline. Phone records
-    // samples locally, sends paths to desktop, desktop trains
-    // via openWakeWord Python + RTX 2070, streams progress
-    // events back via 'wake-training-progress' channel.
-    trainWakePhrase: (agentId, phrase, samplePaths) =>
-      ipcRenderer.invoke('agent:train-wake-phrase', { agentId, phrase, samplePaths }),
+    // samples locally and ships the base64-encoded audio
+    // (NOT paths — the desktop can't reach the phone's
+    // filesystem). The desktop decodes them and runs
+    // openWakeWord training on the RTX 2070, streaming
+    // progress events back via 'wake-training-progress'.
+    trainWakePhrase: (agentId, phrase, samples) =>
+      ipcRenderer.invoke('agent:train-wake-phrase', { agentId, phrase, samples }),
     readWakeModel: (tflitePath) =>
       ipcRenderer.invoke('agent:read-wake-model', { tflitePath }),
   },
