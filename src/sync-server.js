@@ -457,6 +457,40 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      // v3.1.40: mobile asks the desktop for the most recent
+      // wake-training result for an agent. Used on reconnect /
+      // remount: the phone lost its socket mid-training (Android
+      // background-killed it, network blip, etc.) and the desktop
+      // finished the run while the phone was offline. We cache the
+      // last result per agent for 15 minutes so the phone can pick
+      // up where it left off without re-recording and re-training.
+      case 'get_latest_wake_training_result': {
+        if (!client.authenticated) return;
+        if (!msg.agentId) {
+          this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId required' });
+          return;
+        }
+        const cached = typeof this._getCachedWakeResult === 'function'
+          ? this._getCachedWakeResult(msg.agentId)
+          : null;
+        if (cached) {
+          console.log(`[SyncServer] Replaying cached wake result for ${msg.agentId}`);
+          this._send(ws, cached);
+        } else {
+          // No cached result — be explicit so the phone can show
+          // 'no training in progress' rather than hang on the
+          // loading screen.
+          this._send(ws, {
+            type: 'wake_training_result',
+            ok: false,
+            agentId: msg.agentId,
+            error: 'no recent wake training result for this agent',
+            noResult: true,
+          });
+        }
+        break;
+      }
+
       // v3.2.0: mobile asks for the bytes of a previously-trained
       // .tflite. Returns base64. Used after wake_training_done
       // arrives so the phone can store the model locally and

@@ -1820,6 +1820,32 @@ app.whenReady().then(() => {
   });
   syncServer.start();
 
+  // v3.1.40: cache the most recent wake-training result per agent
+  // for 15 minutes, so a mobile that lost its WebSocket mid-training
+  // (Android background-killed the socket, brief network blip, etc.)
+  // can re-fetch the result on reconnect instead of having to
+  // re-record + re-train from scratch. Tobe hit this when the
+  // progress bar stuck at 30% on a 5-10 minute training run: the
+  // desktop was grinding away on the GPU but the phone had no
+  // way to find out the result.
+  const WAKE_RESULT_TTL_MS = 15 * 60 * 1000;
+  const lastWakeResult = new Map(); // agentId -> { result, completedAt }
+
+  function cacheWakeResult(agentId, result) {
+    lastWakeResult.set(agentId, { result, completedAt: Date.now() });
+  }
+  function getCachedWakeResult(agentId) {
+    const entry = lastWakeResult.get(agentId);
+    if (!entry) return null;
+    if (Date.now() - entry.completedAt > WAKE_RESULT_TTL_MS) {
+      lastWakeResult.delete(agentId);
+      return null;
+    }
+    return entry.result;
+  }
+  // Expose for the sync-server 'get_latest_wake_training_result' case
+  syncServer._getCachedWakeResult = getCachedWakeResult;
+
   // v3.2.0: wake-word training request from the mobile.
   // The mobile sends `request_wake_training` over the sync-server
   // WebSocket. We run the same openWakeWord training script the
@@ -1926,26 +1952,32 @@ app.whenReady().then(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('wake-training-done', { agentId, error: errMsg });
         }
-        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: errMsg });
+        const errResult = { type: 'wake_training_result', ok: false, agentId, error: errMsg };
+        cacheWakeResult(agentId, errResult);
+        syncServer._send(ws, errResult);
         return;
       }
       if (!tflitePath) {
         const errMsg = 'no .tflite output found';
         console.error(`[wake-train:${agentId}] ${errMsg}`);
-        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: errMsg });
+        const errResult = { type: 'wake_training_result', ok: false, agentId, error: errMsg };
+        cacheWakeResult(agentId, errResult);
+        syncServer._send(ws, errResult);
         return;
       }
       console.log(`[wake-train:${agentId}] done -> ${tflitePath}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('wake-training-done', { agentId, tflitePath });
       }
-      syncServer._send(ws, {
+      const okResult = {
         type: 'wake_training_result',
         ok: true,
         agentId,
         tflitePath,
         warning: lastError,
-      });
+      };
+      cacheWakeResult(agentId, okResult);
+      syncServer._send(ws, okResult);
     });
   });
 
