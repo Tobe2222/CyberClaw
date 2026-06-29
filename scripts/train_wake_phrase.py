@@ -336,7 +336,13 @@ def _normalize_clip_sample_rates(output_dir: Path, model_name: str) -> None:
         print(f"[train] All clips already at {target_sr} Hz", flush=True)
 
 
-def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
+def _run_openwakeword_substep(
+    args: list[str],
+    timeout: int = 3600,
+    progress_stage: str | None = None,
+    progress_pct_range: tuple[float, float] | None = None,
+    progress_label: str = "",
+) -> None:
     """Run a single openwakeword.train substep, streaming stdout.
 
     Always runs the openWakeWord subprocess via our wrapper
@@ -359,7 +365,23 @@ def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
     frozen progress bar for 2-5 minutes between 'uploading'
     and the next event. Streaming line-by-line forwards each
     PROGRESS:: event as soon as the subprocess prints it.
+
+    v3.1.43: Translate the subprocess's tqdm percentage bars into
+    PROGRESS:: events so the phone sees a continuously moving bar
+    during the 2-10 minute augment/train substeps (the previous
+    behavior was: bar froze at 30% for the full duration, then
+    jumped to the next stage boundary in one step). Pass
+    progress_stage='augmenting', progress_pct_range=(55, 70) and
+    progress_label='Augmenting + features' to get fine-grained
+    progress for the augmenting substep; same shape for training.
+    The percentage bar is regex-extracted from tqdm output like
+        'Computing features:  48%|████▊     | 297/625 [02:05<02:18,  2.38it/s]'
+    We re-map it into [pct_range[0], pct_range[1]] so the phone
+    bar moves smoothly from 55% to 70% during the augment.
     """
+    import re
+    tqdm_pct_re = re.compile(r"\b(\d{1,3})%\|")
+
     print(f"[train] $ python3 _oww_onnx_tflite_patch.py {' '.join(args)}", flush=True)
 
     env = os.environ.copy()
@@ -379,6 +401,7 @@ def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
     # Stream stdout line-by-line so PROGRESS:: events reach main.js
     # as soon as the subprocess prints them.
     assert proc.stdout is not None
+    last_emitted_pct = -1.0
     for line in proc.stdout:
         if line.strip():
             print(f"[train-OWW] {line.rstrip()}", flush=True)
@@ -388,6 +411,27 @@ def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
         if line.startswith("PROGRESS::"):
             sys.stdout.write(line if line.endswith("\n") else line + "\n")
             sys.stdout.flush()
+            continue
+
+        # v3.1.43: extract tqdm percentage and re-emit as a
+        # PROGRESS:: event bounded by this substep's percentage
+        # range. Throttle to whole-percent changes so we don't
+        # flood the WebSocket with 60 events per second per tqdm
+        # bar (openwakeword has multiple tqdm bars running
+        # concurrently during augment).
+        if progress_stage and progress_pct_range:
+            m = tqdm_pct_re.search(line)
+            if m:
+                inner_pct = int(m.group(1))
+                lo, hi = progress_pct_range
+                mapped = lo + (hi - lo) * (inner_pct / 100.0)
+                if abs(mapped - last_emitted_pct) >= 1.0:
+                    last_emitted_pct = mapped
+                    msg = (
+                        f"{progress_label} "
+                        f"({inner_pct}% complete)"
+                    ) if progress_label else f"{inner_pct}% complete"
+                    emit_progress(progress_stage, mapped, msg)
 
     returncode = proc.wait(timeout=timeout)
     if returncode != 0:
@@ -539,6 +583,9 @@ def main() -> int:
         _run_openwakeword_substep(
             ["--training_config", str(config_path), "--augment_clips", "--overwrite"],
             timeout=1800,
+            progress_stage="augmenting",
+            progress_pct_range=(55, 70),
+            progress_label="Augmenting + features",
         )
     except Exception as e:
         print(f"[train] Augmentation failed: {e}", file=sys.stderr, flush=True)
@@ -554,6 +601,9 @@ def main() -> int:
         _run_openwakeword_substep(
             ["--training_config", str(config_path), "--train_model"],
             timeout=14400,  # 4h ceiling
+            progress_stage="training",
+            progress_pct_range=(75, 88),
+            progress_label=f"Training DNN on {device}",
         )
     except Exception as e:
         print(f"[train] Training failed: {e}", file=sys.stderr, flush=True)

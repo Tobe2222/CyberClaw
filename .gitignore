@@ -6,3 +6,4 @@ Thumbs.db
 scripts/__pycache__/
 scripts/piper-sample-generator/models/*.pt
 scripts/piper-sample-generator/models/*.json
+**/__pycache__
