@@ -45,6 +45,19 @@ class SyncServer extends EventEmitter {
     this.onVoiceTranscript = options.onVoiceTranscript || null;
     this.onAudioInput = options.onAudioInput || null;
 
+    // v3.1.46: track the most recent wake_training_progress per
+    // agent so a phone that lost its WebSocket mid-training (and
+    // reconnected) can pick up where the bar should be. Without
+    // this, a phone that reconnects during a 15-minute training
+    // sees a frozen 30% bar and a red "Last event: 60s+ ago"
+    // indicator until the training finishes — because the
+    // _broadcast() call iterates this.clients and the phone's
+    // old ws is already disconnected. The phone's watchdog
+    // (poll every 20s for the cached wake_training_result) is
+    // what surfaces this — main.js attaches the latest progress
+    // to the result reply so the trainer can re-paint the bar.
+    this._lastWakeProgress = new Map();  // agentId → { stage, percent, message, ts }
+
     // Rate limiting for pairing
     this.pairingAttempts = 0;
     this.pairingLockoutUntil = 0;
@@ -469,6 +482,20 @@ class SyncServer extends EventEmitter {
         if (!msg.agentId) {
           this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId required' });
           return;
+        }
+        // v3.1.46: if main.js has cached a recent wake_training_progress
+        // for this agent, attach it to the reply. The phone's
+        // watchdog polls this case every 20s while training is
+        // active; the phone uses the latest progress to re-paint
+        // the bar if its own WebSocket was dead when the progress
+        // events fired (broadcast skips dead ws). Without this,
+        // a phone that reconnects mid-training sees a frozen 30%
+        // bar until the training actually finishes.
+        if (typeof this._getLastWakeProgress === 'function') {
+          const latest = this._getLastWakeProgress(msg.agentId);
+          if (latest && (Date.now() - (latest.ts || 0) < 5 * 60 * 1000)) {
+            this._send(ws, { type: 'wake_training_progress', agentId: msg.agentId, ...latest });
+          }
         }
         const cached = typeof this._getCachedWakeResult === 'function'
           ? this._getCachedWakeResult(msg.agentId)

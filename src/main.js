@@ -1846,6 +1846,22 @@ app.whenReady().then(() => {
   // Expose for the sync-server 'get_latest_wake_training_result' case
   syncServer._getCachedWakeResult = getCachedWakeResult;
 
+  // v3.1.46: track the most recent wake_training_progress per
+  // agent for the same reason as the result cache above. A
+  // phone that lost its WebSocket mid-training reconnects,
+  // the watchdog polls get_latest_wake_training_result, and
+  // we attach the latest progress so the bar re-paints to
+  // where it actually is. Without this, the bar is stuck at
+  // whatever the phone last saw before the WS died.
+  const lastWakeProgress = new Map();  // agentId -> { stage, percent, message, ts }
+  function setLastWakeProgress(agentId, payload) {
+    lastWakeProgress.set(agentId, payload);
+  }
+  function getLastWakeProgress(agentId) {
+    return lastWakeProgress.get(agentId) || null;
+  }
+  syncServer._getLastWakeProgress = getLastWakeProgress;
+
   // v3.2.0: wake-word training request from the mobile.
   // The mobile sends `request_wake_training` over the sync-server
   // WebSocket. We run the same openWakeWord training script the
@@ -1888,6 +1904,12 @@ app.whenReady().then(() => {
     // instead of learning that a fresh training is in progress.
     // The new run will overwrite the cache entry on completion.
     lastWakeResult.delete(agentId);
+    // v3.1.46: also clear the cached progress. Otherwise a
+    // phone that reconnects mid-training would see the OLD
+    // progress (from the previous run) before seeing any of
+    // the new run's progress events. We want a clean slate
+    // at the start of each new run.
+    lastWakeProgress.delete(agentId);
 
     // Decode + write each sample into the work dir
     const localPaths = [];
@@ -1945,6 +1967,10 @@ app.whenReady().then(() => {
               mainWindow.webContents.send('wake-training-progress', { agentId, ...fields });
             }
             if (syncServer) {
+              // v3.1.46: remember the latest progress so a phone
+              // that lost its WebSocket mid-training can pick it
+              // up on reconnect (via get_latest_wake_training_result).
+              setLastWakeProgress(agentId, fields);
               syncServer._broadcast({ type: 'wake_training_progress', agentId, ...fields });
             }
           } catch (_) {}
