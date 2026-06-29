@@ -1881,6 +1881,14 @@ app.whenReady().then(() => {
     const samplesDir = path.join(workDir, 'user_samples');
     fs.mkdirSync(samplesDir, { recursive: true });
 
+    // v3.2.7: clear any cached result for this agent from a previous
+    // run. Without this, a phone that polls for the latest result
+    // mid-training (e.g. it reconnected after our WebSocket died)
+    // could get back the OLD error from the previous failed run
+    // instead of learning that a fresh training is in progress.
+    // The new run will overwrite the cache entry on completion.
+    lastWakeResult.delete(agentId);
+
     // Decode + write each sample into the work dir
     const localPaths = [];
     for (let i = 0; i < samples.length; i++) {

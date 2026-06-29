@@ -286,6 +286,56 @@ def _write_openwakeword_config(
     print(f"[train] Wrote config: {config_path}", flush=True)
 
 
+def _normalize_clip_sample_rates(output_dir: Path, model_name: str) -> None:
+    """v3.2.7: Resample any synthetic clips that aren't at 16kHz.
+
+    openwakeword's `augment_clips` blows up with
+        ValueError: Error! Clip does not have the correct sample rate!
+    if it finds a clip whose `torchaudio.load(p)[1]` is anything but
+    16000 Hz. The Piper-TTS-generated clips that we cached from
+    earlier runs ended up at 22050 Hz (probably an older
+    piper_sample_generator default), and they sit alongside the
+    16kHz ones in the same directory because openwakeword's
+    `--generate_clips` step short-circuits with "already exist".
+
+    Pre-pass: walk the four clip dirs openwakeword reads from
+    (`<output>/<name>/{positive_train, positive_test, negative_train,
+    negative_test}`), find any non-16kHz WAV, resample in place.
+    Idempotent — no-op if everything's already at 16kHz.
+    """
+    import torchaudio
+    import torchaudio.transforms as T
+
+    target_sr = 16000
+    clip_subdirs = ("positive_train", "positive_test", "negative_train", "negative_test")
+    total_resampled = 0
+    for sub in clip_subdirs:
+        d = output_dir / model_name / sub
+        if not d.is_dir():
+            continue
+        for fname in os.listdir(d):
+            if not fname.endswith(".wav"):
+                continue
+            p = d / fname
+            try:
+                data, sr = torchaudio.load(str(p))
+            except Exception as e:
+                # Don't crash the whole training run over one bad
+                # clip; openwakeword's ValueError will surface it
+                # later if it matters. Log and move on.
+                print(f"[train] WARN: could not probe {p}: {e}", flush=True)
+                continue
+            if sr == target_sr:
+                continue
+            resampler = T.Resample(sr, target_sr)
+            torchaudio.save(str(p), resampler(data), target_sr)
+            total_resampled += 1
+    if total_resampled:
+        print(f"[train] Resampled {total_resampled} clip(s) to {target_sr} Hz", flush=True)
+    else:
+        print(f"[train] All clips already at {target_sr} Hz", flush=True)
+
+
 def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
     """Run a single openwakeword.train substep, streaming stdout.
 
@@ -457,6 +507,14 @@ def main() -> int:
 
     # ----- Step 2: Augment + compute features --------------------------------
     emit_progress("augmenting", 55, "Augmenting samples and computing features...")
+
+    # v3.2.7: one-shot resample of any non-16kHz synthetic clips
+    # before openwakeword sees them. Catches a bug we hit on
+    # 2026-06-29 where 2,520 of the cached Piper-TTS clips were at
+    # 22050 Hz and openwakeword's augment_clips crashed on the first
+    # one it tried to load.
+    _normalize_clip_sample_rates(output_dir, args.name)
+
     try:
         _run_openwakeword_substep(
             ["--training_config", str(config_path), "--augment_clips", "--overwrite"],
