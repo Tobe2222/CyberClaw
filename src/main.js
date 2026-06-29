@@ -1923,6 +1923,14 @@ app.whenReady().then(() => {
         if (line.startsWith('PROGRESS::')) {
           try {
             const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            // Strip the redundant 'type' field from the payload so
+            // it doesn't override our 'wake_training_progress'
+            // type when we spread it. (emit_progress() in
+            // train_wake_phrase.py sets payload.type='progress'
+            // for its own internal logging; we use
+            // 'wake_training_progress' as the wire type the phone
+            // listens for.)
+            const { type: _ignore, ...fields } = payload;
             // Forward to the renderer (if any) and BROADCAST to all
             // authenticated mobile clients. We broadcast (not just
             // send to the originating ws) because the phone's
@@ -1934,10 +1942,10 @@ app.whenReady().then(() => {
             // phone side: the trainer ignores progress for other
             // agents.
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('wake-training-progress', { agentId, ...payload });
+              mainWindow.webContents.send('wake-training-progress', { agentId, ...fields });
             }
             if (syncServer) {
-              syncServer._broadcast({ type: 'wake_training_progress', agentId, ...payload });
+              syncServer._broadcast({ type: 'wake_training_progress', agentId, ...fields });
             }
           } catch (_) {}
         } else if (line.startsWith('OUTPUT_TFLITE::')) {
