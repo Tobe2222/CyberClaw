@@ -350,6 +350,15 @@ def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
       - scripts/dp/phonemizer.py (DeepPhonemizer shim)
 
     PYTHONUNBUFFERED=1 forces line-buffered stdout so tqdm updates flush.
+
+    v3.1.42: Use Popen + a background line-reader instead of
+    subprocess.run() with PIPE. subprocess.run() buffers the entire
+    subprocess stdout until exit, which means PROGRESS:: events
+    from inside the augment/train substeps never reach main.js
+    while the subprocess is running. The phone then sits on a
+    frozen progress bar for 2-5 minutes between 'uploading'
+    and the next event. Streaming line-by-line forwards each
+    PROGRESS:: event as soon as the subprocess prints it.
     """
     print(f"[train] $ python3 _oww_onnx_tflite_patch.py {' '.join(args)}", flush=True)
 
@@ -357,22 +366,33 @@ def _run_openwakeword_substep(args: list[str], timeout: int = 3600) -> None:
     env["PYTHONPATH"] = str(_THIS_DIR) + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONUNBUFFERED"] = "1"
 
-    result = subprocess.run(
+    proc = subprocess.Popen(
         ["python3", "-u", str(_THIS_DIR / "_oww_onnx_tflite_patch.py")] + args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        timeout=timeout,
         cwd=str(_THIS_DIR.parent),  # so relative `piper_sample_generator_path` resolves
         env=env,
+        bufsize=1,  # line-buffered
     )
-    if result.stdout:
-        for line in result.stdout.split("\n"):
-            if line.strip():
-                print(f"[train-OWW] {line}", flush=True)
-    if result.returncode != 0:
+
+    # Stream stdout line-by-line so PROGRESS:: events reach main.js
+    # as soon as the subprocess prints them.
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        if line.strip():
+            print(f"[train-OWW] {line.rstrip()}", flush=True)
+        # Belt-and-suspenders: also forward PROGRESS:: lines as-is,
+        # in case the line doesn't make it through stdout for some
+        # reason. (No-op if the line was already forwarded.)
+        if line.startswith("PROGRESS::"):
+            sys.stdout.write(line if line.endswith("\n") else line + "\n")
+            sys.stdout.flush()
+
+    returncode = proc.wait(timeout=timeout)
+    if returncode != 0:
         raise RuntimeError(
-            f"openwakeword.train exited with code {result.returncode} for args {args}"
+            f"openwakeword.train exited with code {returncode} for args {args}"
         )
 
 
