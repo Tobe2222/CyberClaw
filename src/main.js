@@ -1923,11 +1923,22 @@ app.whenReady().then(() => {
         if (line.startsWith('PROGRESS::')) {
           try {
             const payload = JSON.parse(line.slice('PROGRESS::'.length));
-            // Forward to the renderer (if any) and to the mobile client
+            // Forward to the renderer (if any) and BROADCAST to all
+            // authenticated mobile clients. We broadcast (not just
+            // send to the originating ws) because the phone's
+            // WebSocket may have died since the training started
+            // — the user might have backgrounded the app, lost
+            // wifi, etc. — and we want a reconnected phone to
+            // pick up progress events too, not just the final
+            // cached result. Filtering by agentId happens on the
+            // phone side: the trainer ignores progress for other
+            // agents.
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('wake-training-progress', { agentId, ...payload });
             }
-            syncServer._send(ws, { type: 'wake_training_progress', agentId, ...payload });
+            if (syncServer) {
+              syncServer._broadcast({ type: 'wake_training_progress', agentId, ...payload });
+            }
           } catch (_) {}
         } else if (line.startsWith('OUTPUT_TFLITE::')) {
           tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
