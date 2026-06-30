@@ -1810,6 +1810,26 @@ app.whenReady().then(() => {
         discordLog('📤', 'Sending transcript to mobile', `ws=${wsOpen ? 'OPEN' : 'CLOSED'}`, wsOpen ? 'success' : 'warn');
         if (syncServer && ws) syncServer.sendTranscript(ws, transcript);
 
+        // 2.5 — v3.2.21 fix: route the transcript to the
+        // desktop renderer's chat/LLM pipeline. Without this
+        // send, the renderer's `mobile-voice` IPC handler
+        // (src/js/app.js:3794) never fires, the transcript
+        // never reaches the LLM, and the user sees
+        // "Transcribing..." forever on the mobile. This send
+        // used to exist in the original sync-server commit
+        // (c275eae) and got dropped at some point. Re-adding
+        // it restores the audio→LLM→audio_response loop.
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mobile-voice', {
+            transcript,
+            context: '',
+            meta: { source: 'mobile', deviceName: meta?.deviceName || 'Mobile' },
+          });
+          console.log('[Voice] Routed transcript to renderer via mobile-voice IPC');
+        } else {
+          console.warn('[Voice] No main window — cannot route transcript to renderer');
+        }
+
         // 3. Mark that the next AI reply should be spoken back (TTS audio response)
         syncServer._voiceReplyWs = ws;
       } catch (e) {
@@ -1971,6 +1991,9 @@ app.whenReady().then(() => {
               // that lost its WebSocket mid-training can pick it
               // up on reconnect (via get_latest_wake_training_result).
               setLastWakeProgress(agentId, fields);
+              const clients = Array.from(syncServer.clients.entries());
+              const openClients = clients.filter(([ws, c]) => c.authenticated && ws.readyState === 1);
+              console.log(`[wake-train:${agentId}] BROADCAST_PROGRESS stage=${fields.stage} pct=${fields.percent} → ${openClients.length}/${clients.length} open`);
               syncServer._broadcast({ type: 'wake_training_progress', agentId, ...fields });
             }
           } catch (_) {}
