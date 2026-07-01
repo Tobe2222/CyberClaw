@@ -1,6 +1,6 @@
 {
   "name": "cyberclaw",
-  "version": "3.1.47",
+  "version": "3.1.48",
   "description": "CyberClaw — AI companion you can play and talk to. RPG-style progression, quests, and a task system. Pairs with the CyberClaw mobile app for voice and agent reach.",
   "main": "src/main.js",
   "scripts": {

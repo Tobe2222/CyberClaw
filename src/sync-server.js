@@ -439,6 +439,27 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      // v3.2.29 (sibling of request_greeting_audio): mobile
+      // asks the desktop to synthesize the exit reply
+      // phrase. Same piper TTS path as the greeting, but
+      // the audio_response is tagged requestId='exit_reply'
+      // so the phone routes it to the exit-reply cache
+      // instead of the greeting cache. Mobile plays the
+      // cached audio on voice-mode close.
+      case 'request_exit_reply_audio': {
+        if (!client.authenticated) return;
+        const text = (msg.text || '').trim();
+        if (!text) {
+          console.warn('[SyncServer] request_exit_reply_audio with empty text');
+          return;
+        }
+        console.log(`[SyncServer] Exit reply audio request: "${text.substring(0, 60)}"`);
+        this._handleExitReplyAudio(ws, text).catch((e) => {
+          console.error('[SyncServer] Exit reply audio synthesis failed:', e.message);
+        });
+        break;
+      }
+
       // v3.2.0: mobile asks the desktop to start a custom
       // openWakeWord training job. We just emit the request;
       // main.js picks it up, runs the same training script
@@ -478,6 +499,7 @@ class SyncServer extends EventEmitter {
       // last result per agent for 15 minutes so the phone can pick
       // up where it left off without re-recording and re-training.
       case 'get_latest_wake_training_result': {
+        console.log(`[SyncServer] get_latest_wake_training_result from ${client.name || '?'} agentId=${msg.agentId}`);
         if (!client.authenticated) return;
         if (!msg.agentId) {
           this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId required' });
@@ -606,6 +628,60 @@ class SyncServer extends EventEmitter {
         }
       }
       if (!sent) console.warn('[SyncServer] greeting audio: no open client to send to');
+    }
+  }
+
+  // v3.2.29: synthesize exit reply audio on the desktop
+  // and send back as an audio_response tagged so the
+  // phone can route it to the exit-reply cache. Same
+  // piper TTS path as _handleGreetingAudio — the only
+  // difference is the requestId so the phone knows
+  // which cache to write to. Synthesizes with the
+  // same piper voice as greetings and AI replies so
+  // the exit reply matches the in-conversation voice.
+  async _handleExitReplyAudio(ws, text) {
+    const localAI = require('./local-ai');
+    const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+    const cleanText = stripEmojis(text);
+    if (!cleanText) {
+      console.warn('[SyncServer] exit reply text was all emojis, nothing to synthesize');
+      return;
+    }
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    if (!audioBase64) {
+      console.warn('[SyncServer] synthesizeSpeech returned empty for exit reply');
+      return;
+    }
+    // Tag the audio_response so the phone knows to
+    // cache it as the exit reply (vs the greeting, vs
+    // an AI reply). The phone keys its cache by phrase
+    // string.
+    const payload = {
+      type: 'audio_response',
+      audioBase64,
+      mimeType: 'audio/wav',
+      requestId: 'exit_reply',
+      text: cleanText,
+      ts: Date.now(),
+    };
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this._send(ws, payload);
+      console.log(`[SyncServer] Sent exit reply audio (${audioBase64.length} chars) to mobile`);
+    } else {
+      // Same reconnection fallback as _handleGreetingAudio:
+      // the original WS may have reconnected during the
+      // 2-5s synthesis window. Without this, a brief
+      // network blip would silently drop the cache write.
+      let sent = false;
+      for (const [clientWs, client] of this.clients) {
+        if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
+          this._send(clientWs, payload);
+          console.log(`[SyncServer] Sent exit reply audio (${audioBase64.length} chars) to reconnected mobile`);
+          sent = true;
+          break;
+        }
+      }
+      if (!sent) console.warn('[SyncServer] exit reply audio: no open client to send to');
     }
   }
 
