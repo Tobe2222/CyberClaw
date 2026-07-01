@@ -1461,7 +1461,12 @@ function _renderStoredChatMsg(m, container, agentId) {
       // (per-agent emoji → sprite catalog icon) to addChatMsg,
       // so m.emoji is set correctly here. Old messages persisted
       // before this version will fall back to 🤖.
-      div.innerHTML = `<span class="msg-prefix">${m.emoji || '🤖'} [${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      // v3.1.96: treat the desktop's default 🤖 the same as
+      // "no emoji set" — show just [name] without the prefix
+      // emoji. Otherwise the mobile's chat history (which was
+      // broadcast earlier) shows a stray robot next to every
+      // message from agents without an explicit emoji.
+      div.innerHTML = `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(m.text)}</span>`;
@@ -1673,7 +1678,10 @@ window.sendChat = async function() {
       // v3.1.21: pass the resolved icon (per-agent emoji → sprite
       // catalog icon) so the message prefix shows the right emoji
       // even if the user hasn't set a custom emoji on the agent.
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
+      // v3.1.96: strip the desktop's 🤖 default so the mobile's
+      // chat history doesn't get a stray robot next to every
+      // message from agents without an explicit emoji.
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
 
       // Check for quest creation command in reply
       if (result.reply) {
@@ -1813,7 +1821,9 @@ window.sendChatMessage = async function(message) {
 
     if (result.ok) {
       const leader = agents[mainAgentId];
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
+      // v3.1.96: see sibling site — strip the desktop's 🤖
+      // default before sending.
+      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
       window.addDesktopLog?.('💬', 'AI responded', result.reply.substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: result.reply }); } catch {}
@@ -2027,7 +2037,11 @@ function addChatMsg(type, text, name, emoji) {
       div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(text)}</span>`;
       break;
     case 'agent':
-      div.innerHTML = `<span class="msg-prefix">${emoji || '🤖'} [${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
+      // v3.1.96: same fix as the other render site — don't
+      // show the prefix emoji if it's the desktop's 🤖 default.
+      // Show just [name] in that case (matches the user-style
+      // prefix shape).
+      div.innerHTML = `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
@@ -2309,7 +2323,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Also add to chat (no agent call — instant reaction)
           var agentId = pickCurrentCompanionId();
           var agent = agentId ? agents[agentId] : null;
-          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji || getSpriteIcon(agent._pixelCompanionId));
+          // v3.1.96: strip the desktop's 🤖 default before sending.
+          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)));
         }
         typingTimer = null;
       }, 30000);
@@ -4100,7 +4115,8 @@ window.sendChat = async function() {
       removeChatMsg(typingId);
       if (result.ok) {
         const leader = agents[mainAgentId];
-        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && (leader.emoji || getSpriteIcon(leader._pixelCompanionId)));
+        // v3.1.96: strip the desktop's 🤖 default before sending.
+        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
         // Check for quest creation command
         if (result.reply) {
           var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
@@ -4531,7 +4547,8 @@ function promptCompanionReaction(promptText) {
     if (result && result.ok && result.reply) {
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
-      addChatMsg('agent', reply, agent.name, agent.emoji || getSpriteIcon(agent._pixelCompanionId));
+      // v3.1.96: strip the desktop's 🤖 default before sending.
+      addChatMsg('agent', reply, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)));
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
         var bubbleText = reply.length > 120 ? reply.substring(0, 117) + '...' : reply;
