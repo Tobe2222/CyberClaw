@@ -403,6 +403,45 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      // v3.1.50: phone pushes a per-companion setting (currently
+      // silenceMs only). We delegate to main.js's
+      // _setCompanionSetting(agentId, key, value) so the value
+      // lands in the same companion-settings.json the
+      // agents_list broadcast reads from. main.js then re-broadcasts
+      // the new settings so any other connected phone sees the
+      // update (multi-device consistency).
+      //
+      // Two-way sync would be needed if the desktop ever edits
+      // these on its own; today the phone is the only writer
+      // and the desktop is the persistence + replay layer.
+      case 'set_companion_silence': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        const silenceMs = msg.silenceMs;
+        if (!agentId || typeof silenceMs !== 'number') {
+          console.warn('[SyncServer] set_companion_silence missing fields:', Object.keys(msg || {}));
+          this._send(ws, { type: 'set_companion_silence_result', ok: false, agentId, error: 'agentId and numeric silenceMs required' });
+          return;
+        }
+        if (typeof this._setCompanionSetting === 'function') {
+          try {
+            this._setCompanionSetting(agentId, 'silenceMs', silenceMs);
+            console.log(`[SyncServer] set_companion_silence agent=${agentId} silenceMs=${silenceMs}`);
+            this._send(ws, { type: 'set_companion_silence_result', ok: true, agentId, silenceMs });
+            // Re-broadcast the new companion_settings so a second
+            // connected phone picks up the change. Same pattern as
+            // companion_id / agents_list broadcasts.
+            this._broadcast({ type: 'companion_settings_sync', settings: { [agentId]: { silenceMs } }, ts: Date.now() });
+          } catch (e) {
+            console.error('[SyncServer] set_companion_silence failed:', e.message);
+            this._send(ws, { type: 'set_companion_silence_result', ok: false, agentId, error: e.message });
+          }
+        } else {
+          this._send(ws, { type: 'set_companion_silence_result', ok: false, agentId, error: 'desktop not ready' });
+        }
+        break;
+      }
+
       case 'ping': {
         this._send(ws, { type: 'pong', ts: Date.now() });
         break;
@@ -718,6 +757,21 @@ class SyncServer extends EventEmitter {
       console.log('[SyncServer] Replaying recent audio_response to reconnected client');
       this._send(ws, this._lastAudioResponse.payload);
       this._lastAudioResponse = null;
+    }
+    // v3.1.50: replay per-companion settings so a reconnecting
+    // phone immediately sees the latest silenceMs (or future
+    // per-companion settings) for each companion, without
+    // having to wait for a fresh set_companion_silence push.
+    // Mirrors the agents_list replay above. Settings is a
+    // full snapshot — small, and the desktop is the source
+    // of truth (the phone pushes, the desktop persists).
+    if (typeof this._getAllCompanionSettings === 'function') {
+      try {
+        const all = this._getAllCompanionSettings();
+        if (all && Object.keys(all).length > 0) {
+          this._send(ws, { type: 'companion_settings_sync', settings: all, ts: Date.now() });
+        }
+      } catch (_) {}
     }
   }
 

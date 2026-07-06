@@ -3939,11 +3939,21 @@ async function startVoice() {
   btn.classList.add('recording');
   btn.textContent = '⏹️';
   input.placeholder = 'Recording... (max 15s, say "stop" to end early)';
-  
+
   try {
-    // Record audio for max 15 seconds or until user stops
-    addChatMsg('system', '🎤 Recording...');
-    const result = await window.ipcRenderer?.invoke('voice:start-recording', { durationMs: 15000 });
+    // v3.1.50: per-companion silence (mobile-pushed in v3.7.2+)
+    // overrides the default 15s max recording duration when
+    // the active companion has one set. main.js resolves the
+    // per-companion value and applies a floor of 15s so we
+    // never chop shorter than the legacy default — the mobile
+    // interprets silenceMs as "silence-to-end-turn" while the
+    // desktop interprets it as "max recording floor", and the
+    // 15s floor keeps long utterances safe on the desktop side
+    // even when the phone is configured for short silence.
+    const result = await window.ipcRenderer?.invoke(
+      'voice:start-recording',
+      { durationMs: 15000, agentId: activeChatAgentId },
+    );
     
     if (!result?.path) {
       throw new Error('No recording captured');

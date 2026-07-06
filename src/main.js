@@ -23,6 +23,22 @@ const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
 const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
 const PROVIDERS_FILE = path.join(CYBERCLAW_DIR, 'providers.json');
+// v3.1.50: per-companion settings synced from the mobile.
+// The phone pushes per-companion voice-loop settings (currently
+// silenceMs, more later if needed) so a phone reinstall doesn't
+// lose them and the desktop's own voice loop (main.js:2422) can
+// respect the same per-companion value. Shape:
+//   { "<agentId>": { silenceMs: number, updatedAt: number } }
+//
+// Why a separate file (not agents/<id>/settings.json or
+// openclaw.json): these are mobile-pushed values that the
+// desktop doesn't originate. Keeping them out of the agent's
+// primary config avoids clobbering the openclaw agents/<id>/
+// schema with a field the desktop never writes on its own.
+// (The desktop's only writes here are re-broadcasts of what
+// the phone pushed, which the phone can re-send anytime.)
+const COMPANION_SETTINGS_FILE = path.join(CYBERCLAW_DIR, 'companion-settings.json');
+const DEFAULT_SILENCE_MS = 5000;
 // v3.1.33: user-managed LLM endpoints (Ollama, LM Studio,
 // llama.cpp server, etc.). Stored separately from the
 // existing providers.json (which is for API providers like
@@ -38,6 +54,31 @@ function loadStats() {
 function saveStats(stats) {
   fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
   fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+}
+
+// v3.1.50: per-companion settings sync (mobile → desktop).
+// Mirrors the load/save pattern above. Empty object if the
+// file is missing or corrupt.
+function loadCompanionSettings() {
+  try { return JSON.parse(fs.readFileSync(COMPANION_SETTINGS_FILE, 'utf8')); }
+  catch { return {}; }
+}
+function saveCompanionSettings(settings) {
+  fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
+  fs.writeFileSync(COMPANION_SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+function getCompanionSetting(agentId, key, fallback) {
+  if (!agentId) return fallback;
+  const all = loadCompanionSettings();
+  const v = all[agentId]?.[key];
+  if (v === undefined || v === null) return fallback;
+  return v;
+}
+function setCompanionSetting(agentId, key, value) {
+  if (!agentId) return;
+  const all = loadCompanionSettings();
+  all[agentId] = { ...(all[agentId] || {}), [key]: value, updatedAt: Date.now() };
+  saveCompanionSettings(all);
 }
 
 // XP needed for each level: 100, 250, 500, 1000, 2000, 4000...
@@ -1840,6 +1881,24 @@ app.whenReady().then(() => {
   });
   syncServer.start();
 
+  // v3.1.50: expose the per-companion setting setters on the
+  // sync-server so the phone-pushed set_companion_silence case
+  // can write to the same companion-settings.json the
+  // agents_list broadcast reads from.
+  syncServer._setCompanionSetting = (agentId, key, value) => {
+    setCompanionSetting(agentId, key, value);
+  };
+  syncServer._getCompanionSetting = (agentId, key, fallback) => {
+    return getCompanionSetting(agentId, key, fallback);
+  };
+  // Replay the per-companion settings to a fresh auth'd client.
+  // Mirrors the agents_list replay in _sendFullState so a phone
+  // that reconnects immediately gets the latest values without
+  // having to wait for a re-broadcast.
+  syncServer._getAllCompanionSettings = () => {
+    return loadCompanionSettings();
+  };
+
   // v3.1.40: cache the most recent wake-training result per agent
   // for 15 minutes, so a mobile that lost its WebSocket mid-training
   // (Android background-killed the socket, brief network blip, etc.)
@@ -2266,30 +2325,49 @@ process.on('unhandledRejection', (err) => {
 });
 
 // Voice recording handler for desktop voice mode
-ipcMain.handle('voice:start-recording', async (e, { durationMs }) => {
+ipcMain.handle('voice:start-recording', async (e, { durationMs, agentId }) => {
   try {
+    // v3.1.50: if the renderer passes the active agentId, look up
+    // the per-companion silenceMs (mobile-pushed via
+    // set_companion_silence). Use it as a FLOOR on the
+    // renderer's durationMs so we never record shorter than
+    // 15s on the desktop — the phone's silenceMs means
+    // "silence-to-end-turn" while the desktop interprets
+    // it as "max recording duration floor". Without the
+    // floor, a short phone silenceMs (e.g. 2s) would chop
+    // off long utterances on the desktop.
+    let effectiveDurationMs = durationMs || 15000;
+    if (agentId) {
+      const perCompanion = getCompanionSetting(agentId, 'silenceMs', null);
+      if (typeof perCompanion === 'number' && perCompanion > 0) {
+        effectiveDurationMs = Math.max(effectiveDurationMs, perCompanion);
+        if (effectiveDurationMs !== durationMs) {
+          console.log(`[VOICE] Per-companion silence for ${agentId}: ${perCompanion}ms (floor applied: ${effectiveDurationMs}ms)`);
+        }
+      }
+    }
     const os = require('os');
     const path = require('path');
     const { execFile } = require('child_process');
     const tmpPath = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
-    
-    console.log(`[VOICE] Recording for ${durationMs}ms to ${tmpPath}`);
-    
+
+    console.log(`[VOICE] Recording for ${effectiveDurationMs}ms to ${tmpPath}`);
+
     // Use arecord to record audio
     const recorder = execFile('arecord', [
       '-f', 'S16_LE',
       '-r', '16000',
       '-c', '1',
-      '-d', String(Math.ceil(durationMs / 1000)),
+      '-d', String(Math.ceil(effectiveDurationMs / 1000)),
       '-q',
       tmpPath
     ]);
-    
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         recorder.kill();
         resolve({ success: true, path: tmpPath });
-      }, durationMs + 500);
+      }, effectiveDurationMs + 500);
       
       recorder.on('error', (err) => {
         clearTimeout(timeout);
