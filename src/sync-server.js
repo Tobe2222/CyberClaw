@@ -570,6 +570,99 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.6.0 / v3.7.3: send-word training. Same shape as
+      // wake training but for the "send" word the user says
+      // mid-voice-mode to commit a turn. Mobile sends
+      // `request_send_training` over the sync-server; we emit
+      // a `send_training_request` event that main.js handles
+      // (spawns the same openWakeWord training script in a
+      // per-phrase working dir) and forwards progress +
+      // completion back over the same WS via `send_*`
+      // messages. The model comes back via read_send_model.
+      //
+      // Why a separate message chain (vs reusing wake_*):
+      // distinct message types keep the wake / exit / send
+      // models from colliding when the user kicks off a
+      // retrain of one while another is in flight.
+      case 'request_send_training': {
+        if (!client.authenticated) return;
+        if (!msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
+          console.warn('[SyncServer] request_send_training missing fields:', Object.keys(msg || {}));
+          this._send(ws, { type: 'send_training_result', ok: false, error: 'phrase, samples required' });
+          return;
+        }
+        console.log(`[SyncServer] Send training request: phrase="${msg.phrase}" samples=${msg.samples.length}`);
+        this.emit('send_training_request', {
+          ws,
+          phrase: msg.phrase,
+          samples: msg.samples,
+        });
+        break;
+      }
+
+      // v3.1.40 / v3.7.3: cached latest send-training result.
+      // Mobile polls this on reconnect mid-training. Mobile
+      // v3.6.0+ doesn't actually poll yet (the trainer UI
+      // listens to live events only), but the case is here
+      // for symmetry with wake / exit and for future
+      // reconnect-driven trainer UI.
+      case 'get_latest_send_training_result': {
+        if (!client.authenticated) return;
+        if (typeof this._getLastSendProgress === 'function') {
+          const latest = this._getLastSendProgress(msg.phrase);
+          if (latest && (Date.now() - (latest.ts || 0) < 5 * 60 * 1000)) {
+            this._send(ws, { type: 'send_training_progress', phrase: msg.phrase, ...latest });
+          }
+        }
+        const cached = typeof this._getCachedSendResult === 'function'
+          ? this._getCachedSendResult(msg.phrase)
+          : null;
+        if (cached) {
+          console.log(`[SyncServer] Replaying cached send result for phrase="${msg.phrase}"`);
+          this._send(ws, cached);
+        } else {
+          this._send(ws, {
+            type: 'send_training_result',
+            ok: false,
+            phrase: msg.phrase,
+            error: 'no recent send training result',
+            noResult: true,
+          });
+        }
+        break;
+      }
+
+      // v3.7.3: serve the trained .tflite for the send model.
+      // The mobile triggers this after `send_training_result`
+      // arrives with `ok: true, tflitePath: ...`, then installs
+      // the model via WakeWordModule.setSendModelFromBase64.
+      case 'read_send_model': {
+        if (!client.authenticated) return;
+        if (!msg.tflitePath) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: 'tflitePath required' });
+          return;
+        }
+        const fs = require('fs');
+        if (!fs.existsSync(msg.tflitePath)) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: 'file not found' });
+          return;
+        }
+        try {
+          const buf = fs.readFileSync(msg.tflitePath);
+          this._send(ws, {
+            type: 'send_model_data',
+            ok: true,
+            base64: buf.toString('base64'),
+            size: buf.length,
+            tflitePath: msg.tflitePath,
+          });
+          console.log(`[SyncServer] Sent send model (${buf.length} bytes) for ${msg.tflitePath}`);
+        } catch (e) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: e.message });
+        }
+        break;
+      }
     }
   }
 

@@ -1882,6 +1882,42 @@ app.whenReady().then(() => {
   }
   syncServer._getLastWakeProgress = getLastWakeProgress;
 
+  // v3.7.3: send-word training caches. Parallel to the wake
+  // caches above, but keyed by phrase (send words are user-
+  // level, not per-companion) instead of agentId. Same
+  // 15-minute TTL — long enough to survive a phone
+  // backgrounding + reconnecting mid-training (Tobe hit
+  // this with wake training in v3.1.40 and the lesson is
+  // to mirror the cache for every training pipeline the
+  // mobile can kick off).
+  const SEND_RESULT_TTL_MS = 15 * 60 * 1000;
+  const lastSendResult = new Map();  // phrase -> { result, completedAt }
+  const lastSendProgress = new Map();  // phrase -> { stage, percent, message, ts }
+
+  function cacheSendResult(phrase, result) {
+    lastSendResult.set(phrase, { result, completedAt: Date.now() });
+  }
+  function getCachedSendResult(phrase) {
+    if (!phrase) return null;
+    const entry = lastSendResult.get(phrase);
+    if (!entry) return null;
+    if (Date.now() - entry.completedAt > SEND_RESULT_TTL_MS) {
+      lastSendResult.delete(phrase);
+      return null;
+    }
+    return entry.result;
+  }
+  function setLastSendProgress(phrase, payload) {
+    lastSendProgress.set(phrase, payload);
+  }
+  function getLastSendProgress(phrase) {
+    if (!phrase) return null;
+    return lastSendProgress.get(phrase) || null;
+  }
+  // Expose for the sync-server's send handlers.
+  syncServer._getCachedSendResult = getCachedSendResult;
+  syncServer._getLastSendProgress = getLastSendProgress;
+
   // v3.2.0: wake-word training request from the mobile.
   // The mobile sends `request_wake_training` over the sync-server
   // WebSocket. We run the same openWakeWord training script the
@@ -2053,6 +2089,162 @@ app.whenReady().then(() => {
         warning: lastError,
       };
       cacheWakeResult(agentId, okResult);
+      syncServer._send(ws, okResult);
+    });
+  });
+
+  // v3.7.3: send-word training request from the mobile.
+  // Same shape as wake_training_request, but routed to a
+  // per-phrase working directory and a separate `send_*`
+  // message chain. Same training script — openWakeWord
+  // doesn't care about the semantic phrase. Keyed by phrase
+  // (send words are user-level, not per-companion).
+  //
+  // Why a separate message chain: distinct types keep the
+  // wake / exit / send models from colliding when the user
+  // has multiple trainings queued (e.g. they kick off a
+  // retrain of exit while a send training is still in
+  // flight).
+  syncServer.on('send_training_request', ({ ws, phrase, samples }) => {
+    if (!syncServer) return;
+    console.log(`[send-train] Mobile requested: phrase="${phrase}" samples=${samples?.length || 0}`);
+
+    // Mirror the wake validation: samples are [{name, data}]
+    // base64 audio (v3.1.38) — the phone can't expose its
+    // filesystem.
+    if (!Array.isArray(samples) || !samples.length) {
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: 'no samples provided' });
+      return;
+    }
+    for (const s of samples) {
+      if (!s || !s.name || !s.data) {
+        syncServer._send(ws, { type: 'send_training_result', ok: false, error: 'each sample needs {name, data}' });
+        return;
+      }
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'train_wake_phrase.py');
+    if (!fs.existsSync(scriptPath)) {
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: `training script not found: ${scriptPath}` });
+      return;
+    }
+
+    const safePhrase = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    if (!safePhrase) {
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: 'phrase sanitized to empty' });
+      return;
+    }
+    const workDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'send-training', safePhrase);
+    fs.mkdirSync(workDir, { recursive: true });
+    const samplesDir = path.join(workDir, 'user_samples');
+    fs.mkdirSync(samplesDir, { recursive: true });
+
+    // Clear cached state from a previous train of the same
+    // phrase. Same reason as the wake path: a phone that
+    // reconnects mid-training could otherwise see the OLD
+    // result/progress instead of the new run's.
+    lastSendResult.delete(safePhrase);
+    lastSendProgress.delete(safePhrase);
+
+    // Write the user samples.
+    const localPaths = [];
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const safeName = s.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const dst = path.join(samplesDir, `${i.toString().padStart(2, '0')}_${safeName}`);
+      fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
+      localPaths.push(dst);
+    }
+
+    const modelName = `send_${safePhrase}`;
+    const outputDir = path.join(workDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Same args as wake / exit training — same script.
+    const args = [
+      scriptPath,
+      '--name', modelName,
+      '--samples-dir', samplesDir,
+      '--output-dir', outputDir,
+      '--n-samples', '10000',
+      '--n-samples-val', '2000',
+      '--epochs', '20',
+    ];
+
+    const proc = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let tflitePath = null;
+    let lastError = null;
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('PROGRESS::')) {
+          try {
+            const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            // Strip the 'type' field the training script sets
+            // for its own internal logging; we use
+            // 'send_training_progress' as the wire type the
+            // phone listens for.
+            const { type: _ignore, ...fields } = payload;
+            setLastSendProgress(safePhrase, fields);
+            if (syncServer) {
+              // Broadcast, not just send to the originating
+              // ws — the phone's WebSocket may have died
+              // since the training started, and we want a
+              // reconnected phone to pick up progress too.
+              // Filtering by phrase happens on the phone side.
+              syncServer._broadcast({ type: 'send_training_progress', phrase, ...fields });
+            }
+          } catch (_) {}
+        } else if (line.startsWith('OUTPUT_TFLITE::')) {
+          tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
+        } else if (line.startsWith('OUTPUT_ONNX::')) {
+          tflitePath = line.slice('OUTPUT_ONNX::'.length).trim();
+          lastError = 'tflite conversion failed; ONNX only';
+        } else if (line.trim()) {
+          console.log(`[send-train:${safePhrase}] ${line.trim()}`);
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.trim()) console.error(`[send-train:${safePhrase}] ${line.trim()}`);
+      }
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[send-train:${safePhrase}] spawn error: ${err.message}`);
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: err.message });
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        const errMsg = `send training process exited ${code}`;
+        console.error(`[send-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'send_training_result', ok: false, error: errMsg };
+        cacheSendResult(safePhrase, errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      if (!tflitePath) {
+        const errMsg = 'no .tflite output found';
+        console.error(`[send-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'send_training_result', ok: false, error: errMsg };
+        cacheSendResult(safePhrase, errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      console.log(`[send-train:${safePhrase}] done -> ${tflitePath}`);
+      const okResult = {
+        type: 'send_training_result',
+        ok: true,
+        phrase,
+        tflitePath,
+        warning: lastError,
+      };
+      cacheSendResult(safePhrase, okResult);
       syncServer._send(ws, okResult);
     });
   });
