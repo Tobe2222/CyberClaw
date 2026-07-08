@@ -336,6 +336,71 @@ def _normalize_clip_sample_rates(output_dir: Path, model_name: str) -> None:
         print(f"[train] All clips already at {target_sr} Hz", flush=True)
 
 
+# v3.1.53: copy user-recorded near-miss clips into the
+# negative_train / negative_test dirs. openWakeWord's
+# augment_clips reads from those dirs and includes any
+# clips it finds in the negative training pool. By
+# placing user-recorded clips alongside the Piper-TTS
+# adversarial negatives, we get a model that's robust
+# to BOTH general acoustic variation (from Piper) AND
+# the specific near-misses the user recorded in their
+# own voice + environment (the ones that actually trip
+# the model in the field).
+#
+# 80/20 train/test split: most go to train, a few go to
+# test so the validation pass actually evaluates them.
+# Idempotent — if a file with the same name already
+# exists in the destination, it gets a numeric suffix.
+def _copy_user_negatives(
+    user_neg_dir: Path,
+    negative_train_dir: Path,
+    negative_test_dir: Path,
+) -> int:
+    import shutil
+    if not user_neg_dir.exists():
+        return 0
+    # Find all .wav and .m4a (the phone records .m4a by
+    # default but desktop tools sometimes emit .wav).
+    files = sorted(
+        list(user_neg_dir.glob("*.wav"))
+        + list(user_neg_dir.glob("*.m4a"))
+    )
+    if not files:
+        return 0
+    negative_train_dir.mkdir(parents=True, exist_ok=True)
+    negative_test_dir.mkdir(parents=True, exist_ok=True)
+    # 80/20 split, but always put at least 1 in test if
+    # we have ≥2 files, and at least 1 in train if we
+    # have ≥1 file. Edge cases: 1 file → train only;
+    # 2-4 files → 1 test, rest train; 5+ files → 20%
+    # test, 80% train.
+    n = len(files)
+    if n == 1:
+        test_n = 0
+    elif n <= 4:
+        test_n = 1
+    else:
+        test_n = max(1, int(round(n * 0.2)))
+    train_n = n - test_n
+    copied = 0
+    for i, src in enumerate(files):
+        dst_dir = negative_test_dir if i >= train_n else negative_train_dir
+        dst = dst_dir / src.name
+        # Avoid clobbering existing files (TTS may have
+        # produced near-misses too). Suffix with _user_N.
+        if dst.exists():
+            stem = src.stem
+            ext = src.suffix
+            for suffix_n in range(1, 1000):
+                candidate = dst_dir / f"{stem}_user_{suffix_n}{ext}"
+                if not candidate.exists():
+                    dst = candidate
+                    break
+        shutil.copy2(src, dst)
+        copied += 1
+    return copied
+
+
 def _run_openwakeword_substep(
     args: list[str],
     timeout: int = 3600,
@@ -465,6 +530,22 @@ def main() -> int:
         help="Path to the false-positive validation features .npy",
     )
     parser.add_argument("--rir-dir", default=None, help="Optional Room Impulse Response dir")
+    # v3.1.53: optional user-recorded near-miss clips.
+    # The mobile's OpenWakeWordTrainer lets the user record
+    # a handful of similar-but-wrong phrases ("hey car"
+    # instead of "hey clawsuu") to teach the model what to
+    # reject. The Piper-TTS-generated adversarial negatives
+    # are useful for general robustness, but user-recorded
+    # near-misses in the user's own voice and environment
+    # catch what actually trips up the model in the field.
+    # We copy these into the negative_train / negative_test
+    # dirs after the synthetic generation step so the
+    # augmentation step picks them up automatically.
+    parser.add_argument(
+        "--user-negative-dir", default=None,
+        help="Directory of user-recorded near-miss clips (.wav/.m4a). "
+             "Copied into negative_train / negative_test after synthetic generation.",
+    )
     parser.add_argument("--n-samples", type=int, default=10000, help="Total positive samples to generate")
     parser.add_argument("--n-samples-val", type=int, default=2000, help="Validation positive samples")
     parser.add_argument("--tts-batch-size", type=int, default=50, help="Piper TTS batch size")
@@ -568,6 +649,30 @@ def main() -> int:
         emit_progress("generating_synthetic", 0, f"Failed: {e}")
         return 1
     emit_progress("generating_synthetic", 50, "Synthetic samples generated")
+
+    # v3.1.53: copy user-recorded near-miss clips into the
+    # negative dirs so they're included in training. We do
+    # this AFTER synthetic generation (so we know the dir
+    # layout exists) and BEFORE augmentation (so the
+    # augmentation step picks them up).
+    if args.user_negative_dir:
+        user_neg_dir = Path(args.user_negative_dir)
+        if user_neg_dir.exists():
+            copied = _copy_user_negatives(
+                user_neg_dir,
+                output_dir / args.name / "negative_train",
+                output_dir / args.name / "negative_test",
+            )
+            if copied > 0:
+                emit_progress(
+                    "augmenting", 52,
+                    f"Included {copied} user-recorded near-miss clip(s) in negative pool",
+                )
+                print(f"[train] Added {copied} user-recorded near-miss clip(s)", flush=True)
+            else:
+                print(f"[train] --user-negative-dir={user_neg_dir} exists but contains no .wav/.m4a files", flush=True)
+        else:
+            print(f"[train] --user-negative-dir={user_neg_dir} does not exist (skipping)", flush=True)
 
     # ----- Step 2: Augment + compute features --------------------------------
     emit_progress("augmenting", 55, "Augmenting samples and computing features...")

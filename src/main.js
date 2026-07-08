@@ -2149,9 +2149,9 @@ app.whenReady().then(() => {
   // WebSocket. We run the same openWakeWord training script the
   // desktop renderer's IPC handler uses, and forward progress +
   // completion events back to the originating mobile client.
-  syncServer.on('wake_training_request', ({ ws, agentId, phrase, samples }) => {
+  syncServer.on('wake_training_request', ({ ws, agentId, phrase, samples, nearMissSamples }) => {
     if (!syncServer) return;
-    console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samples?.length || 0}`);
+    console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samples?.length || 0} nearMisses=${Array.isArray(nearMissSamples) ? nearMissSamples.length : 0}`);
 
     // v3.1.38: `samples` is now [{name, data}] (base64 audio), not
     // file paths. The phone can't expose its filesystem to us, so
@@ -2203,6 +2203,45 @@ app.whenReady().then(() => {
       localPaths.push(dst);
     }
 
+    // v3.1.53: optional user-recorded near-miss clips. The
+    // trainer on the phone lets the user record 0-3 phrases
+    // that sound similar but aren't the wake word, and
+    // ships them here as base64 audio bytes. We decode
+    // them into a separate `user_near_miss_samples/` dir
+    // and pass the dir path to the python training script
+    // via --user-negative-dir. If nearMissSamples is
+    // missing or empty, the script falls back to using
+    // only the Piper-TTS-generated adversarial negatives
+    // (the v3.1.49 behavior).
+    //
+    // The python script copies the contents of this dir
+    // into negative_train / negative_test (80/20 split) so
+    // the augmentation step picks them up automatically.
+    // Backward-compat: if no near-misses, the dir doesn't
+    // exist and the script's `if user_neg_dir.exists()`
+    // check is a no-op.
+    let userNegativeDir = null;
+    if (Array.isArray(nearMissSamples) && nearMissSamples.length > 0) {
+      // v3.1.53: validate shape — each entry needs name + data,
+      // mirroring the positive-samples validation above. This
+      // prevents a malformed client from crashing the training
+      // pipeline by sending garbage.
+      const valid = nearMissSamples.every((s) => s && s.name && s.data);
+      if (!valid) {
+        syncServer._send(ws, { type: 'wake_training_result', ok: false, error: 'near-miss samples need {name, data}' });
+        return;
+      }
+      userNegativeDir = path.join(workDir, 'user_near_miss_samples');
+      fs.mkdirSync(userNegativeDir, { recursive: true });
+      for (let i = 0; i < nearMissSamples.length; i++) {
+        const s = nearMissSamples[i];
+        const ext = path.extname(s.name) || '.m4a';
+        const dst = path.join(userNegativeDir, `near_miss_${i.toString().padStart(3, '0')}${ext}`);
+        fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
+      }
+      console.log(`[wake-train:${agentId}] wrote ${nearMissSamples.length} near-miss sample(s) to ${userNegativeDir}`);
+    }
+
     const modelName = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     const outputDir = path.join(workDir, 'output');
     fs.mkdirSync(outputDir, { recursive: true });
@@ -2216,6 +2255,13 @@ app.whenReady().then(() => {
       '--n-samples-val', '2000',
       '--epochs', '20',
     ];
+    // v3.1.53: pass the user-negative dir only if we
+    // actually wrote some near-miss samples. Without
+    // this, the script defaults to using only the Piper
+    // adversarial negatives (v3.1.49 behavior).
+    if (userNegativeDir) {
+      args.push('--user-negative-dir', userNegativeDir);
+    }
 
     const proc = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let tflitePath = null;
