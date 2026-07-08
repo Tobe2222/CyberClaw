@@ -45,6 +45,18 @@ window.cyberclaw = {
     delete: (id) => ipcRenderer.invoke('quests:delete', id),
     pickDirectory: () => ipcRenderer.invoke('quests:pick-directory'),
     detectVersion: (dir) => ipcRenderer.invoke('quests:detect-version', dir),
+    // v3.1.50: active-quest management. The "active" quest is the
+    // one the companion is currently working on. Exactly one is
+    // active at a time; passing null to setActive clears all.
+    setActive: (id) => ipcRenderer.invoke('quests:set-active', id),
+    getActive: () => ipcRenderer.invoke('quests:get-active'),
+    // v3.1.50: append a change to the active quest's journal.
+    // Called by the agent (via the renderer's structured-output
+    // parser) when it does something worth logging.
+    appendChange: (id, text) => ipcRenderer.invoke('quests:append-change', id, text),
+    // v3.1.50: toggle a goal's completed flag by index. Returns
+    // the updated quest or null if the id/index is invalid.
+    markGoalDone: (id, goalIndex, completed) => ipcRenderer.invoke('quests:mark-goal-done', id, goalIndex, completed),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

@@ -1156,6 +1156,71 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
 }
 .quest-edit-btn:hover { opacity: 1; }
 
+/* v3.1.50: ⭐ button on each quest card toggles the active
+   flag. Empty star (☆) when not active, filled (⭐) when
+   active. The button is always visible (low opacity until
+   hover) so the affordance is discoverable without an
+   interaction. */
+.quest-star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.4;
+  transition: opacity 0.2s, transform 0.1s;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.quest-star-btn:hover { opacity: 1; transform: scale(1.15); }
+.quest-star-btn.is-active {
+  opacity: 1;
+  color: var(--gold);
+  /* Slight gold glow so the active marker is impossible to
+     miss at a glance. The box-shadow uses the same gold so it
+     works on both light and dark backgrounds. */
+  text-shadow: 0 0 8px rgba(247, 147, 26, 0.6);
+}
+
+/* v3.1.50: ACTIVE badge on the quest card. Shows next to the
+   name when this quest is the working one. Uses the gold
+   theme color so it stands out against the purple/green
+   status borders. */
+.quest-active-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  margin-right: 6px;
+  background: rgba(247, 147, 26, 0.15);
+  border: 1px solid rgba(247, 147, 26, 0.5);
+  color: var(--gold);
+  border-radius: 4px;
+  text-transform: uppercase;
+  /* Subtle pulse so the eye lands on it even in a long list. */
+  animation: questActivePulse 2.4s ease-in-out infinite;
+}
+@keyframes questActivePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 147, 26, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(247, 147, 26, 0.15); }
+}
+
+/* v3.1.50: when a quest is active, give it a thicker gold
+   border + soft glow. The existing `.quest-selected` class
+   already does a cyan border, but on a long list that signal
+   is easy to miss. The gold ring is louder and unambiguous. */
+.quest-item.quest-is-active {
+  border: 2px solid var(--gold) !important;
+  box-shadow: 0 0 12px rgba(247, 147, 26, 0.25);
+}
+.quest-item.quest-is-active.completed-quest {
+  /* A completed-but-active quest is rare but possible (you've
+     finished but still have it open for reference). Use a
+     muted gold so it doesn't shout. */
+  border: 2px solid rgba(247, 147, 26, 0.6) !important;
+  opacity: 0.85;
+}
+
 .quest-companions {
   display: flex;
   gap: 4px;

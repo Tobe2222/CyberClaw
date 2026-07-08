@@ -74,14 +74,51 @@ function addSkillXP(agentId, skillName, xpGain) {
 }
 
 // Quest persistence
+//
+// v3.1.50: each quest is migrated on load to add `active: false`
+// (no quest is selected by default) and `latestChanges: []` (the
+// companion's running journal of what it did on this quest).
+// The migration is idempotent — existing fields are preserved.
+//
+// We do this in loadQuests (not in a separate migration step) so
+// every reader sees the same shape regardless of when the file
+// was last touched. The cost is a per-load O(n) sweep on the
+// array; n is the number of quests (typically < 20) so the cost
+// is negligible.
 function loadQuests() {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(QUESTS_FILE, 'utf8'));
+    raw = JSON.parse(fs.readFileSync(QUESTS_FILE, 'utf8'));
   } catch { return []; }
+  if (!Array.isArray(raw)) return [];
+  let mutated = false;
+  for (const q of raw) {
+    if (typeof q.active !== 'boolean') { q.active = false; mutated = true; }
+    if (!Array.isArray(q.latestChanges)) { q.latestChanges = []; mutated = true; }
+  }
+  // v3.1.50: enforce the invariant that at most one quest is
+  // `active: true`. If a migration left multiple active (shouldn't
+  // happen, but defensive), keep the first and clear the rest.
+  let sawActive = false;
+  for (const q of raw) {
+    if (q.active) {
+      if (sawActive) { q.active = false; mutated = true; }
+      else sawActive = true;
+    }
+  }
+  return raw;
 }
 function saveQuests(quests) {
   fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
   fs.writeFileSync(QUESTS_FILE, JSON.stringify(quests, null, 2));
+  // v3.1.95: every persistent quest change broadcasts the full
+  // list to connected mobiles so they keep their mirror in sync
+  // without polling. We broadcast the source-of-truth list from
+  // disk (just-written), not the in-memory array the caller
+  // passed, so a malformed write doesn't propagate.
+  if (syncServer) {
+    try { syncServer.broadcastQuestsList(loadQuests()); } catch (e) { console.warn('[IPC] broadcastQuestsList after save failed:', e?.message); }
+  }
 }
 
 const { execSync, exec: execCb, spawn } = require('child_process');
@@ -707,7 +744,15 @@ ipcMain.handle('quests:create', (event, quest) => {
   const quests = loadQuests();
   quest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   quest.created = new Date().toISOString();
-  quest.status = 'active';
+  quest.status = quest.status || 'active';
+  // v3.1.50: new quests default to inactive (user has to star
+  // them to make them the working quest) and start with an empty
+  // latestChanges log. `active: false` and `latestChanges: []` are
+  // also enforced by loadQuests() on every read, so the field
+  // defaults here are belt-and-suspenders for quests created in
+  // the same process boot.
+  quest.active = false;
+  quest.latestChanges = [];
   quests.unshift(quest);
   saveQuests(quests);
   return quest;
@@ -1270,6 +1315,80 @@ ipcMain.handle('quests:delete', (event, id) => {
   saveQuests(quests);
   return true;
 });
+// v3.1.50: set a quest as the active (working) one. Exactly one
+// quest can be active at a time; setting one clears the others.
+// Pass null/undefined to clear all (no active quest).
+//
+// We update the array in-place then saveQuests, which broadcasts
+// the new list to all connected mobiles. The mobile's
+// QuestsScreen reads the `active` flag from each quest in the
+// broadcast and shows an ACTIVE badge on the matching card.
+ipcMain.handle('quests:set-active', (event, id) => {
+  const quests = loadQuests();
+  let changed = false;
+  for (const q of quests) {
+    const shouldBeActive = q.id === id && !!id;
+    if (q.active !== shouldBeActive) {
+      q.active = shouldBeActive;
+      changed = true;
+    }
+  }
+  if (changed) saveQuests(quests);
+  return quests.find(q => q.active) || null;
+});
+// v3.1.50: append a change to the quest's `latestChanges` log.
+// Called by the agent (via the renderer's structured-output
+// parser) when it does something worth logging on the active
+// quest. Newest entry is at the end; the log is unbounded but
+// trimmed to the last 100 entries to keep the JSON file small.
+//
+// Returns the new entry so the caller can echo it back in chat
+// ("logged: <text>") if desired.
+ipcMain.handle('quests:append-change', (event, id, text) => {
+  if (!id || !text || typeof text !== 'string' || !text.trim()) return null;
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === id);
+  if (!q) return null;
+  if (!Array.isArray(q.latestChanges)) q.latestChanges = [];
+  const entry = { timestamp: new Date().toISOString(), text: text.trim() };
+  q.latestChanges.push(entry);
+  // Trim to last 100 entries — old changes can be archived
+  // separately if needed but the working log stays small.
+  if (q.latestChanges.length > 100) {
+    q.latestChanges = q.latestChanges.slice(-100);
+  }
+  saveQuests(quests);
+  return entry;
+});
+// v3.1.50: toggle a goal's completed flag by index. The agent
+// uses this when it finishes a step on the active quest. Returns
+// the updated quest, or null if id/index is invalid.
+ipcMain.handle('quests:mark-goal-done', (event, id, goalIndex, completed) => {
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === id);
+  if (!q) return null;
+  const goals = Array.isArray(q.goals) ? q.goals : [];
+  const idx = parseInt(goalIndex, 10);
+  if (isNaN(idx) || idx < 0 || idx >= goals.length) return null;
+  // Goals may be plain strings (legacy) or {text, completed}.
+  // Normalize to the object form before flipping.
+  if (typeof goals[idx] === 'string') {
+    goals[idx] = { text: goals[idx], completed: !!completed };
+  } else {
+    goals[idx] = { ...goals[idx], completed: !!completed };
+  }
+  q.goals = goals;
+  saveQuests(quests);
+  return q;
+});
+// v3.1.50: convenience getter for the currently active quest,
+// or null if none is selected. Used by the renderer's chat
+// context builder to avoid the round-trip of
+// `list().find(q => q.active)`.
+ipcMain.handle('quests:get-active', () => {
+  const quests = loadQuests();
+  return quests.find(q => q.active) || null;
+});
 ipcMain.on('window:open-external', (event, url) => {
   const { shell } = require('electron');
   if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
@@ -1774,6 +1893,15 @@ app.whenReady().then(() => {
         console.log('[SyncServer] Main window not available!');
       }
     },
+    // v3.1.95: quests live in main.js's domain (loadQuests/
+    // saveQuests), so this callback can read the source of truth
+    // directly and push it to the sync server — no renderer
+    // roundtrip needed. Mirrors the agents-list pattern but with
+    // one fewer hop.
+    onRequestQuestsList: () => {
+      console.log('[SyncServer] No cached quests_list — broadcasting fresh');
+      if (syncServer) syncServer.broadcastQuestsList(loadQuests());
+    },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
         // Immediately ack receipt so mobile can show "received at desktop"
@@ -1840,6 +1968,13 @@ app.whenReady().then(() => {
   });
   syncServer.start();
 
+  // v3.1.95: prime the quests cache so a mobile that connects
+  // immediately after desktop boot doesn't have to wait for the
+  // first user action (create/update/delete) to see the list.
+  // Mirrors the agents-list pattern: loadQuests reads the same
+  // source-of-truth file the IPC handlers write to.
+  try { syncServer.broadcastQuestsList(loadQuests()); } catch (e) { console.warn('[IPC] initial broadcastQuestsList failed:', e?.message); }
+
   // v3.1.40: cache the most recent wake-training result per agent
   // for 15 minutes, so a mobile that lost its WebSocket mid-training
   // (Android background-killed the socket, brief network blip, etc.)
@@ -1881,6 +2016,34 @@ app.whenReady().then(() => {
     return lastWakeProgress.get(agentId) || null;
   }
   syncServer._getLastWakeProgress = getLastWakeProgress;
+
+  // v3.5.0: parallel cache for exit-phrase training results.
+  // Same TTL/cache pattern as wake (15 minutes). The exit
+  // path is single-keyed by phrase (not per-agent), so a
+  // re-train of the same phrase replaces the cached result.
+  let lastExitResult = null;
+  let lastExitResultCompletedAt = 0;
+  let lastExitProgress = null;
+  function cacheExitResult(result) {
+    lastExitResult = result;
+    lastExitResultCompletedAt = Date.now();
+  }
+  function getCachedExitResult() {
+    if (!lastExitResult) return null;
+    if (Date.now() - lastExitResultCompletedAt > WAKE_RESULT_TTL_MS) {
+      lastExitResult = null;
+      return null;
+    }
+    return lastExitResult;
+  }
+  function setLastExitProgress(payload) {
+    lastExitProgress = payload;
+  }
+  function getLastExitProgress() {
+    return lastExitProgress;
+  }
+  syncServer._getCachedExitResult = getCachedExitResult;
+  syncServer._getLastExitProgress = getLastExitProgress;
 
   // v3.2.0: wake-word training request from the mobile.
   // The mobile sends `request_wake_training` over the sync-server
@@ -2057,6 +2220,132 @@ app.whenReady().then(() => {
     });
   });
 
+  // v3.5.0: exit-phrase training request from the mobile.
+  // Mirror of wake_training_request but routed to a per-phrase
+  // working directory and a separate message chain. Same training
+  // script — openWakeWord doesn't care about the semantic phrase.
+  syncServer.on('exit_training_request', ({ ws, phrase, samples }) => {
+    if (!syncServer) return;
+    console.log(`[exit-train] Mobile requested: phrase="${phrase}" samples=${samples?.length || 0}`);
+
+    if (!Array.isArray(samples) || !samples.length) {
+      syncServer._send(ws, { type: 'exit_training_result', ok: false, error: 'no samples provided' });
+      return;
+    }
+    for (const s of samples) {
+      if (!s || !s.name || !s.data) {
+        syncServer._send(ws, { type: 'exit_training_result', ok: false, error: 'each sample needs {name, data}' });
+        return;
+      }
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'train_wake_phrase.py');
+    if (!fs.existsSync(scriptPath)) {
+      syncServer._send(ws, { type: 'exit_training_result', ok: false, error: `training script not found: ${scriptPath}` });
+      return;
+    }
+
+    const safePhrase = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const workDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'exit-training', safePhrase);
+    fs.mkdirSync(workDir, { recursive: true });
+    const samplesDir = path.join(workDir, 'user_samples');
+    fs.mkdirSync(samplesDir, { recursive: true });
+
+    // Clear cached state from a previous train of the same phrase.
+    lastExitResult = null;
+    lastExitResultCompletedAt = 0;
+    lastExitProgress = null;
+
+    // Write the user samples.
+    const localPaths = [];
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const safeName = s.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const dst = path.join(samplesDir, `${i.toString().padStart(2, '0')}_${safeName}`);
+      fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
+      localPaths.push(dst);
+    }
+
+    const modelName = `exit_${safePhrase}`;
+    const outputDir = path.join(workDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Same args as wake training — same script.
+    const args = [
+      scriptPath,
+      '--name', modelName,
+      '--samples-dir', samplesDir,
+      '--output-dir', outputDir,
+      '--n-samples', '10000',
+      '--n-samples-val', '2000',
+      '--epochs', '20',
+    ];
+
+    const proc = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let tflitePath = null;
+    let lastError = null;
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('PROGRESS::')) {
+          try {
+            const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            const { type: _ignore, ...fields } = payload;
+            setLastExitProgress(fields);
+            if (syncServer) {
+              syncServer._broadcast({ type: 'exit_training_progress', ...fields });
+            }
+          } catch (_) {}
+        } else if (line.startsWith('OUTPUT_TFLITE::')) {
+          tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
+        } else if (line.startsWith('OUTPUT_ONNX::')) {
+          tflitePath = line.slice('OUTPUT_ONNX::'.length).trim();
+          lastError = 'tflite conversion failed; ONNX only';
+        } else if (line.trim()) {
+          console.log(`[exit-train:${safePhrase}] ${line.trim()}`);
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      console.error(`[exit-train:${safePhrase}] stderr: ${chunk.toString().trim()}`);
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[exit-train:${safePhrase}] spawn error: ${err.message}`);
+      syncServer._send(ws, { type: 'exit_training_result', ok: false, error: err.message });
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        const errMsg = `exit training process exited ${code}`;
+        console.error(`[exit-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'exit_training_result', ok: false, error: errMsg };
+        cacheExitResult(errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      if (!tflitePath) {
+        const errMsg = 'no .tflite output found';
+        console.error(`[exit-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'exit_training_result', ok: false, error: errMsg };
+        cacheExitResult(errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      console.log(`[exit-train:${safePhrase}] done -> ${tflitePath}`);
+      const okResult = {
+        type: 'exit_training_result',
+        ok: true,
+        tflitePath,
+        warning: lastError,
+      };
+      cacheExitResult(okResult);
+      syncServer._send(ws, okResult);
+    });
+  });
+
   // Agent Reach — initialise remote tool bridge
   const RemoteToolBridge = require('./remote-tool-bridge');
   let remoteToolBridge = null;
@@ -2143,6 +2432,18 @@ ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
 ipcMain.handle('sync-broadcast-agents-list', (e, { agents }) => {
   console.log('[IPC] sync-broadcast-agents-list received:', agents?.length, 'agents:', agents?.map(a => a.id).join(','));
   if (syncServer) syncServer.broadcastAgentsList(agents);
+});
+
+// v3.1.95: broadcast the full list of quests so the mobile can
+// mirror the desktop's quest panel. Same pattern as
+// sync-broadcast-agents-list: the renderer reads quests.json and
+// sends the array here, we forward it to every connected mobile
+// via sync-server.broadcastQuestsList. Quests are global (not
+// per-companion) on the desktop, so we don't include a companionId
+// in the payload.
+ipcMain.handle('sync-broadcast-quests-list', (e, { quests } = {}) => {
+  console.log('[IPC] sync-broadcast-quests-list received:', quests?.length, 'quest(s)');
+  if (syncServer) syncServer.broadcastQuestsList(quests || []);
 });
 
 ipcMain.handle('sync-send-chat-history', (e, { messages }) => {

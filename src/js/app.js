@@ -1005,7 +1005,95 @@ window.openDoctor = function() {
 // ---------------------------------------------------------------------------
 // Quest Management
 // ---------------------------------------------------------------------------
+// v3.1.50: `activeQuestId` is now derived from the quest list's
+// `active: true` flag (set in main.js's IPC handler and persisted
+// to disk). It used to be an in-memory variable only, which meant
+// the selection was lost on desktop restart. The variable is still
+// kept as a local cache so the chat-context builder doesn't have
+// to round-trip to disk on every message; it's updated whenever
+// the quest list is rendered or the IPC bridge returns a fresh
+// active quest.
 let activeQuestId = null;
+// Helper: pull the current active quest id from the quest list
+// without going through disk. Falls back to the in-memory cache
+// if the list is empty.
+function getActiveQuestId(quests) {
+  const found = quests?.find(q => q.active);
+  if (found) activeQuestId = found.id;
+  return activeQuestId;
+}
+// v3.1.50: build the chat context for the active quest. Used by
+// both the regular chat (line ~1700) and the voice-mode chat
+// (line ~1848) to inject a single, consistent prompt prefix
+// that tells the LLM which quest is the working one and what
+// progress has been made on it.
+//
+// Shape (one bracketed block, prefixed to the user's message):
+//   [Active Quest: "<name>" — <description> | Project dir: <dir>
+//    | Incomplete goals: <goal1>; <goal2>; ...
+//    | Recent changes: <text1> (<time-ago>); <text2> (<time-ago>); ...]
+//
+// Goals listed are INCOMPLETE ones only (completed ones aren't
+// useful for the LLM to act on). If all goals are done we
+// mention that explicitly so the LLM knows the quest is wrapped
+// up.
+//
+// Recent changes is the last 5 entries from latestChanges,
+// formatted as "<text> (<time-ago>)". Time-ago is relative to
+// now (e.g. "2h ago", "3d ago") — easier for the LLM to reason
+// about than absolute timestamps, and the absolute timestamp is
+// still available in the quest JSON if the LLM wants to look
+// it up.
+function buildActiveQuestContext(quest) {
+  if (!quest) return '';
+  let ctx = `[Active Quest: "${quest.name}"`;
+  if (quest.description) ctx += ` — ${quest.description}`;
+  if (quest.directory) ctx += ` | Project dir: ${quest.directory}`;
+  const goals = normalizeGoals(quest.goals);
+  if (goals.length > 0) {
+    const incomplete = goals.filter(g => !g.completed);
+    if (incomplete.length > 0) {
+      ctx += ` | Incomplete goals: ${incomplete.map(g => g.text).join('; ')}`;
+    } else {
+      ctx += ` | All ${goals.length} goal(s) completed`;
+    }
+  }
+  const changes = Array.isArray(quest.latestChanges) ? quest.latestChanges : [];
+  if (changes.length > 0) {
+    const recent = changes.slice(-5);
+    const now = Date.now();
+    const fmtAgo = (iso) => {
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return '';
+      const diff = Math.max(0, now - t);
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return 'just now';
+      if (min < 60) return `${min}m ago`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h ago`;
+      const d = Math.floor(hr / 24);
+      return `${d}d ago`;
+    };
+    const items = recent.map(c => `${c.text} (${fmtAgo(c.timestamp)})`).join('; ');
+    ctx += ` | Recent changes: ${items}`;
+  }
+  // v3.1.50: teach the agent about the quest-edit tags when
+  // there's an active quest. The hint is one short clause so
+  // it doesn't bloat the context window. The LLM picks up the
+  // tag shape from prior uses in the conversation; the hint
+  // here just reminds it that the tools are available.
+  ctx += ` | Tools: [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
+  ctx += `] `;
+  return ctx;
+}
+// Helper: pull the current active quest id from the quest list
+// without going through disk. Falls back to the in-memory cache
+// if the list is empty.
+function getActiveQuestId(quests) {
+  const found = quests?.find(q => q.active);
+  if (found) activeQuestId = found.id;
+  return activeQuestId;
+}
 
 window.pickQuestDir = async function() {
   const dir = await cyberclaw.quests.pickDirectory();
@@ -1029,7 +1117,7 @@ window.startQuestConversation = function() {
   switchTermTab('chat');
   var input = document.getElementById('chat-input');
   if (input) {
-    input.value = 'I want to create a new quest! Help me figure out what it should be — ask me what I want to work on, then create it for me. When we agree on the quest, respond with exactly this format on its own line: [CREATE_QUEST: name="Quest Name" desc="Description" dir="optional/path"]';
+    input.value = 'I want to create a new quest! Help me figure out what it should be — ask me what I want to work on, then create it for me. When we agree on the quest, respond with exactly this format on its own line: [CREATE_QUEST: name="Quest Name" desc="Description" dir="optional/path"]'
     window.sendChat();
   }
 };
@@ -1060,18 +1148,32 @@ window.deleteQuest = async function(e, id) {
   renderQuests();
 };
 
-window.selectQuest = function(el, questId) {
+// v3.1.50: toggle a quest as the active (working) one. Persists
+// the choice to disk via the IPC bridge (main.js enforces
+// exactly-one-active invariant and broadcasts the updated list to
+// connected mobiles). The visual `quest-selected` class is still
+// applied locally for instant feedback, but the source of truth
+// is the `active: true` flag on the quest object — re-read on
+// every renderQuests() to stay in sync.
+window.selectQuest = async function(el, questId) {
   const wasSelected = el.classList.contains('quest-selected');
+  // Optimistic local update for instant feedback.
   document.querySelectorAll('.quest-item').forEach(q => q.classList.remove('quest-selected'));
   if (wasSelected) {
-    // Deselect
+    // Deselect — clear active on all
+    el.classList.remove('quest-selected');
     activeQuestId = null;
-    updateQuestIndicator();
+    try { await cyberclaw.quests.setActive(null); } catch (e) { console.warn('[Quests] setActive(null) failed:', e?.message); }
   } else {
     el.classList.add('quest-selected');
     activeQuestId = questId;
-    updateQuestIndicator();
+    try { await cyberclaw.quests.setActive(questId); } catch (e) { console.warn('[Quests] setActive failed:', e?.message); }
   }
+  updateQuestIndicator();
+  // Re-render to pull the canonical `active` flag from disk
+  // (the IPC handler also broadcasts to mobile, so the next
+  // renderQuests() will see the latest state).
+  renderQuests();
 };
 
 // Normalize goals: accept string[] (legacy) or {text,completed}[]
@@ -1178,17 +1280,41 @@ async function renderQuests() {
     return 0;
   });
 
+  // v3.1.50: keep the in-memory activeQuestId in sync with the
+  // list's source of truth (`active: true` on the quest). The
+  // variable is also kept for the chat-context builder so it
+  // doesn't have to scan the list on every message.
+  activeQuestId = quests.find(q => q.active)?.id || null;
+
   for (const q of sorted) {
     const isComplete = q.status === 'completed';
+    const isActive = !!q.active;
     const div = document.createElement('div');
-    div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${q.id === activeQuestId ? 'quest-selected' : ''}`;
+    // v3.1.50: `quest-selected` is now driven by the quest's
+    // `active` flag, not the local in-memory cache. The class
+    // itself still applies the same visual (cyan border + orange
+    // tint) — the v3.1.50 CSS changes add a thicker gold border
+    // + ⭐ button + ACTIVE badge on top of that, so the marker
+    // is impossible to miss.
+    div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${isActive ? 'quest-selected quest-is-active' : ''}`;
     div.onclick = () => selectQuest(div, q.id);
     const companionAvatars = ''; // Companion visuals are shown in the arena, not in the quest list
+
+    // v3.1.50: ⭐ button toggles the active flag. Filled star
+    // when active, outline when not. Tapping the button DOESN'T
+    // propagate to the card's onclick (we stopPropagation in
+    // the inline onclick). The button replaces the "tap the card"
+    // flow that v3.1.50 is deprecating in favor of an explicit
+    // affordance.
+    const starBtn = `<button class="quest-star-btn ${isActive ? 'is-active' : ''}" onclick="event.stopPropagation(); selectQuest(this.closest('.quest-item'), '${q.id}')" title="${isActive ? 'Active quest — tap to deactivate' : 'Set as active quest'}">${isActive ? '⭐' : '☆'}</button>`;
+    const activeBadge = isActive ? `<span class="quest-active-badge" title="This is the quest the companion is currently working on">⚡ ACTIVE</span>` : '';
 
     div.innerHTML = `
       <div class="quest-top-row">
         <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
         <div class="quest-top-actions">
+          ${activeBadge}
+          ${starBtn}
           <button class="quest-edit-btn" onclick="openQuestEditor(event,'${q.id}')" title="Edit">✏️</button>
           <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
         </div>
@@ -1257,14 +1383,6 @@ window.openQuestEditor = async function(event, questId) {
   editingQuestId = questId;
   const panel = document.getElementById('panel-left');
 
-  // Skill categories for the quest
-  const skillTypes = ['Coding', 'Writing', 'Design', 'Analysis', 'Strategy', 'Research', 'Communication', 'Game', 'General'];
-  const questSkills = quest.skills || [];
-  const skillChecks = skillTypes.map(s => {
-    const icons = { Coding: '💻', Writing: '✍️', Design: '🎨', Analysis: '📊', Strategy: '🗺️', Research: '🔍', Communication: '💬', Game: '🎮', General: '✨' };
-    return `<label class="qe-skill-tag"><input type="checkbox" value="${s}" ${questSkills.includes(s) ? 'checked' : ''} /> ${icons[s]} ${s}</label>`;
-  }).join('');
-
   panel.innerHTML = `
     <div class="panel-header">
       <span class="rune-icon">📜</span> EDIT QUEST
@@ -1291,10 +1409,6 @@ window.openQuestEditor = async function(event, questId) {
           <input type="text" id="qe-dir" value="${escapeHtml(quest.directory || '')}" readonly />
           <button class="quest-dir-btn" onclick="pickQuestEditorDir()">📁</button>
         </div>
-      </div>
-      <div class="editor-field">
-        <label>Work Categories</label>
-        <div class="skill-checkbox-grid">${skillChecks}</div>
       </div>
       <div class="qe-actions">
         <button class="btn-sm btn-muted" onclick="closeQuestEditor()">Cancel</button>
@@ -1324,12 +1438,15 @@ window.saveQuestEdit = async function() {
   }).filter(Boolean);
   const directory = document.getElementById('qe-dir').value.trim();
 
-  // Gather skills
-  const skillChecks = document.querySelectorAll('.qe-content .skill-checkbox-grid input[type="checkbox"]');
-  const skills = Array.from(skillChecks).filter(cb => cb.checked).map(cb => cb.value);
+  // v3.1.95: skills field removed from quest model entirely.
+  // Existing quests with `skills` in their JSON keep the field
+  // for backward-compat but the editor no longer surfaces it
+  // and the IPC payload no longer sets it. Goal completion
+  // routes XP to the companion's global skills dict on the
+  // desktop side via the existing companion-stats logic.
 
   // Update quest
-  await cyberclaw.quests.update(editingQuestId, { name, description, goals, skills, directory: directory || undefined });
+  await cyberclaw.quests.update(editingQuestId, { name, description, goals, directory: directory || undefined });
 
   closeQuestEditor();
 };
@@ -1650,16 +1767,15 @@ window.sendChat = async function() {
   // Build message with context
   let fullMessage = message;
 
-  // Add quest context if active
+  // Add quest context if active. v3.1.50: use the new
+  // buildActiveQuestContext helper which adds goals + recent
+  // changes to the context, so the LLM has memory of what it
+  // did on this quest and what's left to do.
   if (activeQuestId) {
     const quests = await cyberclaw.quests.list();
     const q = quests.find(q => q.id === activeQuestId);
     if (q) {
-      let ctx = `[Active Quest: "${q.name}"`;
-      if (q.description) ctx += ` — ${q.description}`;
-      if (q.directory) ctx += ` | Project dir: ${q.directory}`;
-      ctx += `] `;
-      fullMessage = ctx + fullMessage;
+      fullMessage = buildActiveQuestContext(q) + fullMessage;
     }
   }
 
@@ -1683,13 +1799,92 @@ window.sendChat = async function() {
       // message from agents without an explicit emoji.
       addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
 
-      // Check for quest creation command in reply
+      // Check for quest commands in the reply. v3.1.50: the agent
+// can read + edit quests via structured-output tags. Three new
+// commands: [QUEST_SET_ACTIVE: id="..."] (switch the working
+// quest), [QUEST_APPEND_CHANGE: text="..."] (log a change to
+// the active quest's journal), [QUEST_MARK_GOAL: index="N" done="true|false"]
+// (toggle a goal on the active quest). All commands act on the
+// currently-active quest EXCEPT set_active, which carries its
+// own id. We use i (case-insensitive) so the LLM has a bit of
+// flexibility in how it emits the tags.
       if (result.reply) {
-        var questMatch = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
+        // [QUEST_SET_ACTIVE: id="abc123"] — switch the active
+        // quest. The LLM emits this when the user starts a
+        // conversation about a different project. We require an
+        // id; if the LLM passes the quest name instead, we try
+        // to resolve it as a fallback.
+        const setActiveMatch = result.reply.match(/\[QUEST_SET_ACTIVE:\s*id="([^"]+)"\]/i);
+        if (setActiveMatch) {
+          const targetId = setActiveMatch[1];
+          try {
+            // Resolve by id first; fall back to name match
+            // (LLMs sometimes emit the name when the id is
+            // not in their context).
+            const all = await cyberclaw.quests.list();
+            const found = all.find(q => q.id === targetId)
+              || all.find(q => q.name.toLowerCase() === targetId.toLowerCase());
+            if (found) {
+              await cyberclaw.quests.setActive(found.id);
+              activeQuestId = found.id;
+              addChatMsg('system', `⚡ Active quest set to "${found.name}"`);
+              renderQuests();
+            } else {
+              addChatMsg('system', `⚠️ No quest matching "${targetId}" to set active`);
+            }
+          } catch (e) {
+            addChatMsg('system', '⚠️ Failed to set active quest: ' + e.message);
+          }
+        }
+        // [QUEST_APPEND_CHANGE: text="..."] — append to the
+        // active quest's latestChanges journal. The LLM uses
+        // this after a meaningful step (e.g. "set up DNS A
+        // record") so future turns have a memory of what it
+        // did on this quest. No-op if there's no active quest.
+        const appendMatch = result.reply.match(/\[QUEST_APPEND_CHANGE:\s*text="([^"]+)"\]/i);
+        if (appendMatch) {
+          if (activeQuestId) {
+            try {
+              await cyberclaw.quests.appendChange(activeQuestId, appendMatch[1]);
+              addChatMsg('system', `📝 Logged: ${appendMatch[1]}`);
+            } catch (e) {
+              addChatMsg('system', '⚠️ Failed to log change: ' + e.message);
+            }
+          } else {
+            addChatMsg('system', '⚠️ No active quest to log the change against');
+          }
+        }
+        // [QUEST_MARK_GOAL: index="N" done="true"] — toggle a
+        // goal's completed flag by 0-based index on the active
+        // quest. The LLM emits this when it finishes a step
+        // it had previously broken out as a goal.
+        const markGoalMatch = result.reply.match(/\[QUEST_MARK_GOAL:\s*index="(\d+)"\s+done="(true|false)"\]/i);
+        if (markGoalMatch) {
+          if (activeQuestId) {
+            try {
+              const idx = parseInt(markGoalMatch[1], 10);
+              const done = markGoalMatch[2].toLowerCase() === 'true';
+              const updated = await cyberclaw.quests.markGoalDone(activeQuestId, idx, done);
+              if (updated) {
+                addChatMsg('system', `${done ? '✅' : '↩'} Goal ${idx + 1} ${done ? 'marked done' : 'reopened'}`);
+                renderQuests();
+              } else {
+                addChatMsg('system', `⚠️ Goal index ${idx} out of range`);
+              }
+            } catch (e) {
+              addChatMsg('system', '⚠️ Failed to mark goal: ' + e.message);
+            }
+          } else {
+            addChatMsg('system', '⚠️ No active quest to mark a goal on');
+          }
+        }
+        // [CREATE_QUEST: name="..." desc="..." dir="..."] — the
+        // existing create-quest command. Kept here for parity.
+        const questMatch = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
         if (questMatch) {
-          var qName = questMatch[1];
-          var qDesc = questMatch[2] || '';
-          var qDir = questMatch[3] || '';
+          const qName = questMatch[1];
+          const qDesc = questMatch[2] || '';
+          const qDir = questMatch[3] || '';
           try {
             await cyberclaw.quests.create({ name: qName, description: qDesc, directory: qDir || undefined });
             addChatMsg('system', '📜 Quest created: ' + qName);
@@ -1800,11 +1995,10 @@ window.sendChatMessage = async function(message) {
       const quests = await cyberclaw.quests.list();
       const q = quests.find(q => q.id === activeQuestId);
       if (q) {
-        let ctx = `[Active Quest: "${q.name}"`;
-        if (q.description) ctx += ` — ${q.description}`;
-        if (q.directory) ctx += ` | Project dir: ${q.directory}`;
-        ctx += `] `;
-        fullMessage = ctx + fullMessage;
+        // v3.1.50: same context builder as the regular chat path.
+        // Goals + recent changes get injected here too, so voice
+        // mode has the same project context as typed chat.
+        fullMessage = buildActiveQuestContext(q) + fullMessage;
       }
     } catch {}
   }

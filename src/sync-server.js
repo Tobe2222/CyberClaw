@@ -382,6 +382,22 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      // v3.1.95: explicit quests-list refresh. Mobile asks the desktop
+      // for the full list of quests. Same code path as
+      // request_agents_list — replay the cached payload if we have
+      // it, otherwise ask the main process to trigger a fresh
+      // broadcast via onRequestQuestsList.
+      case 'request_quests_list': {
+        if (!client.authenticated) return;
+        console.log(`[SyncServer] Mobile requested quests list refresh (name=${client.name})`);
+        if (this._lastQuestsList) {
+          this._send(ws, this._lastQuestsList.payload);
+        } else if (this.onRequestQuestsList) {
+          try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
+        }
+        break;
+      }
+
       case 'companion_interaction': {
         if (!client.authenticated) return;
         this._notifyMainWindow('mobile-companion-action', msg.action);
@@ -570,6 +586,83 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.5.0: exit-phrase training. Parallel to wake
+      // training but keyed by phrase instead of agentId
+      // (exit phrases are user-level, not per-companion).
+      // The same train_wake_phrase.py script runs either
+      // way — openWakeWord is a generic binary wake-word
+      // classifier; the phrase string doesn't change the
+      // training pipeline. We just route to a different
+      // working directory keyed on phrase, and the model
+      // comes back via a parallel `exit_*` message chain.
+      case 'request_exit_training': {
+        if (!client.authenticated) return;
+        if (!msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
+          console.warn('[SyncServer] request_exit_training missing fields:', Object.keys(msg || {}));
+          this._send(ws, { type: 'exit_training_result', ok: false, error: 'phrase, samples required' });
+          return;
+        }
+        console.log(`[SyncServer] Exit training request: phrase="${msg.phrase}" samples=${msg.samples.length}`);
+        this.emit('exit_training_request', {
+          ws,
+          phrase: msg.phrase,
+          samples: msg.samples,
+        });
+        break;
+      }
+
+      case 'get_latest_exit_training_result': {
+        if (!client.authenticated) return;
+        if (typeof this._getLastExitProgress === 'function') {
+          const latest = this._getLastExitProgress();
+          if (latest && (Date.now() - (latest.ts || 0) < 5 * 60 * 1000)) {
+            this._send(ws, { type: 'exit_training_progress', ...latest });
+          }
+        }
+        const cached = typeof this._getCachedExitResult === 'function'
+          ? this._getCachedExitResult()
+          : null;
+        if (cached) {
+          console.log('[SyncServer] Replaying cached exit result');
+          this._send(ws, cached);
+        } else {
+          this._send(ws, {
+            type: 'exit_training_result',
+            ok: false,
+            error: 'no recent exit training result',
+            noResult: true,
+          });
+        }
+        break;
+      }
+
+      case 'read_exit_model': {
+        if (!client.authenticated) return;
+        if (!msg.tflitePath) {
+          this._send(ws, { type: 'exit_model_data', ok: false, error: 'tflitePath required' });
+          return;
+        }
+        const fs = require('fs');
+        if (!fs.existsSync(msg.tflitePath)) {
+          this._send(ws, { type: 'exit_model_data', ok: false, error: 'file not found' });
+          return;
+        }
+        try {
+          const buf = fs.readFileSync(msg.tflitePath);
+          this._send(ws, {
+            type: 'exit_model_data',
+            ok: true,
+            base64: buf.toString('base64'),
+            size: buf.length,
+            tflitePath: msg.tflitePath,
+          });
+          console.log(`[SyncServer] Sent exit model (${buf.length} bytes) for ${msg.tflitePath}`);
+        } catch (e) {
+          this._send(ws, { type: 'exit_model_data', ok: false, error: e.message });
+        }
+        break;
+      }
     }
   }
 
@@ -708,6 +801,19 @@ class SyncServer extends EventEmitter {
       console.log('[SyncServer] No cached agents_list — asking main process to refresh');
       try { this.onRequestAgentsList(); } catch (e) { console.log('[SyncServer] onRequestAgentsList failed:', e?.message); }
     }
+    // v3.1.95: also replay quests list so a reconnecting mobile
+    // restores its quest cache without depending on the
+    // HomeScreen's own refresh loop. Quests are persisted to
+    // AsyncStorage on the mobile side too, but replay means the
+    // mobile is consistent with the desktop within ~1 RTT after
+    // auth completes.
+    if (this._lastQuestsList) {
+      console.log(`[SyncServer] Replaying recent quests_list (${this._lastQuestsList.payload.quests.length} quest(s)) to reconnected client`);
+      this._send(ws, this._lastQuestsList.payload);
+    } else if (this.onRequestQuestsList) {
+      console.log('[SyncServer] No cached quests_list — asking main process to refresh');
+      try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
+    }
     // Replay last chat message if it arrived while client was disconnected (60s window)
     if (this._lastChatMessage && (Date.now() - this._lastChatMessage.ts) < 60000) {
       console.log('[SyncServer] Replaying recent chat_message to reconnected client');
@@ -743,6 +849,23 @@ class SyncServer extends EventEmitter {
     const payload = { type: 'agents_list', agents, ts: Date.now() };
     this._lastAgentsList = { payload, ts: Date.now() };
     console.log(`[SyncServer] Broadcasting agents_list with ${agents.length} agent(s):`, agents.map(a => a.id).join(','));
+    this._broadcast(payload);
+  }
+
+  // v3.1.95: broadcast the full list of quests so the mobile can
+  // mirror the desktop's quest panel. Each entry is the full
+  // quest object as stored in ~/.openclaw/cyberclaw/quests.json
+  // (id, name, description, status, directory, goals, created,
+  // etc). The mobile renders a read-only list (cache is keyed by
+  // companionId on the phone side; the full list is shared
+  // globally on the desktop so the mobile just gets the same
+  // array). Cache the last payload so a reconnecting client gets
+  // the current list even if it disconnected after the initial
+  // broadcast.
+  broadcastQuestsList(quests) {
+    const payload = { type: 'quests_list', quests: Array.isArray(quests) ? quests : [], ts: Date.now() };
+    this._lastQuestsList = { payload, ts: Date.now() };
+    console.log(`[SyncServer] Broadcasting quests_list with ${payload.quests.length} quest(s)`);
     this._broadcast(payload);
   }
 
