@@ -387,13 +387,21 @@ class SyncServer extends EventEmitter {
       // request_agents_list — replay the cached payload if we have
       // it, otherwise ask the main process to trigger a fresh
       // broadcast via onRequestQuestsList.
+      //
+      // v3.1.52: Tobe's v3.8.0 testing found that the
+      // _lastQuestsList cache could be stale (the broadcast
+      // path that updates the cache was failing silently in
+      // some scenario), so an explicit request from the
+      // mobile would replay stale data. Always re-read from
+      // disk on explicit request — the file is small and
+      // loadQuests is fast (O(n) over typically <20 quests).
       case 'request_quests_list': {
         if (!client.authenticated) return;
         console.log(`[SyncServer] Mobile requested quests list refresh (name=${client.name})`);
-        if (this._lastQuestsList) {
-          this._send(ws, this._lastQuestsList.payload);
-        } else if (this.onRequestQuestsList) {
+        if (this.onRequestQuestsList) {
           try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
+        } else if (this._lastQuestsList) {
+          this._send(ws, this._lastQuestsList.payload);
         }
         break;
       }
