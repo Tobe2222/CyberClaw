@@ -398,6 +398,90 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      // v3.8.0: phone-side quest edit. The mobile can now
+      // edit quests over WebSocket. Each inbound message
+      // routes to a callback in main.js that performs the
+      // mutation using the same loadQuests → modify →
+      // saveQuests flow the desktop's IPC handlers use. The
+      // save triggers a `quests_list` broadcast (existing
+      // path) so the mobile's optimistic update is replaced
+      // with the canonical data within ~100ms.
+      //
+      // Ack protocol: if the mutation succeeds, no ack is
+      // sent — the mobile just waits for the next
+      // `quests_list` broadcast to confirm. If it fails
+      // (quest not found, invalid id, etc.), we send a
+      // `quests_update_failed` ack with the action and id
+      // so the mobile can roll back its optimistic update
+      // and show an error.
+      case 'set_quest_active': {
+        if (!client.authenticated) return;
+        const { id } = msg;
+        try {
+          if (this.onSetQuestActive) this.onSetQuestActive(id);
+        } catch (e) {
+          console.log('[SyncServer] onSetQuestActive failed:', e?.message);
+          this._send(ws, { type: 'quests_update_failed', action: 'set_quest_active', id, error: e?.message });
+        }
+        break;
+      }
+      case 'update_quest': {
+        if (!client.authenticated) return;
+        const { id, updates } = msg;
+        try {
+          const ok = this.onUpdateQuest ? this.onUpdateQuest(id, updates || {}) : null;
+          if (!ok) {
+            this._send(ws, { type: 'quests_update_failed', action: 'update_quest', id, error: 'quest not found' });
+          }
+        } catch (e) {
+          console.log('[SyncServer] onUpdateQuest failed:', e?.message);
+          this._send(ws, { type: 'quests_update_failed', action: 'update_quest', id, error: e?.message });
+        }
+        break;
+      }
+      case 'delete_quest': {
+        if (!client.authenticated) return;
+        const { id } = msg;
+        try {
+          const ok = this.onDeleteQuest ? this.onDeleteQuest(id) : false;
+          if (!ok) {
+            this._send(ws, { type: 'quests_update_failed', action: 'delete_quest', id, error: 'quest not found' });
+          }
+        } catch (e) {
+          console.log('[SyncServer] onDeleteQuest failed:', e?.message);
+          this._send(ws, { type: 'quests_update_failed', action: 'delete_quest', id, error: e?.message });
+        }
+        break;
+      }
+      case 'mark_quest_goal_done': {
+        if (!client.authenticated) return;
+        const { id, goalIndex, completed } = msg;
+        try {
+          const ok = this.onMarkQuestGoalDone ? this.onMarkQuestGoalDone(id, goalIndex, completed) : null;
+          if (!ok) {
+            this._send(ws, { type: 'quests_update_failed', action: 'mark_quest_goal_done', id, error: 'quest or goal not found' });
+          }
+        } catch (e) {
+          console.log('[SyncServer] onMarkQuestGoalDone failed:', e?.message);
+          this._send(ws, { type: 'quests_update_failed', action: 'mark_quest_goal_done', id, error: e?.message });
+        }
+        break;
+      }
+      case 'create_quest': {
+        if (!client.authenticated) return;
+        const { quest } = msg;
+        try {
+          const created = this.onCreateQuest ? this.onCreateQuest(quest || {}) : null;
+          if (!created) {
+            this._send(ws, { type: 'quests_update_failed', action: 'create_quest', error: 'create failed' });
+          }
+        } catch (e) {
+          console.log('[SyncServer] onCreateQuest failed:', e?.message);
+          this._send(ws, { type: 'quests_update_failed', action: 'create_quest', error: e?.message });
+        }
+        break;
+      }
+
       case 'companion_interaction': {
         if (!client.authenticated) return;
         this._notifyMainWindow('mobile-companion-action', msg.action);

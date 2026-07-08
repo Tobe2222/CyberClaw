@@ -1902,6 +1902,105 @@ app.whenReady().then(() => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
     },
+    // v3.8.0: phone-side quest edit. Each callback is the
+    // WebSocket counterpart of the corresponding IPC handler.
+    // The mutation goes through the same loadQuests → modify →
+    // saveQuests flow; saveQuests broadcasts the updated list
+    // back to all connected clients (including the mobile that
+    // initiated the edit) so the mobile's optimistic update
+    // is replaced with the canonical data within ~100ms.
+    //
+    // Return values: truthy on success, falsy on failure
+    // (quest not found, invalid id, etc.). The SyncServer uses
+    // this to send a `quests_update_failed` ack.
+    onSetQuestActive: (id) => {
+      const quests = loadQuests();
+      let changed = false;
+      for (const q of quests) {
+        const shouldBeActive = q.id === id && !!id;
+        if (q.active !== shouldBeActive) {
+          q.active = shouldBeActive;
+          changed = true;
+        }
+      }
+      if (changed) saveQuests(quests);
+      return !!id && quests.some(q => q.id === id);
+    },
+    onUpdateQuest: (id, updates) => {
+      if (!id) return null;
+      const quests = loadQuests();
+      const idx = quests.findIndex(q => q.id === id);
+      if (idx < 0) return null;
+      // v3.8.0: only allow a safe set of fields to be
+      // updated over WebSocket. Block `active` and
+      // `latestChanges` (those have their own dedicated
+      // messages / are desktop-only), and block `id` and
+      // `created` (immutable after creation). The renderer
+      // is the only place that should set `active: true`
+      // on a quest — but we expose that via onSetQuestActive
+      // above so the user can star from the phone too.
+      const safe = { ...updates };
+      delete safe.id;
+      delete safe.created;
+      delete safe.active;
+      delete safe.latestChanges;
+      // Block `skills` too — that field was removed from
+      // the quest model in v3.1.49 but legacy data may
+      // still have it; the mobile shouldn't be writing it.
+      delete safe.skills;
+      Object.assign(quests[idx], safe);
+      saveQuests(quests);
+      return quests[idx];
+    },
+    onDeleteQuest: (id) => {
+      if (!id) return false;
+      const quests = loadQuests();
+      const next = quests.filter(q => q.id !== id);
+      if (next.length === quests.length) return false;
+      saveQuests(next);
+      return true;
+    },
+    onMarkQuestGoalDone: (id, goalIndex, completed) => {
+      if (!id) return null;
+      const quests = loadQuests();
+      const q = quests.find(x => x.id === id);
+      if (!q) return null;
+      const goals = Array.isArray(q.goals) ? q.goals : [];
+      const idx = parseInt(goalIndex, 10);
+      if (isNaN(idx) || idx < 0 || idx >= goals.length) return null;
+      if (typeof goals[idx] === 'string') {
+        goals[idx] = { text: goals[idx], completed: !!completed };
+      } else {
+        goals[idx] = { ...goals[idx], completed: !!completed };
+      }
+      q.goals = goals;
+      saveQuests(quests);
+      return q;
+    },
+    onCreateQuest: (quest) => {
+      // v3.8.0: phone can create new quests. Mirror the
+      // IPC handler's logic: assign id, created, defaults
+      // (status: 'active', active: false, latestChanges: []).
+      // The mobile doesn't pick a directory in v3.8.0 (that
+      // needs the Android SAF picker which lands in v3.8.1);
+      // for now, the user can leave directory undefined or
+      // paste a path string.
+      const quests = loadQuests();
+      const newQuest = {
+        name: quest.name || 'Untitled quest',
+        description: quest.description || '',
+        ...(quest.directory ? { directory: quest.directory } : {}),
+        goals: Array.isArray(quest.goals) ? quest.goals : [],
+        status: 'active',
+        active: false,
+        latestChanges: [],
+      };
+      newQuest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      newQuest.created = new Date().toISOString();
+      quests.unshift(newQuest);
+      saveQuests(quests);
+      return newQuest;
+    },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
         // Immediately ack receipt so mobile can show "received at desktop"
