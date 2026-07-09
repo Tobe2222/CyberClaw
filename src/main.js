@@ -2691,6 +2691,100 @@ app.whenReady().then(() => {
     });
   });
 
+  // v3.9.0: trainer manager (wake). The desktop's
+  // ~/.openclaw/cyberclaw/wake-training/ tree is the
+  // canonical backup of every .tflite the mobile ever
+  // trained. The mobile's WakeSetManagerScreen queries
+  // this list so the user can pull an old training
+  // back to the device (e.g. after a phone wipe), and
+  // pushes new trainings back as an extra backup.
+  //
+  // The send / exit versions of this trio will ship in
+  // v3.9.1 / v3.9.2 alongside the corresponding
+  // SetListScreen variants.
+  const fs = require('fs');
+
+  syncServer.on('list_wake_sets_from_desktop', ({ ws }) => {
+    if (!syncServer) return;
+    try {
+      const wakeRoot = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'wake-training');
+      const sets = [];
+      if (fs.existsSync(wakeRoot)) {
+        for (const agentDir of fs.readdirSync(wakeRoot)) {
+          const agentPath = path.join(wakeRoot, agentDir);
+          if (!fs.statSync(agentPath).isDirectory()) continue;
+          // Each agent's tree: <agentId>/output/model/<name>.tflite
+          // (the python script writes the .tflite under output/model/).
+          const modelRoot = path.join(agentPath, 'output', 'model');
+          if (!fs.existsSync(modelRoot)) continue;
+          for (const modelFile of fs.readdirSync(modelRoot)) {
+            if (!modelFile.endsWith('.tflite')) continue;
+            const fullPath = path.join(modelRoot, modelFile);
+            const stat = fs.statSync(fullPath);
+            sets.push({
+              setId: `${agentDir}/${modelFile.replace(/\.tflite$/, '')}`,
+              agentId: agentDir,
+              phrase: modelFile.replace(/\.tflite$/, ''),
+              sourcePath: fullPath,
+              sizeBytes: stat.size,
+              modifiedAt: stat.mtimeMs,
+            });
+          }
+        }
+      }
+      console.log(`[wake-mgr] Listed ${sets.length} cached wake set(s) from desktop`);
+      syncServer._send(ws, { type: 'wake_sets_list', sets });
+    } catch (e) {
+      console.error(`[wake-mgr] list_wake_sets failed: ${e.message}`);
+      syncServer._send(ws, { type: 'wake_sets_list', sets: [], error: e.message });
+    }
+  });
+
+  syncServer.on('import_wake_set_from_desktop', async ({ ws, setId, sourcePath }) => {
+    if (!syncServer) return;
+    try {
+      if (!fs.existsSync(sourcePath)) {
+        return syncServer._send(ws, { type: 'wake_set_imported', ok: false, error: `source not found: ${sourcePath}`, setId });
+      }
+      const bytes = fs.readFileSync(sourcePath);
+      const base64 = bytes.toString('base64');
+      console.log(`[wake-mgr] Imported wake set ${setId} (${bytes.length} bytes)`);
+      syncServer._send(ws, {
+        type: 'wake_set_imported',
+        ok: true,
+        setId,
+        base64,
+        sizeBytes: bytes.length,
+      });
+    } catch (e) {
+      console.error(`[wake-mgr] import_wake_set failed: ${e.message}`);
+      syncServer._send(ws, { type: 'wake_set_imported', ok: false, error: e.message, setId });
+    }
+  });
+
+  syncServer.on('export_wake_set_to_desktop', async ({ ws, setId, base64, phrase }) => {
+    if (!syncServer) return;
+    try {
+      const safePhrase = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      // Mirror the python script's output layout:
+      //   ~/.openclaw/cyberclaw/wake-training/<agentId>/output/model/<name>.tflite
+      // We don't have an agentId here (just a setId), so we
+      // extract it from the setId (format: <agentId>/<phrase>)
+      // or fall back to "imported" if the shape is wrong.
+      const slashIdx = setId.indexOf('/');
+      const agentDir = slashIdx > 0 ? setId.slice(0, slashIdx) : 'imported';
+      const outDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'wake-training', agentDir, 'output', 'model');
+      fs.mkdirSync(outDir, { recursive: true });
+      const outPath = path.join(outDir, `${safePhrase || 'imported'}.tflite`);
+      fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
+      console.log(`[wake-mgr] Exported wake set ${setId} -> ${outPath}`);
+      syncServer._send(ws, { type: 'wake_set_exported', ok: true, setId, savedPath: outPath });
+    } catch (e) {
+      console.error(`[wake-mgr] export_wake_set failed: ${e.message}`);
+      syncServer._send(ws, { type: 'wake_set_exported', ok: false, error: e.message, setId });
+    }
+  });
+
   // Agent Reach — initialise remote tool bridge
   const RemoteToolBridge = require('./remote-tool-bridge');
   let remoteToolBridge = null;

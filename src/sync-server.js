@@ -832,6 +832,39 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.9.0: trainer manager wire protocol (wake).
+      // The mobile's WakeSetManagerScreen calls these
+      // to surface the desktop's existing wake-training
+      // cache as importable sets, and to push freshly-
+      // trained sets back to the desktop as a backup.
+      // Exit / send wire cases will follow in v3.9.1 /
+      // v3.9.2 once those screens exist.
+      case 'list_wake_sets_from_desktop': {
+        if (!client.authenticated) return;
+        // Delegate to main.js which knows about the
+        // ~/.openclaw/cyberclaw/wake-training/ tree.
+        this.emit('list_wake_sets_from_desktop', { ws });
+        break;
+      }
+      case 'import_wake_set_from_desktop': {
+        if (!client.authenticated) return;
+        if (!msg.setId || !msg.sourcePath) {
+          this._send(ws, { type: 'wake_set_imported', ok: false, error: 'setId and sourcePath required' });
+          return;
+        }
+        this.emit('import_wake_set_from_desktop', { ws, setId: msg.setId, sourcePath: msg.sourcePath });
+        break;
+      }
+      case 'export_wake_set_to_desktop': {
+        if (!client.authenticated) return;
+        if (!msg.setId || !msg.base64 || !msg.phrase) {
+          this._send(ws, { type: 'wake_set_exported', ok: false, error: 'setId, base64, phrase required' });
+          return;
+        }
+        this.emit('export_wake_set_to_desktop', { ws, setId: msg.setId, base64: msg.base64, phrase: msg.phrase });
+        break;
+      }
     }
   }
 
