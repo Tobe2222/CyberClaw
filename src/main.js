@@ -2144,6 +2144,41 @@ app.whenReady().then(() => {
   syncServer._getCachedExitResult = getCachedExitResult;
   syncServer._getLastExitProgress = getLastExitProgress;
 
+  // v3.6.0: parallel cache for send-word training results.
+  // Mirror of the exit-phrase cache above: single-keyed by
+  // phrase (the send word is user-level, not per-companion),
+  // 15-minute TTL, latest-progress stash for the mobile's
+  // watchdog-poll path. The send-word pipeline was added to
+  // the mobile in v3.6.0 but the desktop never wired up the
+  // request handler — Tobe hit this when the trainer stuck
+  // at "Uploading samples to desktop…" for 5 minutes: the
+  // desktop's _handleMessage switch had no case for
+  // `request_send_training` and silently dropped the
+  // message into the default arm.
+  let lastSendResult = null;
+  let lastSendResultCompletedAt = 0;
+  let lastSendProgress = null;
+  function cacheSendResult(result) {
+    lastSendResult = result;
+    lastSendResultCompletedAt = Date.now();
+  }
+  function getCachedSendResult() {
+    if (!lastSendResult) return null;
+    if (Date.now() - lastSendResultCompletedAt > WAKE_RESULT_TTL_MS) {
+      lastSendResult = null;
+      return null;
+    }
+    return lastSendResult;
+  }
+  function setLastSendProgress(payload) {
+    lastSendProgress = payload;
+  }
+  function getLastSendProgress() {
+    return lastSendProgress;
+  }
+  syncServer._getCachedSendResult = getCachedSendResult;
+  syncServer._getLastSendProgress = getLastSendProgress;
+
   // v3.2.0: wake-word training request from the mobile.
   // The mobile sends `request_wake_training` over the sync-server
   // WebSocket. We run the same openWakeWord training script the
@@ -2487,6 +2522,164 @@ app.whenReady().then(() => {
         warning: lastError,
       };
       cacheExitResult(okResult);
+      syncServer._send(ws, okResult);
+    });
+  });
+
+  // v3.6.0: send-word training request from the mobile.
+  // Third in the wake/exit/send trio. The send word is
+  // user-level (not per-companion) so we key the work
+  // directory on the sanitised phrase. Same training
+  // script, same PROGRESS:: / OUTPUT_TFLITE:: protocol,
+  // separate message chain (`send_training_progress` /
+  // `send_training_result` / `send_model_data`) so wake
+  // and exit trainings don't collide when the user has
+  // multiple in flight.
+  //
+  // Why a separate pipeline (vs reusing exit): the
+  // desktop routing distinguishes by message type, and
+  // using distinct types keeps the wake/exit/send models
+  // from colliding when the user has multiple trainings
+  // queued (e.g. they kick off a retrain of exit while a
+  // send training is still in flight).
+  syncServer.on('send_training_request', ({ ws, phrase, samples }) => {
+    if (!syncServer) return;
+    console.log(`[send-train] Mobile requested: phrase="${phrase}" samples=${samples?.length || 0}`);
+
+    if (!Array.isArray(samples) || !samples.length) {
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: 'no samples provided' });
+      return;
+    }
+    for (const s of samples) {
+      if (!s || !s.name || !s.data) {
+        syncServer._send(ws, { type: 'send_training_result', ok: false, error: 'each sample needs {name, data}' });
+        return;
+      }
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'train_wake_phrase.py');
+    if (!fs.existsSync(scriptPath)) {
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: `training script not found: ${scriptPath}` });
+      return;
+    }
+
+    const safePhrase = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const workDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'send-training', safePhrase);
+    fs.mkdirSync(workDir, { recursive: true });
+    const samplesDir = path.join(workDir, 'user_samples');
+    fs.mkdirSync(samplesDir, { recursive: true });
+
+    // Clear cached state from a previous train of the same phrase.
+    lastSendResult = null;
+    lastSendResultCompletedAt = 0;
+    lastSendProgress = null;
+
+    // Write the user samples.
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const safeName = s.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const dst = path.join(samplesDir, `${i.toString().padStart(2, '0')}_${safeName}`);
+      fs.writeFileSync(dst, Buffer.from(s.data, 'base64'));
+    }
+
+    const modelName = `send_${safePhrase}`;
+    const outputDir = path.join(workDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Same args as wake / exit training — same script.
+    const args = [
+      scriptPath,
+      '--name', modelName,
+      '--samples-dir', samplesDir,
+      '--output-dir', outputDir,
+      '--n-samples', '10000',
+      '--n-samples-val', '2000',
+      '--epochs', '20',
+    ];
+
+    const proc = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let tflitePath = null;
+    let lastError = null;
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('PROGRESS::')) {
+          try {
+            const payload = JSON.parse(line.slice('PROGRESS::'.length));
+            const { type: _ignore, ...fields } = payload;
+            setLastSendProgress(fields);
+            if (syncServer) {
+              syncServer._broadcast({ type: 'send_training_progress', ...fields });
+            }
+          } catch (_) {}
+        } else if (line.startsWith('OUTPUT_TFLITE::')) {
+          tflitePath = line.slice('OUTPUT_TFLITE::').trim();
+          // The python script writes the OUTPUT_TFLITE:: marker
+          // alongside the relative path; if it ever switches to
+          // absolute paths in the future, this assignment is
+          // still the right shape. For now we get the absolute
+          // path from the workDir + the relative basename.
+          if (!path.isAbsolute(tflitePath)) {
+            tflitePath = path.join(outputDir, tflitePath);
+          }
+        } else if (line.startsWith('OUTPUT_ONNX::')) {
+          tflitePath = line.slice('OUTPUT_ONNX::').trim();
+          lastError = 'tflite conversion failed; ONNX only';
+        } else if (line.trim()) {
+          console.log(`[send-train:${safePhrase}] ${line.trim()}`);
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      console.error(`[send-train:${safePhrase}] stderr: ${chunk.toString().trim()}`);
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[send-train:${safePhrase}] spawn error: ${err.message}`);
+      syncServer._send(ws, { type: 'send_training_result', ok: false, error: err.message });
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        const errMsg = `send training process exited ${code}`;
+        console.error(`[send-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'send_training_result', ok: false, error: errMsg };
+        cacheSendResult(errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      if (!tflitePath) {
+        const errMsg = 'no .tflite output found';
+        console.error(`[send-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'send_training_result', ok: false, error: errMsg };
+        cacheSendResult(errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      // Resolve to absolute path so the mobile's read_send_model
+      // handler can stat() it directly. The python script emits
+      // OUTPUT_TFLITE:: with a basename; we resolve against
+      // outputDir if it's not already absolute (and we already
+      // do that above in stdout.on('data')). Final sanity check.
+      const absolutePath = path.isAbsolute(tflitePath) ? tflitePath : path.join(outputDir, tflitePath);
+      if (!fs.existsSync(absolutePath)) {
+        const errMsg = `tflite path does not exist after training: ${absolutePath}`;
+        console.error(`[send-train:${safePhrase}] ${errMsg}`);
+        const errResult = { type: 'send_training_result', ok: false, error: errMsg };
+        cacheSendResult(errResult);
+        syncServer._send(ws, errResult);
+        return;
+      }
+      console.log(`[send-train:${safePhrase}] done -> ${absolutePath}`);
+      const okResult = {
+        type: 'send_training_result',
+        ok: true,
+        tflitePath: absolutePath,
+        warning: lastError,
+      };
+      cacheSendResult(okResult);
       syncServer._send(ws, okResult);
     });
   });

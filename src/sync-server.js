@@ -755,6 +755,83 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.6.0: send-word training. Same shape as the exit
+      // cases above: per-phrase scope (the send word is
+      // user-level, not per-companion), separate message
+      // chain so the three pipelines don't collide. The
+      // mobile's SendPhraseTrainer has shipped since
+      // v3.6.0 but the desktop was missing these cases
+      // — the request fell into the default arm and the
+      // trainer stuck at "Uploading samples to desktop…"
+      // indefinitely. Adding them closes the loop.
+      case 'request_send_training': {
+        if (!client.authenticated) return;
+        if (!msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
+          console.warn('[SyncServer] request_send_training missing fields:', Object.keys(msg || {}));
+          this._send(ws, { type: 'send_training_result', ok: false, error: 'phrase, samples required' });
+          return;
+        }
+        console.log(`[SyncServer] Send training request: phrase="${msg.phrase}" samples=${msg.samples.length}`);
+        this.emit('send_training_request', {
+          ws,
+          phrase: msg.phrase,
+          samples: msg.samples,
+        });
+        break;
+      }
+
+      case 'get_latest_send_training_result': {
+        if (!client.authenticated) return;
+        if (typeof this._getLastSendProgress === 'function') {
+          const latest = this._getLastSendProgress();
+          if (latest && (Date.now() - (latest.ts || 0) < 5 * 60 * 1000)) {
+            this._send(ws, { type: 'send_training_progress', ...latest });
+          }
+        }
+        const cached = typeof this._getCachedSendResult === 'function'
+          ? this._getCachedSendResult()
+          : null;
+        if (cached) {
+          console.log('[SyncServer] Replaying cached send result');
+          this._send(ws, cached);
+        } else {
+          this._send(ws, {
+            type: 'send_training_result',
+            ok: false,
+            error: 'no recent send training result',
+            noResult: true,
+          });
+        }
+        break;
+      }
+
+      case 'read_send_model': {
+        if (!client.authenticated) return;
+        if (!msg.tflitePath) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: 'tflitePath required' });
+          return;
+        }
+        const fs = require('fs');
+        if (!fs.existsSync(msg.tflitePath)) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: 'file not found' });
+          return;
+        }
+        try {
+          const buf = fs.readFileSync(msg.tflitePath);
+          this._send(ws, {
+            type: 'send_model_data',
+            ok: true,
+            base64: buf.toString('base64'),
+            size: buf.length,
+            tflitePath: msg.tflitePath,
+          });
+          console.log(`[SyncServer] Sent send model (${buf.length} bytes) for ${msg.tflitePath}`);
+        } catch (e) {
+          this._send(ws, { type: 'send_model_data', ok: false, error: e.message });
+        }
+        break;
+      }
     }
   }
 
