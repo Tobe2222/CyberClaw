@@ -2614,17 +2614,24 @@ app.whenReady().then(() => {
             }
           } catch (_) {}
         } else if (line.startsWith('OUTPUT_TFLITE::')) {
-          tflitePath = line.slice('OUTPUT_TFLITE::').trim();
-          // The python script writes the OUTPUT_TFLITE:: marker
-          // alongside the relative path; if it ever switches to
-          // absolute paths in the future, this assignment is
-          // still the right shape. For now we get the absolute
-          // path from the workDir + the relative basename.
-          if (!path.isAbsolute(tflitePath)) {
-            tflitePath = path.join(outputDir, tflitePath);
-          }
+          // v3.1.55: the .length suffix is mandatory —
+          // `String.prototype.slice` accepts a string arg
+          // but treats it as a number via Number(str),
+          // which is NaN. slice(NaN) is slice(0), so the
+          // marker wasn't being stripped and tflitePath
+          // came out as the full "OUTPUT_TFLITE::<path>"
+          // string. The not-absolute-path branch below
+          // then re-prepended outputDir to the marker-
+          // prefixed string, producing a doubled path
+          // like "output/OUTPUT_TFLITE::/home/.../model.tflite"
+          // that fs.existsSync could never find. v3.1.54
+          // had this exact bug (Tobe's training run took
+          // 40 min and the desktop reported a false
+          // "tflite path does not exist" error). Wake and
+          // exit handlers correctly use .length.
+          tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
         } else if (line.startsWith('OUTPUT_ONNX::')) {
-          tflitePath = line.slice('OUTPUT_ONNX::').trim();
+          tflitePath = line.slice('OUTPUT_ONNX::'.length).trim();
           lastError = 'tflite conversion failed; ONNX only';
         } else if (line.trim()) {
           console.log(`[send-train:${safePhrase}] ${line.trim()}`);
@@ -2658,25 +2665,25 @@ app.whenReady().then(() => {
         syncServer._send(ws, errResult);
         return;
       }
-      // Resolve to absolute path so the mobile's read_send_model
-      // handler can stat() it directly. The python script emits
-      // OUTPUT_TFLITE:: with a basename; we resolve against
-      // outputDir if it's not already absolute (and we already
-      // do that above in stdout.on('data')). Final sanity check.
-      const absolutePath = path.isAbsolute(tflitePath) ? tflitePath : path.join(outputDir, tflitePath);
-      if (!fs.existsSync(absolutePath)) {
-        const errMsg = `tflite path does not exist after training: ${absolutePath}`;
+      // The python script emits an absolute path (verified —
+      // it's the result of Path(...).resolve() at script
+      // boot). Sanity-check it exists before sending it to
+      // the mobile — fs.existsSync catches the case where
+      // the script's print line was missed (chunked across
+      // a stdout buffer boundary) and tflitePath stayed null.
+      if (!fs.existsSync(tflitePath)) {
+        const errMsg = `tflite path does not exist after training: ${tflitePath}`;
         console.error(`[send-train:${safePhrase}] ${errMsg}`);
         const errResult = { type: 'send_training_result', ok: false, error: errMsg };
         cacheSendResult(errResult);
         syncServer._send(ws, errResult);
         return;
       }
-      console.log(`[send-train:${safePhrase}] done -> ${absolutePath}`);
+      console.log(`[send-train:${safePhrase}] done -> ${tflitePath}`);
       const okResult = {
         type: 'send_training_result',
         ok: true,
-        tflitePath: absolutePath,
+        tflitePath,
         warning: lastError,
       };
       cacheSendResult(okResult);
