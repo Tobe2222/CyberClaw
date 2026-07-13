@@ -448,8 +448,15 @@
             <!-- Populated dynamically from cyberclaw.providers.list() -->
           </div>
           <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin:8px 0 4px;">
-            Add your own LLM provider — name, base URL, optional API key, and any default model.
-            Saved providers appear in the companion model pickers.
+            Anthropic, OpenAI, Google and Ollama work out of the box via the
+            Default Model dropdown above (the OpenClaw gateway routes them).
+            For other providers, add one below or pick a quick preset — name,
+            base URL and API style get filled in, you just add the key.
+          </div>
+          <div id="provider-presets" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px;">
+            <!-- v3.2.1: one-click presets. Each button fills the add-form so the
+                 user only needs to type their API key and pick a default model.
+                 See window.applyProviderPreset() in src/js/app.js. -->
           </div>
           <details id="provider-add-details" class="provider-add">
             <summary>➕ Add provider</summary>

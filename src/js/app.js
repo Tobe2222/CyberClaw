@@ -2611,6 +2611,9 @@ const APP_VERSION = require('../package.json').version;
 document.addEventListener('DOMContentLoaded', () => {
   const label = document.getElementById('update-label');
   if (label) label.textContent = `v${APP_VERSION}`;
+  // v3.2.1: render provider presets on boot so they're already in the DOM
+  // before the user opens settings (saves a paint flicker).
+  try { renderProviderPresets(); } catch (e) { console.warn('renderProviderPresets:', e); }
 });
 
 window.checkForUpdate = async function() {
@@ -3235,6 +3238,14 @@ window.confirmEquip = async function(skillName, agentId) {
 // ═══════════════════════════════════════════════════════════
 
 const SETTINGS_KEY = 'cyberclaw-settings';
+
+// v3.2.1: removed dead legacy provider-key fields (keyAnthropic, keyOpenai,
+// keyGoogle, ollamaUrl). These were orphaned when the new provider manager
+// landed; nothing in the codebase reads them anymore. They were being
+// silently re-saved on every saveSettings() call, perpetuating dead state.
+// One-time migration below strips them from any persisted saved blob.
+const LEGACY_PROVIDER_KEYS = ['keyAnthropic', 'keyOpenai', 'keyGoogle', 'ollamaUrl'];
+
 const DEFAULT_SETTINGS = {
   theme: 'dark',
   voiceLang: 'en-US',
@@ -3243,10 +3254,6 @@ const DEFAULT_SETTINGS = {
   voiceAutoSend: false,
   ttsVoice: 'lessac',
   defaultModel: '',
-  keyAnthropic: '',
-  keyOpenai: '',
-  keyGoogle: '',
-  ollamaUrl: '',
   discordToken: '',
   telegramToken: '',
   // User profile
@@ -3254,10 +3261,29 @@ const DEFAULT_SETTINGS = {
   userGender: '' // 'male', 'female', or ''
 };
 
+// v3.2.1: shared well-known-model catalog. Was duplicated inline in
+// refreshDefaultModelDropdown() and refreshForgeModelDropdowns() with
+// subtle drift (forge omitted the Ollama entry). Both call sites now
+// derive their options from this single list.
+const WELL_KNOWN_MODELS = [
+  { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
+  { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
+  { provider: 'Anthropic',  model: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
+  { provider: 'OpenAI',     model: 'openai/gpt-4o',              label: 'GPT-4o' },
+  { provider: 'OpenAI',     model: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
+  { provider: 'Google',     model: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
+  { provider: 'Google',     model: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
+  { provider: 'Local',      model: 'ollama/llama3',              label: 'Ollama — Llama 3' },
+];
+
 function loadSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
-    return Object.assign({}, DEFAULT_SETTINGS, saved || {});
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+    // One-time strip of legacy provider-key fields if they survived from
+    // an older saved blob. Don't write back here (saveSettings() will
+    // persist the cleaned object on the next user-driven save).
+    for (const k of LEGACY_PROVIDER_KEYS) delete saved[k];
+    return Object.assign({}, DEFAULT_SETTINGS, saved);
   } catch { return Object.assign({}, DEFAULT_SETTINGS); }
 }
 
@@ -3272,7 +3298,6 @@ function saveSettings() {
   if (autoEl) s.voiceAutoSend = autoEl.checked;
   const modelEl = document.getElementById('settings-default-model');
   if (modelEl) s.defaultModel = modelEl.value;
-  // Legacy provider key fields were removed; values still in s.* if previously saved.
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) s.discordToken = discEl.value.trim();
   const teleEl = document.getElementById('settings-telegram-token');
@@ -3325,6 +3350,8 @@ window.openSettings = function() {
   try { renderProvidersList(); } catch (e) { console.warn('renderProvidersList:', e); }
   try { renderLlmEndpoints(); } catch (e) { console.warn('renderLlmEndpoints:', e); }
   try { refreshDefaultModelDropdown(); } catch (e) { console.warn('refreshDefaultModelDropdown:', e); }
+  // v3.2.1: render one-click provider preset buttons (cheap; do every open)
+  try { renderProviderPresets(); } catch (e) { console.warn('renderProviderPresets:', e); }
   const discEl = document.getElementById('settings-discord-token');
   if (discEl) discEl.value = s.discordToken || '';
   const teleEl = document.getElementById('settings-telegram-token');
@@ -3426,16 +3453,7 @@ async function refreshDefaultModelDropdown() {
   // We list the *default model* from each provider, but also include a few
   // common well-known models so the dropdown remains useful even before any
   // provider is saved.
-  const wellKnown = [
-    { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
-    { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
-    { provider: 'Anthropic',  model: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
-    { provider: 'OpenAI',     model: 'openai/gpt-4o',              label: 'GPT-4o' },
-    { provider: 'OpenAI',     model: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
-    { provider: 'Google',     model: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
-    { provider: 'Google',     model: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
-    { provider: 'Local',      model: 'ollama/llama3',              label: 'Ollama — Llama 3' },
-  ];
+  const wellKnown = WELL_KNOWN_MODELS;
   const groups = {};
   for (const w of wellKnown) {
     (groups[w.provider] = groups[w.provider] || []).push(
@@ -3497,6 +3515,46 @@ window.addProvider = async function() {
   await refreshDefaultModelDropdown();
   await refreshForgeModelDropdowns().catch(() => {});
   addChatMsg('system', '✅ Provider saved to openclaw config: ' + name);
+};
+
+// v3.2.1: one-click provider presets. Each preset fills the add-form's
+// name / baseUrl / defaultModel / api style so the user only has to type
+// their API key and click Save. OpenRouter / Groq / Together / Fireworks /
+// Mistral / DeepSeek cover ~95% of "I want to use a model that's not
+// Anthropic or OpenAI" — Ollama lives in the Local LLM Endpoints section
+// below because it needs model discovery.
+const PROVIDER_PRESETS = [
+  { id: 'openrouter', name: 'OpenRouter',  baseUrl: 'https://openrouter.ai/api/v1',            defaultModel: 'openrouter/auto',       api: 'openai-completions', emoji: '🧭' },
+  { id: 'groq',       name: 'Groq',        baseUrl: 'https://api.groq.com/openai/v1',           defaultModel: 'llama-3.3-70b-versatile', api: 'openai-completions', emoji: '⚡' },
+  { id: 'together',   name: 'Together',    baseUrl: 'https://api.together.xyz/v1',             defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', api: 'openai-completions', emoji: '🤝' },
+  { id: 'fireworks',  name: 'Fireworks',   baseUrl: 'https://api.fireworks.ai/inference/v1',   defaultModel: 'accounts/fireworks/models/llama-v3p3-70b-instruct', api: 'openai-completions', emoji: '🎆' },
+  { id: 'mistral',    name: 'Mistral',     baseUrl: 'https://api.mistral.ai/v1',               defaultModel: 'mistral-large-latest',  api: 'openai-completions', emoji: '🌬️' },
+  { id: 'deepseek',   name: 'DeepSeek',    baseUrl: 'https://api.deepseek.com/v1',             defaultModel: 'deepseek-chat',         api: 'openai-completions', emoji: '🐋' },
+];
+
+window.applyProviderPreset = function(id) {
+  const preset = PROVIDER_PRESETS.find(p => p.id === id);
+  if (!preset) return;
+  const set = (key, val) => { const el = document.getElementById(key); if (el) el.value = val; };
+  set('provider-add-name', preset.name);
+  set('provider-add-url', preset.baseUrl);
+  set('provider-add-model', preset.defaultModel);
+  set('provider-add-api', preset.api);
+  // Clear API key so the placeholder hints at it; user types fresh.
+  const keyEl = document.getElementById('provider-add-key'); if (keyEl) keyEl.value = '';
+  // Open the form if collapsed
+  const det = document.getElementById('provider-add-details');
+  if (det && !det.hasAttribute('open')) det.setAttribute('open', '');
+  // Focus the API key input for fast paste
+  setTimeout(() => { if (keyEl) keyEl.focus(); }, 50);
+};
+
+window.renderProviderPresets = function() {
+  const root = document.getElementById('provider-presets');
+  if (!root) return;
+  root.innerHTML = PROVIDER_PRESETS.map(p =>
+    `<button class="btn-sm btn-muted" onclick="applyProviderPreset('${p.id}')" title="Pre-fills the form for ${escapeAttr(p.name)}">${p.emoji} ${escapeHtml(p.name)}</button>`
+  ).join('');
 };
 
 window.cancelAddProvider = function() {
@@ -3678,22 +3736,15 @@ window.cancelAddLlmEndpoint = function() {
 async function refreshForgeModelDropdowns() {
   const providers = await fetchProviders();
   const endpoints = await cyberclaw.llm.endpoints.list().catch(() => []);
-  // Hard-coded well-known models
-  const wellKnown = [
-    { group: 'Anthropic', options: [
-      { value: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
-      { value: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
-    ]},
-    { group: 'OpenAI', options: [
-      { value: 'openai/gpt-4o',              label: 'GPT-4o' },
-      { value: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
-    ]},
-    { group: 'Google', options: [
-      { value: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
-      { value: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
-    ]},
-  ];
+  // Group the well-known catalog by provider for the forge optgroups.
+  const wmGroups = {};
+  for (const w of WELL_KNOWN_MODELS) {
+    (wmGroups[w.provider] = wmGroups[w.provider] || []).push({ value: w.model, label: w.label });
+  }
+  const wellKnown = Object.keys(wmGroups).sort().map(provider => ({
+    group: provider,
+    options: wmGroups[provider],
+  }));
   // Custom providers
   for (const p of providers) {
     const model = (p.defaultModel || '').trim();
