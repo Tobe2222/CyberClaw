@@ -2180,24 +2180,6 @@ app.whenReady().then(() => {
           // Here we just observe the deadline.
           if (ws && ws.readyState === 1) {
             setTimeout(() => {
-              // We don't have a direct way to know if the
-              // ack arrived (it goes to a different
-              // listener). Approximate by checking if a
-              // TTS has started — if not, the renderer is
-              // likely hung. Tobe will see the mobile
-              // surface a hint via the transcribing
-              // timeout, but we can also log here so the
-              // desktop operator sees it in the log.
-              //
-              // For now: just log if we got the ack
-              // listener's signal. We rely on the global
-              // mobile-voice-ack handler above to log
-              // latency anomalies; here we only log if
-              // we're past 8s and an ack is still missing.
-              // (Future: emit a 'voice_unchained' event to
-              // the mobile so the user gets the hint
-              // earlier than 30s.)
-              const ackDelay = Date.now() - voiceSendTs;
               // v3.2.3 (extended): ack-watcher deadline.
               // If no ack IPC has been observed (logged
               // via the global mobile-voice-ack handler
