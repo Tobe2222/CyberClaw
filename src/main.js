@@ -31,6 +31,52 @@ let rendererHangCount = 0;
 let rendererLastHangTs = 0;
 const RENDERER_HANG_RELOAD_THRESHOLD = 1;
 const RENDERER_HANG_RELOAD_WINDOW_MS = 5 * 60 * 1000;
+// v3.2.6: pending-voice queue. Holds voice transcripts
+// whose routing to the renderer has not yet been
+// acknowledged. If the renderer hangs and we reload
+// it, we re-route the queue so the user's prompts
+// aren't lost. Tobe's v3.10.14 complaint: "the user
+// should not need to repeat himself often" — without
+// this queue, every renderer hang means the user has
+// to speak the prompt again. Cap at 3 entries so a
+// runaway queue can't stack up; if 3 are queued we
+// drop the oldest.
+const PENDING_VOICE_QUEUE_CAP = 3;
+const pendingVoiceQueue = [];
+function drainPendingVoiceQueue() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
+  if (mainWindow.webContents.isCrashed()) return;
+  const now = Date.now();
+  let drained = 0;
+  while (pendingVoiceQueue.length > 0) {
+    const entry = pendingVoiceQueue[0];
+    if (now - entry.ts > 60000) {
+      // Drop entries older than 60s — user has likely
+      // moved on.
+      pendingVoiceQueue.shift();
+      continue;
+    }
+    try {
+      mainWindow.webContents.send('mobile-voice', {
+        transcript: entry.transcript,
+        context: entry.context || '',
+        meta: entry.meta || { source: 'mobile' },
+      });
+      pendingVoiceQueue.shift();
+      drained++;
+      console.log(`[Voice] Re-routed pending transcript after renderer reload (ts=${entry.ts})`);
+    } catch (e) {
+      console.error('[Voice] drain failed:', e.message);
+      break;
+    }
+  }
+  if (drained > 0) {
+    console.log(`[Voice] Drained ${drained} pending voice transcript(s) after renderer reload`);
+    discordLog('🔁', 'Replayed queued voice prompts',
+      `${drained} pending transcript(s)`, 'info');
+  }
+}
 function maybeReloadRenderer() {
   const now = Date.now();
   if (now - rendererLastHangTs > RENDERER_HANG_RELOAD_WINDOW_MS) {
@@ -385,9 +431,16 @@ function switchToMainApp() {
     rendererHangCount = 0; // reset on successful boot
   };
   ipcMain.on('renderer-ready-ack', onRendererReadyAck);
-  mainWindow.webContents.once('did-finish-load', () => {
+  // v3.2.6: switched from `once` to `on` so subsequent
+  // renderer reloads also fire this. Each time the
+  // page finishes loading (initial boot OR reload),
+  // we send the ready-check AND drain any pending
+  // voice transcripts that were queued before the
+  // reload. This is the auto-recovery path for Tobe's
+  // "user shouldn't have to repeat himself" complaint.
+  mainWindow.webContents.on('did-finish-load', () => {
     console.log('[Renderer] page finished loading, sending ready check');
-    mainWindow.webContents.send('renderer-ready-check', { ts: Date.now() });
+    try { mainWindow.webContents.send('renderer-ready-check', { ts: Date.now() }); } catch (_) {}
     rendererReadyTimer = setTimeout(() => {
       console.error('[Renderer] no ready ack within 5s — reloading');
       discordLog('❌', 'Renderer not responsive on boot', 'Reloading...', 'error');
@@ -397,6 +450,10 @@ function switchToMainApp() {
         try { mainWindow.webContents.reload(); } catch (_) {}
       }
     }, 5000);
+    // Drain queued voice transcripts. The renderer
+    // is fresh now — re-route anything that was
+    // pending before the reload.
+    drainPendingVoiceQueue();
   });
 }
 
@@ -943,7 +1000,7 @@ ipcMain.on('mobile-paired', (e, { name }) => discordLog('🔗', 'Mobile paired',
 //   - Surface an error to the mobile so the user knows
 //     the desktop pipeline is stuck
 //   - Eventually: auto-restart the renderer
-ipcMain.on('mobile-voice-ack', (e, { ts }) => {
+ipcMain.on('mobile-voice-ack', (e, { ts, id }) => {
   if (!ts) return;
   const latencyMs = Date.now() - ts;
   // Log every ack at debug level so we can see them
@@ -952,6 +1009,21 @@ ipcMain.on('mobile-voice-ack', (e, { ts }) => {
   if (latencyMs > 5000) {
     discordLog('⚠️', 'Slow renderer ack', `${latencyMs}ms after send`, 'warn');
     console.warn(`[Voice] Slow renderer ack: ${latencyMs}ms`);
+  }
+  // v3.2.6: remove the corresponding entry from the
+  // pending-voice queue. The renderer's IPC handler
+  // forwards `id` in the ack payload. This means: once
+  // the renderer acks, the transcript is no longer
+  // pending — if the renderer subsequently hangs
+  // mid-LLM-call, we won't replay a transcript the
+  // renderer already processed (which would lead to
+  // duplicate LLM responses).
+  if (id) {
+    const idx = pendingVoiceQueue.findIndex((e) => e.id === id);
+    if (idx >= 0) {
+      pendingVoiceQueue.splice(idx, 1);
+      console.log(`[Voice] Ack received, removed ${id} from pending queue (remaining=${pendingVoiceQueue.length})`);
+    }
   }
 });
 
@@ -2270,12 +2342,37 @@ app.whenReady().then(() => {
         // it restores the audio→LLM→audio_response loop.
         if (mainWindow && !mainWindow.isDestroyed()) {
           const voiceSendTs = Date.now();
+          // v3.2.6: tag each routing with a unique id so
+          // the ack handler can remove the right queue
+          // entry. Without this, the ack handler can't
+          // tell which transcript the ack is for (and a
+          // re-routed transcript from drainPendingVoiceQueue
+          // could be ack'd twice if its original ack
+          // arrived late).
+          const voiceId = `voice-${voiceSendTs}-${Math.random().toString(36).slice(2, 8)}`;
+          // v3.2.6: queue the routing so we can replay
+          // it if the renderer hangs and we reload. Tobe's
+          // "user shouldn't have to repeat himself"
+          // complaint — without this queue, every hang
+          // means lost work.
+          pendingVoiceQueue.push({
+            id: voiceId,
+            transcript,
+            context: '',
+            meta: { source: 'mobile', deviceName: meta?.deviceName || 'Mobile' },
+            ts: voiceSendTs,
+          });
+          if (pendingVoiceQueue.length > PENDING_VOICE_QUEUE_CAP) {
+            const dropped = pendingVoiceQueue.shift();
+            console.warn(`[Voice] Dropped pending entry ${dropped.id} — queue cap reached`);
+          }
           mainWindow.webContents.send('mobile-voice', {
+            id: voiceId,
             transcript,
             context: '',
             meta: { source: 'mobile', deviceName: meta?.deviceName || 'Mobile' },
           });
-          console.log('[Voice] Routed transcript to renderer via mobile-voice IPC');
+          console.log(`[Voice] Routed transcript to renderer via mobile-voice IPC (id=${voiceId}, queue=${pendingVoiceQueue.length})`);
 
           // v3.2.3: ack-watcher. If the renderer doesn't
           // ack within 8s, the renderer's JS context is
