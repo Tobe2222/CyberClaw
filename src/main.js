@@ -141,6 +141,82 @@ function stripEmojisForTTS(text) {
     .replace(/\s+/g, ' ') // Clean up extra spaces
     .trim();
 }
+
+// v3.10.9: strip Markdown formatting for TTS. The chat
+// display keeps the formatting (so Tobe sees the rendered
+// markdown), but the spoken version removes noise that
+// the LLM produces for visual emphasis.
+//
+// What gets stripped:
+// - **bold** / __bold__  → "bold" (no asterisks read aloud)
+// - *italic* / _italic_  → "italic"
+// - # / ## / ### headers  → remove the leading hash signs
+// - - or * list bullets  → remove the bullet prefix
+// - `code`               → "code" (no backticks read aloud)
+// - [text](url)          → "text" (URLs not read)
+// - > blockquote         → remove the > prefix
+//
+// What is KEPT:
+// - /paths/like/this    → spoken as "slash paths slash like
+//                         slash this" — Tobe explicitly
+//                         wants filesystem paths kept
+//                         ("i still want it to say
+//                         tobe/projects/cool things with
+//                         the slash")
+// - _var_names_with_underscores → kept as-is (single
+//                                 underscores inside words
+//                                 are not markdown)
+function stripMarkdownForTTS(text) {
+  return text
+    // Bold (**text** or __text__) — strip the markers.
+    // Order matters: do the double-char markers first so
+    // we don't accidentally strip the inner * of **.
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // Italic (*text* or _text_) — but only when the
+    // markers are at word boundaries, so we don't strip
+    // underscores inside identifiers (snake_case).
+    .replace(/(^|[\s(>])(\*([^*]+)\*)(?=[\s.,!?:;)]|$)/g, '$1$3')
+    .replace(/(^|[\s(>])(_([^_]+)_)(?=[\s.,!?:;)]|$)/g, '$1$3')
+    // Inline code (`text`) — strip backticks.
+    .replace(/`([^`]+)`/g, '$1')
+    // Links [text](url) — keep text, drop url.
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Headers (### text, ## text, # text) — strip leading hashes.
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    // List bullets (- or *) at the start of a line — strip the
+    // bullet and any leading whitespace after it. Two patterns
+    // because the LLM sometimes produces '-**bold:**' where
+    // the - is glued to the next markdown construct.
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^[-*+](?=[*_`])/gm, '')
+    // v3.10.9: leftover bullets after the ** / __ strip.
+    // Example: "-**commit:**" → after the ** strip becomes
+    // "-commit:" — still has a leading -. Strip a - or *
+    // at the start of a line that's now followed by a word.
+    .replace(/^[-*+](?=\w)/gm, '')
+    // Inline list bullets too: `text -**commit:** abc` →
+    // `text commit: abc`. Strip a - or * immediately followed
+    // by another markdown char, after whitespace.
+    .replace(/(\s)[-*+](?=[*_`])/g, '$1')
+    .replace(/(\s)[-*+](?=\w)/g, '$1')
+    // v3.10.9: catch-all for inline bullets after the **
+    // strip has run. By this point the ** markers are gone
+    // and `-` is followed by a word. Strip it.
+    // Pattern: whitespace-dash-space-word. Only fires
+    // AFTER the inline (no-space) bullet strip above
+    // fails (otherwise `text -**` would match here too
+    // and we'd over-strip). Since we already removed the
+    // no-space case above, this only fires when there's
+    // a space between - and the next word.
+    .replace(/(\s)- (?=\w)/g, '$1')
+    // Blockquote (>) at the start of a line — strip the >.
+    .replace(/^\s*>\s+/gm, '')
+    // Collapse extra whitespace from the strip operations.
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 // --- End audio helpers ---
 
 let syncServer = null;
@@ -2826,7 +2902,7 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUs
   if (!isUser && syncServer && syncServer._voiceReplyWs) {
     const ws = syncServer._voiceReplyWs;
     syncServer._voiceReplyWs = null;
-    const cleanText = stripEmojisForTTS(text);
+    const cleanText = stripMarkdownForTTS(stripEmojisForTTS(text));
     
     // Read TTS voice directly — can't call ipcMain.handle from within a handler
     let ttsVoice = 'lessac';
