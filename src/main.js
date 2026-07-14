@@ -43,6 +43,13 @@ const RENDERER_HANG_RELOAD_WINDOW_MS = 5 * 60 * 1000;
 // drop the oldest.
 const PENDING_VOICE_QUEUE_CAP = 3;
 const pendingVoiceQueue = [];
+// v3.2.7: Set of voiceIds that have been ack'd by the
+// renderer (received the mobile-voice IPC). Used by the
+// ack-watcher to distinguish "renderer never received
+// the IPC" (true hang) from "renderer received the IPC
+// but hung on the LLM call" (different bug, handled
+// by the response tracker instead).
+const ackedVoiceIds = new Set();
 function drainPendingVoiceQueue() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (!mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
@@ -1019,12 +1026,61 @@ ipcMain.on('mobile-voice-ack', (e, { ts, id }) => {
   // renderer already processed (which would lead to
   // duplicate LLM responses).
   if (id) {
+    // v3.2.7: mark this voiceId as acked so the
+    // ack-watcher doesn't fire spuriously. The ack
+    // arrived (renderer received the IPC) but the
+    // renderer may still hang on the LLM call later.
+    // The pending-voice queue tracks the first-stage
+    // ack; the LLM-response tracker (added in this
+    // change) tracks the second-stage completion.
+    ackedVoiceIds.add(id);
     const idx = pendingVoiceQueue.findIndex((e) => e.id === id);
     if (idx >= 0) {
       pendingVoiceQueue.splice(idx, 1);
       console.log(`[Voice] Ack received, removed ${id} from pending queue (remaining=${pendingVoiceQueue.length})`);
     }
   }
+});
+
+// v3.2.7: track voice prompts whose LLM response has
+// completed. The renderer sends this IPC after the
+// sendChatMessage promise resolves (or rejects). We
+// use it to confirm the FULL voice pipeline
+// (renderer IPC + LLM call + TTS synthesis +
+// audio_response) ran to completion, not just the
+// first-stage IPC ack. Without this, the 8s
+// ack-watcher fires on a renderer that acked but
+// then hung on the LLM call (Tobe's v3.10.14 hang
+// case — ack came in, renderer called sendChatMessage,
+// LLM provider crashed, renderer context went dead,
+// desktop logs "No renderer ack" 8s later but the
+// ack DID arrive. The 8s deadline should not fire
+// if we got a "voice done" signal in the meantime).
+//
+// Cleared automatically: the entry in the map is
+// removed once we observe voice-done or 60s pass
+// since the original routing.
+const voiceResponseTracker = new Map(); // voiceId -> { ts, voiceSendTs, ws }
+ipcMain.on('voice-response-done', (e, { id }) => {
+  if (!id) return;
+  const entry = voiceResponseTracker.get(id);
+  if (entry) {
+    voiceResponseTracker.delete(id);
+    console.log(`[Voice] Response done for ${id}`);
+  }
+});
+
+// v3.2.7: renderer registers that it has started
+// processing a voice prompt. We use this to suppress
+// the 8s ack-watcher stall signal: the renderer may
+// ack immediately and then hang on the LLM call,
+// which is a different bug than "renderer never
+// received the IPC". Without tracking, the watchdog
+// fires on legitimate hangs that happen AFTER ack.
+ipcMain.on('voice-response-tracking-start', (e, { id }) => {
+  if (!id) return;
+  voiceResponseTracker.set(id, { ts: Date.now() });
+  console.log(`[Voice] Response tracking started for ${id}`);
 });
 
 ipcMain.on('window:maximize', () => {
@@ -2391,42 +2447,51 @@ app.whenReady().then(() => {
           if (ws && ws.readyState === 1) {
             setTimeout(() => {
               // v3.2.3 (extended): ack-watcher deadline.
-              // If no ack IPC has been observed (logged
-              // via the global mobile-voice-ack handler
-              // above), log a hint AND send a stall event
-              // to the mobile so the user gets a hint
-              // earlier than the 30s transcribing timeout.
-              //
-              // The 8s deadline is heuristic: most
-              // renderer acks arrive in <100ms (just
-              // ipcRenderer.send latency). 8s is enough
-              // to cover renderer re-registration after
-              // page reload (rare) but not so long that
-              // the user would rather see the 30s
-              // timeout fire naturally.
-              const ackDelay = Date.now() - voiceSendTs;
-              if (ackDelay >= 8000) {
-                console.warn(`[Voice] No renderer ack within 8s — renderer may be hung`);
-                discordLog('⚠️', 'Renderer hang suspected', `No ack after 8s`, 'error');
-                // v3.2.4: count this hang and reload the
-                // renderer after 3 consecutive hangs.
-                // The reload clears the hung JS context.
-                maybeReloadRenderer();
-                // Notify the mobile. The mobile uses
-                // this to surface a 'desktop received
-                // your message but isn't responding' hint
-                // earlier than its own 30s transcribing
-                // timeout.
-                try {
-                  if (syncServer) {
-                    syncServer.sendToMobile({
-                      type: 'voice_pipeline_stalled',
-                      ts: voiceSendTs,
-                      hint: 'desktop renderer unresponsive',
-                    });
-                  }
-                } catch (_) {}
+              // v3.2.7: distinguish three cases:
+              // 1. ackedVoiceIds has voiceId — renderer
+              //    received the IPC, may be working on LLM.
+              //    Don't fire the hang signal yet.
+              // 2. voiceResponseTracker has voiceId —
+              //    renderer is processing the voice but
+              //    hasn't sent a response yet. Wait.
+              // 3. Neither has voiceId — true hang.
+              const gotAck = ackedVoiceIds.has(voiceId);
+              const inResponseTracker = voiceResponseTracker.has(voiceId);
+              if (gotAck && inResponseTracker) {
+                // Renderer is processing normally.
+                return;
               }
+              if (gotAck && !inResponseTracker) {
+                // Renderer received the IPC but never
+                // registered for response tracking.
+                // Probably hung between ack and LLM call.
+                console.warn(`[Voice] Renderer acked ${voiceId} but never started tracking`);
+                // Fall through to hang signal.
+              }
+              if (!gotAck) {
+                // Renderer never received the IPC.
+                // True hang.
+                console.warn(`[Voice] No renderer ack within 8s for ${voiceId} — renderer may be hung`);
+              }
+              discordLog('⚠️', 'Renderer hang suspected', `id=${voiceId} ack=${gotAck} tracking=${inResponseTracker}`, 'error');
+              // v3.2.4: count this hang and reload the
+              // renderer after 3 consecutive hangs.
+              // The reload clears the hung JS context.
+              maybeReloadRenderer();
+              // Notify the mobile. The mobile uses
+              // this to surface a 'desktop received
+              // your message but isn't responding' hint
+              // earlier than its own 30s transcribing
+              // timeout.
+              try {
+                if (syncServer) {
+                  syncServer.sendToMobile({
+                    type: 'voice_pipeline_stalled',
+                    ts: voiceSendTs,
+                    hint: 'desktop renderer unresponsive',
+                  });
+                }
+              } catch (_) {}
             }, 8000);
           }
         } else {

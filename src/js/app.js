@@ -4066,8 +4066,26 @@ try {
     // id, main.js can't tell which ack corresponds to
     // which pending entry.
     try { ipcRenderer.send('mobile-voice-ack', { ts: Date.now(), id }); } catch {}
+    // v3.2.7: register for response tracking. The ack
+    // alone doesn't mean the LLM will respond — the
+    // renderer could hang on the LLM call AFTER
+    // acking. Tell main.js we're processing this
+    // voiceId so the ack-watcher doesn't fire spuriously.
+    if (id) {
+      try { ipcRenderer.send('voice-response-tracking-start', { id }); } catch {}
+    }
     if (typeof window.sendChatMessage === 'function') {
-      window.sendChatMessage(prompt);
+      const sendPromise = window.sendChatMessage(prompt);
+      // v3.2.7: when sendChatMessage completes (success
+      // or failure), signal completion so main.js can
+      // remove the voice from its tracking map and stop
+      // watching for it.
+      if (id && sendPromise && typeof sendPromise.then === 'function') {
+        sendPromise.then(
+          () => { try { ipcRenderer.send('voice-response-done', { id }); } catch {} },
+          () => { try { ipcRenderer.send('voice-response-done', { id }); } catch {} }
+        );
+      }
     } else {
       setTimeout(() => {
         if (typeof window.sendChatMessage === 'function') window.sendChatMessage(prompt);
