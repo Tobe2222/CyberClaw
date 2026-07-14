@@ -2505,6 +2505,79 @@ app.whenReady().then(() => {
         if (syncServer && ws) syncServer.sendTranscript(ws, '');
       }
     },
+    // v3.2.8: image / file attachment upload from
+    // mobile. Writes to disk under ~/.openclaw/cyberclaw/
+    // attachments/ (auto-created), broadcasts via the
+    // renderer's chat pipeline so the LLM can use it
+    // for vision tasks (text-only models ignore it).
+    // Tobe's v3.10.20 follow-up: "handle the desktop
+    // side with the image handling". The mobile was
+    // already sending the bytes (v3.10.20 added
+    // sendAttachment on the SyncClient), but the desktop
+    // had no handler so they were silently dropped.
+    onAttachment: async (base64, mimeType, fileName, ws, meta) => {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        // Auto-create the attachments dir if missing.
+        // mkdir with recursive is idempotent.
+        const attachDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'attachments');
+        fs.mkdirSync(attachDir, { recursive: true });
+        // Generate a timestamped filename so collisions
+        // are impossible and the on-disk name carries
+        // time-of-arrival for debugging.
+        const ext = (fileName && fileName.includes('.'))
+          ? fileName.substring(fileName.lastIndexOf('.'))
+          : (mimeType.startsWith('image/') ? '.' + mimeType.split('/')[1] : '');
+        const ts = Date.now();
+        const safeBase = (fileName || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const savedName = `${ts}-${safeBase}${ext.startsWith('.') ? ext : (ext ? '.' + ext : '')}`;
+        const savedPath = path.join(attachDir, savedName);
+        fs.writeFileSync(savedPath, Buffer.from(base64, 'base64'));
+        const fileSize = fs.statSync(savedPath).size;
+        console.log(`[Attachment] Saved ${fileName} (${fileSize} bytes) -> ${savedPath}`);
+        discordLog('📎', 'Attachment saved', `${fileName} (${fileSize} bytes)`, 'info');
+        // Broadcast to renderer so the LLM gets a
+        // message that includes the attachment path.
+        // The renderer's chat pipeline can then forward
+        // this to the LLM as a vision-enabled message
+        // (GPT-4V / Claude Sonnet 4 / etc.) or skip it
+        // for text-only models.
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mobile-attachment', {
+            path: savedPath,
+            mimeType,
+            fileName,
+            size: fileSize,
+            meta: {
+              source: 'mobile',
+              deviceName: meta?.deviceName || 'Mobile',
+              agentId: meta?.agentId || null,
+            },
+          });
+        }
+        // Ack back to mobile so the chat can update
+        // with the attachment preview on the mobile side.
+        if (ws && ws.readyState === 1) {
+          syncServer._send(ws, {
+            type: 'attachment_received',
+            path: savedPath,
+            fileName: savedName,
+            size: fileSize,
+          });
+        }
+      } catch (e) {
+        console.error('[Attachment] Error:', e.message);
+        discordLog('❌', 'Attachment failed', e.message, 'error');
+        if (ws && ws.readyState === 1) {
+          syncServer._send(ws, {
+            type: 'attachment_error',
+            error: e.message,
+          });
+        }
+      }
+    },
   });
   syncServer.start();
 

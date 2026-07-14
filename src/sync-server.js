@@ -44,6 +44,12 @@ class SyncServer extends EventEmitter {
     this.onChatMessage = options.onChatMessage || null;
     this.onVoiceTranscript = options.onVoiceTranscript || null;
     this.onAudioInput = options.onAudioInput || null;
+    // v3.2.8: image / file attachment upload handler.
+    // Tobe's v3.10.20 follow-up: handle the desktop side
+    // with the image handling. Previously the mobile was
+    // sending the bytes but the desktop silently dropped
+    // them because this option wasn't initialized.
+    this.onAttachment = options.onAttachment || null;
 
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
@@ -327,6 +333,26 @@ class SyncServer extends EventEmitter {
           this.onAudioInput(msg.audioBase64, msg.mimeType || 'audio/wav', ws, {
             source: 'mobile',
             deviceName: client.name
+          });
+        }
+        break;
+      }
+
+      // v3.2.8: attachment (image) upload from mobile.
+      // Routes through main.js's onAttachment handler
+      // which writes to disk + broadcasts via the
+      // renderer's chat pipeline. Tobe's v3.10.20
+      // follow-up: "handle the desktop side with the
+      // image handling". Until now the mobile sent
+      // the bytes but the desktop silently dropped
+      // them because no handler existed.
+      case 'attachment': {
+        if (!client.authenticated) return;
+        if (this.onAttachment) {
+          this.onAttachment(msg.data, msg.mimeType || 'image/jpeg', msg.fileName || 'attachment', ws, {
+            source: 'mobile',
+            deviceName: client.name,
+            agentId: msg.agentId || null,
           });
         }
         break;
