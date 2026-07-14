@@ -18,6 +18,42 @@ let ptyProcess = null;
 let chatPty = null;
 let isQuitting = false;
 
+// v3.2.4: renderer-hang watchdog. Counts consecutive
+// unacked mobile-voice IPCs (Tobe's v3.10.12 + v3.10.13
+// hang case). After 3 consecutive hangs within a 5-minute
+// window, reload the renderer (webContents.reload()).
+// The reload clears the hung JS context but loses any
+// in-memory state (chat history in renderer memory, etc.)
+// — acceptable trade-off for restoring voice-mode
+// usability, since the user's primary feedback was "it
+// failed to respond" with no path forward.
+let rendererHangCount = 0;
+let rendererLastHangTs = 0;
+const RENDERER_HANG_RELOAD_THRESHOLD = 3;
+const RENDERER_HANG_RELOAD_WINDOW_MS = 5 * 60 * 1000;
+function maybeReloadRenderer() {
+  const now = Date.now();
+  if (now - rendererLastHangTs > RENDERER_HANG_RELOAD_WINDOW_MS) {
+    // Window expired — reset counter.
+    rendererHangCount = 0;
+  }
+  rendererHangCount++;
+  rendererLastHangTs = now;
+  if (rendererHangCount >= RENDERER_HANG_RELOAD_THRESHOLD) {
+    if (mainWindow && !mainWindow.isDestroyed() &&
+        mainWindow.webContents && !mainWindow.webContents.isDestroyed() &&
+        !mainWindow.webContents.isCrashed()) {
+      console.warn(`[Renderer] ${rendererHangCount} consecutive hangs — reloading`);
+      discordLog('🔄', 'Renderer auto-reload',
+        `${rendererHangCount} consecutive hangs`, 'warn');
+      try { mainWindow.webContents.reload(); } catch (e) {
+        console.error('[Renderer] reload failed:', e.message);
+      }
+    }
+    rendererHangCount = 0;
+  }
+}
+
 const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
@@ -2198,6 +2234,10 @@ app.whenReady().then(() => {
               if (ackDelay >= 8000) {
                 console.warn(`[Voice] No renderer ack within 8s — renderer may be hung`);
                 discordLog('⚠️', 'Renderer hang suspected', `No ack after 8s`, 'error');
+                // v3.2.4: count this hang and reload the
+                // renderer after 3 consecutive hangs.
+                // The reload clears the hung JS context.
+                maybeReloadRenderer();
                 // Notify the mobile. The mobile uses
                 // this to surface a 'desktop received
                 // your message but isn't responding' hint
