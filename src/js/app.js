@@ -4058,6 +4058,17 @@ try {
     console.log('[mobile-voice] received:', transcript?.substring(0, 60));
     window.addDesktopLog?.('🎤', 'Voice → AI', transcript?.substring(0, 50), 'info');
     addChatMsg('user', `🎤 ${transcript}`);
+    // v3.2.4: ack receipt so main.js can detect a hung
+    // renderer. Without this, main.js can't tell whether
+    // the renderer received the IPC or whether its JS
+    // context is wedged (Tobe's v3.10.12 report: "it
+    // failed to respond for some reason and again it
+    // continued the conversation Instead of retrying" —
+    // the desktop log showed main.js did route the
+    // transcript via webContents.send, but the renderer
+    // never logged `[mobile-voice] received`, indicating
+    // the IPC was sent into a hung JS context).
+    try { ipcRenderer.send('mobile-voice-ack', { ts: Date.now() }); } catch {}
     if (typeof window.sendChatMessage === 'function') {
       window.sendChatMessage(prompt);
     } else {
