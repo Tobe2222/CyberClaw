@@ -29,7 +29,7 @@ let isQuitting = false;
 // failed to respond" with no path forward.
 let rendererHangCount = 0;
 let rendererLastHangTs = 0;
-const RENDERER_HANG_RELOAD_THRESHOLD = 3;
+const RENDERER_HANG_RELOAD_THRESHOLD = 1;
 const RENDERER_HANG_RELOAD_WINDOW_MS = 5 * 60 * 1000;
 function maybeReloadRenderer() {
   const now = Date.now();
@@ -307,6 +307,45 @@ function createWindow() {
     if (input.key === 'F12') mainWindow.webContents.toggleDevTools();
   });
 
+  // v3.2.4: capture renderer console output to the
+  // main-process log. Without this, renderer-side
+  // console.log (e.g. "[mobile-voice] received:")
+  // only shows in DevTools. When the renderer hangs
+  // and DevTools isn't open, we can't see WHY.
+  // Tobe's v3.10.14 hang: the desktop log showed
+  // 'webContents.send("mobile-voice", ...) was called'
+  // but the renderer's console.log never produced
+  // '[mobile-voice] received' — was it because the
+  // handler never ran, or because the console output
+  // was lost? With this listener, we can tell.
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // level: 0=verbose, 1=info, 2=warning, 3=error
+    const tag = ['[VR]', '[RI]', '[RW]', '[RE]'][level] || '[R?]';
+    console.log(`${tag} ${message}`);
+  });
+
+  // v3.2.4: surface renderer crashes/unresponsiveness.
+  // did-fail-load fires when the page fails to load
+  // (network error, JS error during load, etc.).
+  // unresponsive fires when the renderer becomes
+  // unresponsive (no input handling for N seconds).
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.error(`[Renderer] did-fail-load: ${errorCode} ${errorDescription} url=${validatedURL}`);
+    discordLog('❌', 'Renderer failed to load', `${errorCode} ${errorDescription}`, 'error');
+  });
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error(`[Renderer] render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`);
+    discordLog('💥', 'Renderer crashed', `reason=${details.reason}`, 'error');
+  });
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('[Renderer] unresponsive event fired');
+    discordLog('⚠️', 'Renderer unresponsive', 'OS reported renderer hung', 'error');
+  });
+  mainWindow.webContents.on('responsive', () => {
+    console.log('[Renderer] responsive event fired');
+    discordLog('✅', 'Renderer responsive', 'recovered', 'success');
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 
   // Init local AI with userData path and window reference for progress events
@@ -321,6 +360,44 @@ function switchToMainApp() {
   mainWindow.setResizable(true);
   mainWindow.center();
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // v3.2.4: renderer-readiness ping. After the page
+  // loads, fire a `renderer-ready-check` IPC and
+  // wait for the renderer's `renderer-ready-ack`
+  // response. If no ack within 5s, the renderer's
+  // JS context is dead-on-arrival (e.g. app.js
+  // failed to load, IPC listener wasn't registered).
+  // Tobe's v3.10.14 test: fresh desktop, renderer
+  // never logged "[mobile-voice] received" — could
+  // be hang OR dead-on-arrival. This ping
+  // distinguishes the two cases.
+  //
+  // Tobe also asked us to ship a fix so voice mode
+  // is usable on a fresh desktop — auto-reload on
+  // boot if the renderer doesn't ack.
+  let rendererReadyTimer = null;
+  const onRendererReadyAck = () => {
+    if (rendererReadyTimer) {
+      clearTimeout(rendererReadyTimer);
+      rendererReadyTimer = null;
+    }
+    console.log('[Renderer] startup ready ack received');
+    rendererHangCount = 0; // reset on successful boot
+  };
+  ipcMain.on('renderer-ready-ack', onRendererReadyAck);
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('[Renderer] page finished loading, sending ready check');
+    mainWindow.webContents.send('renderer-ready-check', { ts: Date.now() });
+    rendererReadyTimer = setTimeout(() => {
+      console.error('[Renderer] no ready ack within 5s — reloading');
+      discordLog('❌', 'Renderer not responsive on boot', 'Reloading...', 'error');
+      if (mainWindow && !mainWindow.isDestroyed() &&
+          mainWindow.webContents && !mainWindow.webContents.isDestroyed() &&
+          !mainWindow.webContents.isCrashed()) {
+        try { mainWindow.webContents.reload(); } catch (_) {}
+      }
+    }, 5000);
+  });
 }
 
 // ---------------------------------------------------------------------------

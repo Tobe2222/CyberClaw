@@ -4078,6 +4078,19 @@ try {
     }
   });
 
+  // v3.2.4: readiness ping. When main.js sends
+  // `renderer-ready-check` (on page load), ack back
+  // immediately. This proves the renderer's JS
+  // context is alive and IPC handlers are
+  // registered. Without this, a renderer whose
+  // app.js failed to load (syntax error, missing
+  // module, etc.) would look identical to a hung
+  // renderer from main.js's perspective.
+  ipcRenderer.on('renderer-ready-check', () => {
+    console.log('[renderer] ready-check received, acking');
+    try { ipcRenderer.send('renderer-ready-ack', { ts: Date.now() }); } catch {}
+  });
+
   ipcRenderer.on('mobile-set-companion', (e, { companionId }) => {
     console.log('[App] Received mobile companion change request:', companionId);
     try {
