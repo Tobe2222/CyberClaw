@@ -2198,13 +2198,38 @@ app.whenReady().then(() => {
               // the mobile so the user gets the hint
               // earlier than 30s.)
               const ackDelay = Date.now() - voiceSendTs;
-              // No ack handler integration in this PR — the
-              // 8s mark just logs a hint for the desktop
-              // operator. The mobile-side transcribing
-              // timeout is the user-facing signal.
+              // v3.2.3 (extended): ack-watcher deadline.
+              // If no ack IPC has been observed (logged
+              // via the global mobile-voice-ack handler
+              // above), log a hint AND send a stall event
+              // to the mobile so the user gets a hint
+              // earlier than the 30s transcribing timeout.
+              //
+              // The 8s deadline is heuristic: most
+              // renderer acks arrive in <100ms (just
+              // ipcRenderer.send latency). 8s is enough
+              // to cover renderer re-registration after
+              // page reload (rare) but not so long that
+              // the user would rather see the 30s
+              // timeout fire naturally.
+              const ackDelay = Date.now() - voiceSendTs;
               if (ackDelay >= 8000) {
                 console.warn(`[Voice] No renderer ack within 8s — renderer may be hung`);
                 discordLog('⚠️', 'Renderer hang suspected', `No ack after 8s`, 'error');
+                // Notify the mobile. The mobile uses
+                // this to surface a 'desktop received
+                // your message but isn't responding' hint
+                // earlier than its own 30s transcribing
+                // timeout.
+                try {
+                  if (syncServer) {
+                    syncServer.sendToMobile({
+                      type: 'voice_pipeline_stalled',
+                      ts: voiceSendTs,
+                      hint: 'desktop renderer unresponsive',
+                    });
+                  }
+                } catch (_) {}
               }
             }, 8000);
           }
