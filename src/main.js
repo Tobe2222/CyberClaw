@@ -2200,6 +2200,17 @@ app.whenReady().then(() => {
         mainWindow.webContents.send('mobile-voice', { transcript, context, meta });
       }
     },
+    onMobileWakeAgent: (agentId, meta) => {
+      // v3.10.3: relay the mobile's wake-request to the
+      // renderer. The renderer's mobile-wake-request IPC
+      // handler flips sleepState for the targeted agent.
+      // The broadcastAgentsListToMobile() call inside the
+      // renderer pushes the new state back to all
+      // connected mobile clients.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-wake-request', { agentId });
+      }
+    },
     onRequestChatHistory: (ws) => {
       // Ask renderer for current chat history, then send to mobile client
       console.log('[SyncServer] Mobile requested chat history');

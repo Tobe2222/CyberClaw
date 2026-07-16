@@ -327,6 +327,24 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      case 'mobile_wake_agent': {
+        // v3.10.3: mobile-initiated companion wake. The mobile
+        // asks the desktop to flip sleepState 'sleeping' →
+        // 'awake' for the targeted agent. Handled in the
+        // renderer (where agents[] lives) via the
+        // mobile-wake-request IPC. Without this, mobile-initiated
+        // speech/chat can produce a reply from a sleeping
+        // companion and the sprite stays in 'death' pose until
+        // the next periodic broadcast.
+        if (!client.authenticated) return;
+        if (this.onMobileWakeAgent) {
+          this.onMobileWakeAgent(msg.agentId || 'companion', {
+            ws,
+            deviceName: client.name,
+          });
+        }
+        break;
+      }
       case 'audio_input': {
         if (!client.authenticated) return;
         if (this.onAudioInput) {

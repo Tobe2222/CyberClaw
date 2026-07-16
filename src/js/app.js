@@ -445,6 +445,17 @@ function broadcastAgentsListToMobile() {
         // React Native's <Image> can render it without needing
         // to resolve a relative file path from the broadcast.
         iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
+        // v3.10.3: include sleepState so the mobile arena can
+        // render a sleeping-sprite visual (CSS grayscale +
+        // dim) when the desktop considers the companion
+        // sleeping. Without this the mobile stays awake-looking
+        // even when the desktop sprite is dozing, breaking the
+        // "they sleep on the phone" expectation Tobe has. The
+        // mobile also sends `mobile-wake-agent` IPC to flip
+        // this back when the user speaks to a sleeping
+        // companion, triggering a re-broadcast via
+        // broadcastAgentsListToMobile() below.
+        sleepState: a.sleepState || 'awake',
       };
     }).filter(Boolean);
     if (mobileList.length > 0) {
@@ -739,6 +750,15 @@ window.toggleCompanionSleep = function() {
   if (window._inspectAgentId === id) updateInspect(id);
   if (activeChatAgentId === id) updateChatHeader(id);
   bumpCompanionInteraction(id); // v3.1.4: manual toggle counts as interaction
+  // v3.10.3: push the new sleepState to the mobile via the
+  // agents_list broadcast. The mobile renders a sleeping
+  // sprite (CSS filter + overlay dim) when sleepState is
+  // 'sleeping', and the user expectation (Tobe's v3.10.42
+  // report) is that the phone shows the same awake/asleep
+  // state as the desktop. Without this rebroadcast, the
+  // mobile stays on the stale agents_list until the next
+  // periodic broadcast (rare).
+  try { broadcastAgentsListToMobile(); } catch (_) {}
 };
 
 // Pop-out companion window via Electron BrowserWindow
@@ -1750,6 +1770,9 @@ window.sendChat = async function() {
       pixelArena.companion.vy = 0;
       pixelArena.companion.frame = 0;
     }
+    // v3.10.3: tell the mobile that the wake happened so
+    // its sleeping sprite visually un-grays immediately.
+    try { broadcastAgentsListToMobile(); } catch (_) {}
   }
   bumpCompanionInteraction(targetId); // v3.1.4: reset auto-sleep timer
 
@@ -1940,6 +1963,31 @@ window.sendChatMessage = async function(message) {
   if (!message) return;
   // Wake companion if sleeping
   nudgeNightWake();
+  // v3.10.3: ALSO explicitly flip sleepState from 'sleeping'
+  // to 'awake' for the active companion. sendChat() does this
+  // for DOM-typed input; sendChatMessage() (the IPC caller
+  // from the mobile and the voice_transcript handler) needs
+  // the same handling. Without it, the user can chat with a
+  // sleeping companion and the reply lands fine, but the
+  // sprite stays in 'death' pose until something else nudges
+  // the night-wake timer — looks broken from the user's POV.
+  // Mirror the same logic as sendChat() exactly so behavior
+  // is consistent regardless of who initiates the message.
+  const wakeTargetId = agentOrder[focusIndex] || pickCurrentCompanionId();
+  if (wakeTargetId && agents[wakeTargetId] && agents[wakeTargetId].sleepState === 'sleeping') {
+    agents[wakeTargetId].sleepState = 'awake';
+    if (pixelArena && pixelArena.companion && pixelArena.companion.id === wakeTargetId) {
+      pixelArena.companion.sleepState = 'awake';
+      pixelArena.companion.vx = 0;
+      pixelArena.companion.vy = 0;
+      pixelArena.companion.frame = 0;
+    }
+    addChatMsg('system', `☀️ ${agents[wakeTargetId].name} woke up`);
+    // v3.10.3: tell the mobile that the wake happened so
+    // its sleeping sprite visually un-grays immediately.
+    try { broadcastAgentsListToMobile(); } catch (_) {}
+  }
+  bumpCompanionInteraction(wakeTargetId); // reset auto-sleep timer
   if (chatBusy) {
     console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
     // Wait up to 15s for chatBusy to clear, then force-reset and proceed
@@ -4090,6 +4138,40 @@ try {
     }
   });
 
+  // v3.10.3: mobile-requested companion wake. The mobile
+  // sends this when the user starts any speech / chat input
+  // (chat submit, voice-mode entry, voice-mode recording
+  // send). The desktop flips the targeted agent's
+  // sleepState from 'sleeping' to 'awake' and rebroadcasts
+  // the agents_list so the mobile's arena un-grays
+  // immediately. Auto-wake in sendChat() / sendChatMessage()
+  // already handles the desktop-side typed/voice prompts;
+  // this IPC is the explicit mobile-initiated kick.
+  ipcRenderer.on('mobile-wake-request', (e, { agentId } = {}) => {
+    try {
+      const id = agentId || (agentOrder[focusIndex] || pickCurrentCompanionId());
+      if (!id || !agents[id]) return;
+      if (agents[id].sleepState === 'sleeping') {
+        agents[id].sleepState = 'awake';
+        if (pixelArena && pixelArena.companion && pixelArena.companion.id === id) {
+          pixelArena.companion.sleepState = 'awake';
+          pixelArena.companion.vx = 0;
+          pixelArena.companion.vy = 0;
+          pixelArena.companion.frame = 0;
+          pixelArena.companion.animation = 'idle';
+        }
+        nudgeNightWake();
+        addChatMsg('system', `☀️ ${agents[id].name} woke up (mobile wake request)`);
+        try { broadcastAgentsListToMobile(); } catch (_) {}
+        console.log('[mobile-wake] woke companion', id);
+      } else {
+        console.log('[mobile-wake] companion', id, 'already awake; no-op');
+      }
+    } catch (e) {
+      console.warn('[mobile-wake] failed:', e?.message);
+    }
+  });
+
   ipcRenderer.on('mobile-voice', (e, { id, transcript, context, meta }) => {
     const prompt = context
       ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`
@@ -5050,6 +5132,12 @@ function scheduleAutoSleep() {
         addChatMsg('system', `💤 ${a.name} fell asleep`);
         if (window._inspectAgentId === id) updateInspect(id);
         if (activeChatAgentId === id) updateChatHeader(id);
+        // v3.10.3: push the new sleepState to the mobile so it
+        // can render a sleeping-sprite overlay. Without this
+        // the mobile stays wakeful-looking until the next
+        // periodic broadcast, breaking the "they sleep on
+        // the phone too" expectation.
+        try { broadcastAgentsListToMobile(); } catch (_) {}
       }
     }
   }, 60 * 1000); // check every minute
