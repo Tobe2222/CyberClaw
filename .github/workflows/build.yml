@@ -9,6 +9,28 @@ on:
 permissions:
   contents: write
 
+# v3.2.10: GitHub Actions runners moved default Node from
+# 20 to 24 on 2026-06-02 (deprecation of Node 20 on the
+# runners). softprops/action-gh-release@v2 still targets
+# Node 20 internally and gets force-forced to Node 24 by
+# GitHub, which surfaces as a warning on every run but
+# doesn't break the build itself. The bigger problem is
+# that softprops v2 is unmaintained and silently fails to
+# create releases (see Upload-to-release job comments
+# below). Both jobs below set node-version: 22 explicitly
+# because Node 22 was Electron's last-known-working
+# baseline; bumping to 24 here would require testing the
+# rebuild of node-pty against a different ABI.
+#
+# FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 is a belt-and-
+# suspenders env var per GitHub's recommended migration
+# path (https://github.blog/changelog/2025-09-19-
+# deprecation-of-node-20-on-github-actions-runners/).
+# Any remaining Node-20 actions on the runner get
+# forced to Node 24, matching the rest of the workflow.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -20,16 +42,59 @@ jobs:
       - run: npm ci
       - run: npx electron-rebuild -f -w node-pty
       - run: npm run build:linux
+      # v3.2.10: explicitly install gh CLI. softprops v2 is
+      # being phased out per the Upload-to-release comments;
+      # the gh CLI is more reliable and explicit. The
+      # default Ubuntu runner image has gh pre-installed
+      # since 2023-02, but we add an apt-get fallback for
+      # the rare case it's been pruned from the image.
+      - name: Ensure gh CLI is installed
+        run: |
+          if ! command -v gh >/dev/null 2>&1; then
+            type -p wget >/dev/null || (sudo apt-get update && sudo apt-get install -y wget)
+            sudo apt-get install -y gh || true
+          fi
+          gh --version
       - name: Upload to release
+        # v3.2.10: switch from softprops/action-gh-release@v2
+        # to direct `gh release` CLI via nick-fields/retry.
+        # softprops v2 has been silently failing — every tagged
+        # build from v3.0.0 onward reported success but no
+        # actual GitHub Release was ever published. Verified
+        # via API: GET /repos/.../CyberClaw/releases returns
+        # 0 results despite 15+ tagged builds since v3.2.9
+        # having "successful" Upload-to-release steps. The
+        # same pattern was hit by the mobile repo (Cyber_Claw
+        # _Mobile), which migrated to this gh CLI approach in
+        # v3.2.25 and has been publishing reliably since
+        # (30+ releases, see API).
+        #
+        # gh release create handles name deduplication (you'd
+        # get "vv3.2.9" if you naively prepended "v") and
+        # create-or-update semantics. The retry wrapper
+        # absorbs transient HTTPS/CDN blips.
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
-            dist/*.AppImage
-            dist/*.deb
+        uses: nick-fields/retry@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          max_attempts: 4
+          retry_on: error
+          retry_wait_seconds: 15
+          timeout_minutes: 5
+          command: |
+            set -e
+            REF="${{ github.ref_name }}"
+            if gh release view "$REF" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release upload "$REF" dist/*.AppImage dist/*.deb \
+                --repo "${{ github.repository }}" --clobber
+            else
+              gh release create "$REF" \
+                --repo "${{ github.repository }}" \
+                --title "$REF" \
+                --generate-notes \
+                dist/*.AppImage dist/*.deb
+            fi
 
   build-windows:
     runs-on: windows-2022  # pinned to a known-working VS 2022 image
@@ -65,14 +130,43 @@ jobs:
       - name: Build Windows installer
         run: npm run build:win
       - name: Upload to release
+        # See linux job for the softprops v2 -> gh CLI migration
+        # rationale (silent failures since v3.0.0).
+        #
+        # v3.2.10.1: nick-fields/retry@v3 defaults to
+        # **powershell** on Windows runners. Our command
+        # uses bash syntax (set -e, /dev/null, 2>&1, the
+        # `if ... then ... fi` block). PowerShell can't
+        # parse that and reports a syntax error on the
+        # first line of every attempt, so all 4 retries
+        # fail identically with the same parse error
+        # (1m 5s total = 4×~2s fail + 3×15s waits).
+        # Force shell: bash here so the Windows runner
+        # uses Git Bash (shipped with windows-2022 +
+        # setup-node@v4 vendors bash).
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
-            dist/*.exe
+        uses: nick-fields/retry@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          max_attempts: 4
+          retry_on: error
+          retry_wait_seconds: 15
+          timeout_minutes: 5
+          shell: bash
+          command: |
+            set -e
+            REF="${{ github.ref_name }}"
+            if gh release view "$REF" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release upload "$REF" dist/*.exe \
+                --repo "${{ github.repository }}" --clobber
+            else
+              gh release create "$REF" \
+                --repo "${{ github.repository }}" \
+                --title "$REF" \
+                --generate-notes \
+                dist/*.exe
+            fi
 
   build-mac:
     runs-on: macos-latest
@@ -85,11 +179,27 @@ jobs:
       - run: npx electron-rebuild -f -w node-pty
       - run: npm run build:mac
       - name: Upload to release
+        # See linux job for the softprops v2 -> gh CLI migration
+        # rationale (silent failures since v3.0.0).
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
-            dist/*.dmg
+        uses: nick-fields/retry@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          max_attempts: 4
+          retry_on: error
+          retry_wait_seconds: 15
+          timeout_minutes: 5
+          command: |
+            set -e
+            REF="${{ github.ref_name }}"
+            if gh release view "$REF" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release upload "$REF" dist/*.dmg \
+                --repo "${{ github.repository }}" --clobber
+            else
+              gh release create "$REF" \
+                --repo "${{ github.repository }}" \
+                --title "$REF" \
+                --generate-notes \
+                dist/*.dmg
+            fi
