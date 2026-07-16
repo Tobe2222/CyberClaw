@@ -3956,7 +3956,46 @@ try {
   // Mobile sends this when the user taps a different companion tab;
   // we send back the last 50 messages for that companion only.
   ipcRenderer.on('mobile-request-agent-history', (e, { agentId }) => {
-    const hist = (chatHistoryByAgent[agentId] || []).slice(-50);
+    // v3.2.9: normalize the message shape before sending to
+    // mobile. The internal `chatHistoryByAgent` entries are
+    // stored as `{type, text, name, emoji, ts}` (the legacy
+    // desktop format), but the mobile's renderMessage guard
+    // rejects any message where `typeof item.isUser !==
+    // 'boolean'`. Without this normalization, ALL messages
+    // from agent_history (including voice-mode transcripts
+    // captured while HomeScreen was unmounted) render as an
+    // empty <View /> — the chat shows historical messages
+    // that came through the typed-message path / chat_history
+    // / chat events (all of which set isUser properly) but
+    // anything that ONLY landed in chatHistoryByAgent (i.e.
+    // voice-mode sessions captured while WakeModeScreen was
+    // the active screen) appears to be missing.
+    //
+    // Tobe's report on v3.2.8: "voice mode chats should
+    // appear in the chat aswell." Every voice transcript
+    // and LLM response during voice mode is in
+    // chatHistoryByAgent on the desktop (via
+    // addChatMsg → chatHistoryByAgent push), but the
+    // mobile's agent_history response shape was
+    // `{type, text, name, emoji, ts}` which failed the
+    // `typeof item.isUser === 'boolean'` render guard.
+    //
+    // Fix: map each entry to `{text, isUser, agentId,
+    // agentName, ts}` before sending. `type === 'user'`
+    // becomes `isUser: true`; everything else (including
+    // 'agent' and 'system') becomes `isUser: false`.
+    // The agentName comes from the entry's `name` field
+    // (the desktop stores display names like 'Clawsuu',
+    // 'Lamasuu' there); if missing, falls back to the
+    // requested agentId.
+    const raw = (chatHistoryByAgent[agentId] || []).slice(-50);
+    const hist = raw.map((m) => ({
+      text: m.text,
+      isUser: m.type === 'user',
+      agentId: m.name || agentId,
+      agentName: m.name || null,
+      ts: m.ts,
+    }));
     console.log(`[App] Mobile requesting agent history for ${agentId}, sending ${hist.length} messages`);
     ipcRenderer.invoke('sync-send-agent-history', { agentId, messages: hist })
       .then(() => console.log(`[App] Agent history sent for ${agentId}`))
