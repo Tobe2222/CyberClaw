@@ -131,6 +131,104 @@ def _apply_patch() -> None:
     _LOGGER.info("Patched openwakeword.train.convert_onnx_to_tflite → onnx2tf")
 
 
+def _apply_gain_patch() -> None:
+    """Monkey-patch openwakeword.data.augment_clips to give the Gain
+    augmentation a SYMMETRIC range.
+
+    v3.2.13: openWakeWord's default `augment_clips` constructs its
+    torch_audiomentations Compose with `Gain(max_gain_in_db=0, ...)`.
+    Combined with the Gain class's default `min_gain_in_db=-18`, that
+    pins the augmentation range to [-18, 0] dB — attenuation only.
+    Newly trained wake models therefore never see amplified positives,
+    and end up amplitude-biased: they fire reliably only in the
+    narrow volume band the user happened to record at. Whisper,
+    shout, or call from across the room — all attenuated relative to
+    training — are missed.
+
+    The fix: monkey-patch `augment_clips` with a copy that
+    string-replaces `max_gain_in_db=0` → `max_gain_in_db=18`,
+    restoring the symmetric ±18dB range. The replacement function
+    is otherwise identical, including the bg-vs-no-bg branching and
+    the per-clip / per-batch RIR pass.
+
+    Idempotent — a second call is a no-op.
+
+    Tobe's volume-invariance ask ("i want it to be more dependent
+    on the sounds, not volume, so i can whisper and shout to it")
+    is the symptom. This is the cause.
+    """
+    import openwakeword.data as _oww_data  # noqa: WPS433
+
+    if getattr(_oww_data.augment_clips, "_oww_gain_patched", False):
+        return
+
+    import inspect  # noqa: WPS433
+
+    try:
+        src = inspect.getsource(_oww_data.augment_clips)
+    except (OSError, TypeError) as e:
+        _LOGGER.warning(
+            "Could not read augment_clips source for Gain patch (%s); "
+            "trained models will be attenuation-only volume augmentation. "
+            "Whisper / shout / distance wake detection will be unreliable.",
+            e,
+        )
+        return
+
+    # Both Gain() constructions live in the function body. The marker
+    # `max_gain_in_db=0` is unique to those two lines (other functions
+    # in openwakeword.data use a different parameter set). Idempotent
+    # because if we already patched, _oww_gain_patched=True short-
+    # circuits above.
+    if "max_gain_in_db=0" not in src:
+        # Either already patched or upstream changed shape. Log and
+        # bail — no replacement = no behaviour change.
+        if "max_gain_in_db=18" in src:
+            _LOGGER.info("openwakeword Gain already at +18 dB; no patch needed.")
+        else:
+            _LOGGER.warning(
+                "openwakeword augment_clips has unexpected Gain config "
+                "(no max_gain_in_db=0 marker); volume augmentation may "
+                "be misconfigured. Trained model volume invariance "
+                "behaviour is undefined."
+            )
+        return
+
+    patched_src = src.replace("max_gain_in_db=0", "max_gain_in_db=18")
+
+    # Compile in a fresh module-like namespace so the new function
+    # is independent of this wrapper's globals. `augment_clips`
+    # references module-level names (audiomentations,
+    # torch_audiomentations, torchaudio, np, torch, etc.) which
+    # live in openwakeword.data. Import those from there so the
+    # patched function resolves them at call time.
+    import openwakeword.data as _oww_data_ns  # noqa: WPS433
+    ns = {
+        "__name__": "openwakeword.data",
+        "__file__": _oww_data_ns.__file__,
+    }
+    # Copy the module's public attributes that augment_clips uses.
+    for name in dir(_oww_data_ns):
+        if name.startswith("_") and name != "__builtins__":
+            continue
+        ns[name] = getattr(_oww_data_ns, name)
+
+    code = compile(patched_src, _oww_data_ns.__file__, "exec")
+    exec(code, ns)
+
+    new_func = ns.get("augment_clips")
+    if new_func is None:
+        _LOGGER.error("Patched augment_clips not found after exec; aborting patch.")
+        return
+
+    new_func._oww_gain_patched = True  # type: ignore[attr-defined]
+    _oww_data.augment_clips = new_func
+    _LOGGER.info(
+        "Patched openwakeword.data.augment_clips Gain range to symmetric "
+        "[-18, +18] dB. Trained wake models will be volume-invariant."
+    )
+
+
 def main() -> int:
     """Run openwakeword.train with the deprecated onnx_tf path replaced.
 
@@ -148,6 +246,12 @@ def main() -> int:
         level=logging.INFO,
         format="%(levelname)s:%(name)s:%(message)s",
     )
+
+    # v3.2.13: monkey-patch openwakeword.data.augment_clips to give the
+    # Gain augmentation a symmetric [-18, +18] dB range. Must run BEFORE
+    # we exec openwakeword.train (which calls augment_clips during the
+    # --augment_clips substep). See _apply_gain_patch() for the why.
+    _apply_gain_patch()
 
     import openwakeword.train as _oww_train_mod  # noqa: WPS433
 
