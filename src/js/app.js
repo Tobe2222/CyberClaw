@@ -604,7 +604,12 @@ function renderArenaSettingsCompanions() {
     } else {
       // v3.1.21: prefer per-agent emoji, fall back to sprite icon
       // from the catalog so the avatar matches the sprite.
-      avatar.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
+      // v3.10.65: strip the desktop's default 🤖 before falling
+      // back to the sprite icon — same pattern as the chat
+      // header, channel tabs, and broadcast paths. Without this,
+      // agents without an explicit emoji show a robot instead of
+      // their companion sprite in the carousel.
+      avatar.textContent = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
     }
     row.appendChild(avatar);
 
@@ -1634,7 +1639,11 @@ function updateChatHeader(agentId) {
     } else {
       // v3.1.21: prefer per-agent emoji, fall back to sprite icon
       // from the catalog so the avatar matches the sprite.
-      headerAvatar.innerHTML = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
+      // v3.10.65: strip the desktop's default 🤖 before falling
+      // back — agents without an explicit emoji would otherwise
+      // show a robot in the chat header instead of their
+      // companion sprite.
+      headerAvatar.innerHTML = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
     }
   }
   if (headerStatus) {
@@ -1678,7 +1687,12 @@ function renderCompanionChannelTabs() {
     } else {
       const em = document.createElement('div');
       em.className = 'companion-tab-emoji';
-      em.textContent = agent.emoji || getSpriteIcon(agent._pixelCompanionId) || '🤖';
+      // v3.10.65: strip the desktop's default 🤖 before falling
+      // back to the sprite icon — same fix as the chat header
+      // avatar. Without this, channel tabs for agents without an
+      // explicit emoji show a robot instead of their companion
+      // sprite.
+      em.textContent = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
       tab.appendChild(em);
     }
     const name = document.createElement('span');
@@ -2182,6 +2196,33 @@ function restoreChatHistory() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
+      // v3.10.65: one-shot migration — rewrite any legacy
+      // `emoji: '🤖'` entries to the resolved sprite icon (or
+      // null) so the chat message prefix shows the companion
+      // sprite instead of the desktop's default robot. Older
+      // histories were persisted before the v3.1.96 strip
+      // pattern was applied at the render site, so the messages
+      // showed no prefix at all. After this migration they'll
+      // show the sprite icon — matching what new messages
+      // already do via the same strip pattern at addChatMsg
+      // call sites.
+      let migrated = 0;
+      for (const [agentId, msgs] of Object.entries(parsed)) {
+        if (!Array.isArray(msgs)) continue;
+        const agent = agents[agentId];
+        const fallbackIcon = (agent && agent.emoji && agent.emoji !== '🤖')
+          ? agent.emoji
+          : getSpriteIcon(agent && agent._pixelCompanionId);
+        for (const m of msgs) {
+          if (m && m.emoji === '🤖') {
+            m.emoji = fallbackIcon || null;
+            migrated++;
+          }
+        }
+      }
+      if (migrated > 0) {
+        console.log(`[Restore] Migrated ${migrated} legacy 🤖 emoji(s) in chat history to sprite icons`);
+      }
       chatHistoryByAgent = parsed;
       // Also rebuild the flat `chatHistory` mirror in chronological
       // order (oldest first) so the legacy code that reads from it
