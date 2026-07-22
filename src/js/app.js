@@ -4213,6 +4213,59 @@ try {
     }
   });
 
+  // v3.10.72: mobile dropped a food/treat on the
+  // arena. Mirror the desktop's placeTreatOnArena() in
+  // src/js/app.js:4905 which calls
+  // promptCompanionReaction('I just gave you ' +
+  // TREAT_NAMES[treat] + '. What do you think?') right
+  // after dropping the treat.
+  ipcRenderer.on('mobile-arena-treat-placed', (e, { treat, meta } = {}) => {
+    try {
+      const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
+      const name = TREAT_NAMES[t];
+      const prompt = `I just gave you ${name}. What do you think?`;
+      console.log('[mobile-treat] placed:', t);
+      window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
+      // Reuse the desktop's promptCompanionReaction so the
+      // AI text reply format is identical to a desktop
+      // tap on the same treat.
+      if (typeof window.promptCompanionReaction === 'function') {
+        window.promptCompanionReaction(prompt);
+      } else {
+        // Fallback: send as a regular chat message with
+        // a [mobile-treat] tag so the AI still has
+        // context. promptCompanionReaction may not be
+        // loaded on every build.
+        console.warn('[mobile-treat] promptCompanionReaction missing; falling back to addChatMsg');
+        addChatMsg('user', `[mobile-treat] ${prompt}`);
+      }
+    } catch (err) {
+      console.warn('[mobile-treat] placed failed:', err?.message);
+    }
+  });
+
+  // v3.10.72: companion ate a treat (from the mobile
+  // arena's seek-and-eat logic). Mirror the desktop's
+  // promptCompanionEat(eatenType) callback in
+  // src/js/pixel-arena.js.
+  ipcRenderer.on('mobile-arena-treat-eaten', (e, { treat, meta } = {}) => {
+    try {
+      const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
+      const name = TREAT_NAMES[t];
+      const prompt = `I just ate ${name}. Give a short happy reaction about how it tasted.`;
+      console.log('[mobile-treat] eaten:', t);
+      window.addDesktopLog?.('😋', 'Companion ate', t, 'info');
+      if (typeof window.promptCompanionReaction === 'function') {
+        window.promptCompanionReaction(prompt);
+      } else {
+        console.warn('[mobile-treat] promptCompanionReaction missing; falling back to addChatMsg');
+        addChatMsg('user', `[mobile-treat] ${prompt}`);
+      }
+    } catch (err) {
+      console.warn('[mobile-treat] eaten failed:', err?.message);
+    }
+  });
+
   ipcRenderer.on('mobile-voice', (e, { id, transcript, context, meta }) => {
     const prompt = context
       ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`

@@ -2211,6 +2211,31 @@ app.whenReady().then(() => {
         mainWindow.webContents.send('mobile-wake-request', { agentId });
       }
     },
+    onArenaTreatPlaced: (treat, meta) => {
+      // v3.10.72: mobile dropped a food/treat on the
+      // arena. Forward to the renderer which calls
+      // promptCompanionReaction('I just gave you ' +
+      // TREAT_NAMES[treat] + '. What do you think?') so
+      // the AI text reply matches the visual reaction.
+      // Mirrors the desktop's placeTreatOnArena() in
+      // src/js/app.js:4905.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-arena-treat-placed', {
+          treat, meta,
+        });
+      }
+    },
+    onArenaTreatEaten: (treat, meta) => {
+      // v3.10.72: companion ate a treat (from the
+      // mobile arena's seek-and-eat logic). Forward to
+      // the renderer for the same reaction as the
+      // desktop's promptCompanionEat() callback.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-arena-treat-eaten', {
+          treat, meta,
+        });
+      }
+    },
     onRequestChatHistory: (ws) => {
       // Ask renderer for current chat history, then send to mobile client
       console.log('[SyncServer] Mobile requested chat history');

@@ -345,6 +345,37 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+      case 'arena_treat_placed': {
+        // v3.10.72: mobile dropped a treat on the arena. The
+        // desktop handles the AI text reaction so the chat
+        // log matches the visual. Mirrors the desktop's
+        // placeTreatOnArena() in src/js/app.js:4905, which
+        // calls promptCompanionReaction('I just gave you X.
+        // What do you think?') right after dropping the treat.
+        if (!client.authenticated) return;
+        if (this.onArenaTreatPlaced) {
+          this.onArenaTreatPlaced(msg.treat || 'apple', {
+            ws,
+            deviceName: client.name,
+          });
+        }
+        break;
+      }
+      case 'arena_treat_eaten': {
+        // v3.10.72: companion ate a treat. Desktop's seek-and-eat
+        // logic in src/js/pixel-arena.js fires its own
+        // promptCompanionEat() callback for local eats; this
+        // path is the mobile mirror so the chat log shows the
+        // same reaction when the mobile arena's companion eats.
+        if (!client.authenticated) return;
+        if (this.onArenaTreatEaten) {
+          this.onArenaTreatEaten(msg.treat || 'apple', {
+            ws,
+            deviceName: client.name,
+          });
+        }
+        break;
+      }
       case 'audio_input': {
         if (!client.authenticated) return;
         if (this.onAudioInput) {
