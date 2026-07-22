@@ -2299,9 +2299,9 @@ app.whenReady().then(() => {
     // doesn't exist anymore".
     onListQuests: () => {
       try {
-        return loadQuests().map(q => ({ id: q.id, name: q.name || '(unnamed)' }));
-      }
-      catch { return []; }
+        const all = loadQuests();
+        return all.map(q => ({ id: q.id, name: q.name || '(unnamed)' }));
+      } catch { return []; }
     },
     // v3.8.0: phone-side quest edit. Each callback is the
     // WebSocket counterpart of the corresponding IPC handler.

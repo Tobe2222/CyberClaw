@@ -51,6 +51,30 @@ class SyncServer extends EventEmitter {
     // them because this option wasn't initialized.
     this.onAttachment = options.onAttachment || null;
 
+    // v3.10.79: quest-related callbacks. v3.1.51 added
+    // 5 inbound WebSocket message types (update_quest,
+    // delete_quest, create_quest, set_quest_active,
+    // mark_quest_goal_done) plus onListQuests for
+    // diagnostics, but the constructor never copied
+    // them onto `this`. Result: every quest edit,
+    // deletion, status change, and goal completion
+    // over WebSocket silently no-op'd with the failure
+    // response saying "available: []" because the
+    // callbacks returned undefined. Tobe hit this on
+    // 2026-07-22 with the quest editor repeatedly
+    // showing "Couldn't update quest: quest not found"
+    // even though the mobile's broadcast showed the
+    // quest was there. The bug had been latent since
+    // 2026-07-08 (v3.1.51). This assignment finally
+    // wires the callbacks.
+    this.onSetQuestActive = options.onSetQuestActive || null;
+    this.onUpdateQuest = options.onUpdateQuest || null;
+    this.onDeleteQuest = options.onDeleteQuest || null;
+    this.onMarkQuestGoalDone = options.onMarkQuestGoalDone || null;
+    this.onCreateQuest = options.onCreateQuest || null;
+    this.onListQuests = options.onListQuests || null;
+    this.onRequestQuestsList = options.onRequestQuestsList || null;
+
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
     // reconnected) can pick up where the bar should be. Without
