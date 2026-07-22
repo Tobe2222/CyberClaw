@@ -514,24 +514,26 @@ class SyncServer extends EventEmitter {
         try {
           const ok = this.onUpdateQuest ? this.onUpdateQuest(id, updates || {}) : null;
           if (!ok) {
-            // v3.10.74: include the list of available
-            // quest ids + the requested id in the error
-            // response. Tobe reported the same
-            // "quest not found" error in v3.10.73 testing
-            // even with the broadcast-acked gate, so the
-            // cache/broadcast mismatch theory didn't
-            // cover the case. Now the mobile can show
-            // "looking for X, available [a,b,c]" so we
-            // can diagnose what's happening. Also log
-            // server-side with the same info.
-            const available = this.onListQuests ? (this.onListQuests() || []).map(q => q.id) : [];
-            console.log('[SyncServer] update_quest: id not found. requested:', id, 'available:', available);
+            // v3.10.77: include the full list of
+            // available quests (with id + name) in the
+            // error response. Tobe has hit repeated
+            // "quest not found" errors — first with the
+            // v3.10.73 broadcast-acked gate, then again
+            // with the v3.10.74 diagnostic info. The
+            // new info (full id+name pairs) plus the
+            // name-based fallback in onUpdateQuest
+            // should narrow down what's actually
+            // happening. Log server-side with the
+            // same info so the desktop log captures it.
+            const available = this.onListQuests ? (this.onListQuests() || []) : [];
+            console.log('[SyncServer] update_quest: id not found. requested:', id, 'available:', JSON.stringify(available));
             this._send(ws, {
               type: 'quests_update_failed',
               action: 'update_quest',
               id,
               error: 'quest not found',
               available,
+              wantedName: updates && updates.name ? String(updates.name).trim() : null,
             });
           }
         } catch (e) {

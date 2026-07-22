@@ -2288,13 +2288,19 @@ app.whenReady().then(() => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
     },
-    // v3.10.74: returns the current list of quest ids
-    // for diagnostic inclusion in failed-mutation
-    // error responses. Lets the mobile show
-    // "looking for X, available [a, b, c]" so we can
-    // diagnose id-mismatch bugs without guessing.
+    // v3.10.77: returns the current list of quests
+    // (with id + name) for diagnostic inclusion in
+    // failed-mutation error responses. Lets the mobile
+    // show "looking for X, available: [{id: a, name:
+    // foo}, {id: b, name: bar}]" so we can see whether
+    // the id is genuinely unknown or just stale.
+    // v3.10.74 returned just the ids; the user couldn't
+    // tell "wrong id for the right quest" from "quest
+    // doesn't exist anymore".
     onListQuests: () => {
-      try { return loadQuests().map(q => q.id); }
+      try {
+        return loadQuests().map(q => ({ id: q.id, name: q.name || '(unnamed)' }));
+      }
       catch { return []; }
     },
     // v3.8.0: phone-side quest edit. Each callback is the
@@ -2324,7 +2330,50 @@ app.whenReady().then(() => {
     onUpdateQuest: (id, updates) => {
       if (!id) return null;
       const quests = loadQuests();
-      const idx = quests.findIndex(q => q.id === id);
+      let idx = quests.findIndex(q => q.id === id);
+      // v3.10.77: name-based fallback. If the exact id
+      // doesn't match, try to find a quest with the
+      // same name (and directory, if provided). Tobe
+      // hit repeated "quest not found" errors on
+      // 2026-07-22 even with the v3.10.73 broadcast-
+      // acked gate on the mobile. The most likely cause
+      // is a desktop reinstall/restart that regenerated
+      // ids while the mobile's broadcast cached the old
+      // ones. The cache gets refreshed on the next
+      // broadcast but the editor's `editorOpen.id` is
+      // captured at open time — if the broadcast
+      // arrived mid-edit, the editor's id is from the
+      // OLD cache, the desktop has the NEW id.
+      //
+      // The fallback: if we can't find by id, try by
+      // name. If we find a single match, log the
+      // mismatch (so we can see how often it happens)
+      // and proceed with the update. This trades a
+      // little safety ("is the user's edit really
+      // meant for THIS quest?") for usability ("don't
+      // fail just because ids drifted"). The desktop
+      // log captures the warning so we can diagnose.
+      if (idx < 0 && updates && typeof updates.name === 'string') {
+        const wantedName = String(updates.name).trim();
+        if (wantedName) {
+          const nameMatches = quests
+            .map((q, i) => ({ q, i }))
+            .filter(({ q }) => (q.name || '').trim() === wantedName);
+          if (nameMatches.length === 1) {
+            idx = nameMatches[0].i;
+            console.warn(
+              '[main.js] onUpdateQuest: id mismatch, recovered by name. wanted id:',
+              id, 'matched:', idx, 'quest name:', wantedName,
+            );
+          } else if (nameMatches.length > 1) {
+            console.warn(
+              '[main.js] onUpdateQuest: id mismatch, multiple name matches, refusing to guess. wanted id:',
+              id, 'name:', wantedName, 'matches:',
+              nameMatches.map(m => m.q.id),
+            );
+          }
+        }
+      }
       if (idx < 0) return null;
       // v3.8.0: only allow a safe set of fields to be
       // updated over WebSocket. Block `active` and
