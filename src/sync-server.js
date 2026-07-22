@@ -514,7 +514,25 @@ class SyncServer extends EventEmitter {
         try {
           const ok = this.onUpdateQuest ? this.onUpdateQuest(id, updates || {}) : null;
           if (!ok) {
-            this._send(ws, { type: 'quests_update_failed', action: 'update_quest', id, error: 'quest not found' });
+            // v3.10.74: include the list of available
+            // quest ids + the requested id in the error
+            // response. Tobe reported the same
+            // "quest not found" error in v3.10.73 testing
+            // even with the broadcast-acked gate, so the
+            // cache/broadcast mismatch theory didn't
+            // cover the case. Now the mobile can show
+            // "looking for X, available [a,b,c]" so we
+            // can diagnose what's happening. Also log
+            // server-side with the same info.
+            const available = this.onListQuests ? (this.onListQuests() || []).map(q => q.id) : [];
+            console.log('[SyncServer] update_quest: id not found. requested:', id, 'available:', available);
+            this._send(ws, {
+              type: 'quests_update_failed',
+              action: 'update_quest',
+              id,
+              error: 'quest not found',
+              available,
+            });
           }
         } catch (e) {
           console.log('[SyncServer] onUpdateQuest failed:', e?.message);

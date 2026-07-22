@@ -2288,6 +2288,15 @@ app.whenReady().then(() => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
     },
+    // v3.10.74: returns the current list of quest ids
+    // for diagnostic inclusion in failed-mutation
+    // error responses. Lets the mobile show
+    // "looking for X, available [a, b, c]" so we can
+    // diagnose id-mismatch bugs without guessing.
+    onListQuests: () => {
+      try { return loadQuests().map(q => q.id); }
+      catch { return []; }
+    },
     // v3.8.0: phone-side quest edit. Each callback is the
     // WebSocket counterpart of the corresponding IPC handler.
     // The mutation goes through the same loadQuests → modify →

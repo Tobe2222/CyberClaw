@@ -4215,52 +4215,47 @@ try {
 
   // v3.10.72: mobile dropped a food/treat on the
   // arena. Mirror the desktop's placeTreatOnArena() in
-  // src/js/app.js:4905 which calls
-  // promptCompanionReaction('I just gave you ' +
-  // TREAT_NAMES[treat] + '. What do you think?') right
-  // after dropping the treat.
+  // src/js/app.js:4905.
+  //
+  // v3.10.74: Tobe asked that the food/play reactions
+  // NOT appear in chat ("The comments the companion
+  // makes when given food or played with does not need
+  // to appear in the chat"). The visual reaction (😋
+  // emoji overlay) is enough. We no longer call
+  // promptCompanionReaction — that triggers an LLM
+  // round-trip and adds the reply to chat, which is
+  // noise for trivial actions like eating a treat.
+  // We still log to the desktop log panel for debugging.
   ipcRenderer.on('mobile-arena-treat-placed', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
-      const name = TREAT_NAMES[t];
-      const prompt = `I just gave you ${name}. What do you think?`;
+      const name = TREAT_NAMES[t] || t;
       console.log('[mobile-treat] placed:', t);
+      // v3.10.74: log to the desktop log panel for
+      // debugging only — NOT to chat, NOT to events.
+      // Tobe wants feeding to be a non-verbal action:
+      // visual emoji overlay on the mobile arena is
+      // the only feedback the user gets. addChatMsg /
+      // addEventMsg would put it in chat/events which
+      // is the chat-noise Tobe reported.
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
-      // Reuse the desktop's promptCompanionReaction so the
-      // AI text reply format is identical to a desktop
-      // tap on the same treat.
-      if (typeof window.promptCompanionReaction === 'function') {
-        window.promptCompanionReaction(prompt);
-      } else {
-        // Fallback: send as a regular chat message with
-        // a [mobile-treat] tag so the AI still has
-        // context. promptCompanionReaction may not be
-        // loaded on every build.
-        console.warn('[mobile-treat] promptCompanionReaction missing; falling back to addChatMsg');
-        addChatMsg('user', `[mobile-treat] ${prompt}`);
-      }
     } catch (err) {
       console.warn('[mobile-treat] placed failed:', err?.message);
     }
   });
 
   // v3.10.72: companion ate a treat (from the mobile
-  // arena's seek-and-eat logic). Mirror the desktop's
-  // promptCompanionEat(eatenType) callback in
-  // src/js/pixel-arena.js.
+  // arena's seek-and-eat logic). v3.10.74: same
+  // reasoning as placed — keep chat clean, no LLM
+  // round-trip for trivial eat actions. The 😋+❤️
+  // emoji overlay on the mobile arena provides the
+  // visual feedback.
   ipcRenderer.on('mobile-arena-treat-eaten', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
-      const name = TREAT_NAMES[t];
-      const prompt = `I just ate ${name}. Give a short happy reaction about how it tasted.`;
+      const name = TREAT_NAMES[t] || t;
       console.log('[mobile-treat] eaten:', t);
       window.addDesktopLog?.('😋', 'Companion ate', t, 'info');
-      if (typeof window.promptCompanionReaction === 'function') {
-        window.promptCompanionReaction(prompt);
-      } else {
-        console.warn('[mobile-treat] promptCompanionReaction missing; falling back to addChatMsg');
-        addChatMsg('user', `[mobile-treat] ${prompt}`);
-      }
     } catch (err) {
       console.warn('[mobile-treat] eaten failed:', err?.message);
     }
