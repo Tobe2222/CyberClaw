@@ -1107,9 +1107,40 @@ function buildActiveQuestContext(quest) {
   // it doesn't bloat the context window. The LLM picks up the
   // tag shape from prior uses in the conversation; the hint
   // here just reminds it that the tools are available.
-  ctx += ` | Tools: [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
+  // v3.2.21: added CREATE_QUEST to the list. Without it, the
+  // agent has no in-context hint that creating a new quest is
+  // possible from a chat reply, so when the user says "create
+  // a quest called X" the agent falls back to scheduling a
+  // cron job or guessing at IPC paths. Tobe hit this on
+  // 2026-07-23: "[CREATE_QUEST: ...]" tag was supported by
+  // the parser but never advertised to the agent. Same
+  // CREATE_QUEST tag is now also injected unconditionally in
+  // sendChatMessage() via buildQuestToolsHint() so the agent
+  // sees it even when there's no active quest.
+  ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
   ctx += `] `;
   return ctx;
+}
+
+// v3.2.21: standalone quest-tools hint. Always injected in
+// chat messages (regardless of whether there's an active
+// quest) so the agent knows it can create new quests from
+// the chat reply. Without this, the only hint is inside
+// buildActiveQuestContext() which only fires when there's
+// an active quest — so a user asking "create a new quest
+// called X" on a fresh workspace would get no in-context
+// hint that CREATE_QUEST exists, and the agent would fall
+// back to scheduling a cron or hallucinating IPC paths.
+// Tobe hit this on 2026-07-23 ("@Clawsuu any idea why the
+// companion could not create a new quest?").
+//
+// Keep this list in sync with the tag parsers in
+// result.reply parsing blocks below (search for
+// "QUEST_SET_ACTIVE" / "QUEST_APPEND_CHANGE" /
+// "QUEST_MARK_GOAL" / "CREATE_QUEST"). The hint is one
+// short clause to minimize context-window bloat.
+function buildQuestToolsHint() {
+  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
 // Helper: pull the current active quest id from the quest list
 // without going through disk. Falls back to the in-memory cache
@@ -1804,6 +1835,12 @@ window.sendChat = async function() {
   // Build message with context
   let fullMessage = message;
 
+  // v3.2.21: always inject the quest-tools hint so the agent
+  // knows it can CREATE_QUEST from the chat reply, regardless
+  // of whether there's an active quest. See buildQuestToolsHint
+  // for the full rationale.
+  fullMessage = buildQuestToolsHint() + fullMessage;
+
   // Add quest context if active. v3.1.50: use the new
   // buildActiveQuestContext helper which adds goals + recent
   // changes to the context, so the LLM has memory of what it
@@ -2050,6 +2087,12 @@ window.sendChatMessage = async function(message) {
   if (!agent) return;
 
   let fullMessage = message;
+
+  // v3.2.21: always inject the quest-tools hint. See
+  // buildQuestToolsHint for the full rationale. Mirror of the
+  // sendChat() injection above so voice/mobile/typed paths
+  // all see the available quest tags.
+  fullMessage = buildQuestToolsHint() + fullMessage;
 
   // Add quest context if active
   if (activeQuestId) {
@@ -4599,6 +4642,9 @@ window.sendChat = async function() {
     if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
 
     let fullMessage = (message || 'Describe this image') + '\n[Image attached: ' + imgData.filename + ']';
+    // v3.2.21: also inject the quest-tools hint for image-attach
+    // chat path so the agent sees the same available actions.
+    fullMessage = buildQuestToolsHint() + fullMessage;
 
     chatBusy = true;
     document.getElementById('chat-send').disabled = true;
