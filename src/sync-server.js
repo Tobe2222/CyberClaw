@@ -1135,10 +1135,20 @@ class SyncServer extends EventEmitter {
       console.log('[SyncServer] No cached quests_list — asking main process to refresh');
       try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
     }
-    // Replay last chat message if it arrived while client was disconnected (60s window)
-    if (this._lastChatMessage && (Date.now() - this._lastChatMessage.ts) < 60000) {
-      console.log('[SyncServer] Replaying recent chat_message to reconnected client');
-      this._send(ws, this._lastChatMessage.payload);
+    // v3.2.23: replay the recent AI messages buffer so a
+    // reconnecting mobile catches up on messages that landed
+    // during its disconnect. Previous version cached only
+    // ONE message with a 60s window — way too narrow for
+    // any real disconnect (Tobe's report: phone sleep /
+    // app switch / brief connectivity loss all exceed 60s).
+    // Now we replay the entire rolling buffer (up to 50
+    // messages); the mobile's dedupe drops anything it
+    // already has.
+    if (this._recentAiMessages && this._recentAiMessages.length > 0) {
+      console.log(`[SyncServer] Replaying ${this._recentAiMessages.length} recent AI message(s) to reconnected client`);
+      for (const entry of this._recentAiMessages) {
+        this._send(ws, entry.payload);
+      }
     }
     // Replay last audio response if it arrived while client was disconnected (60s window)
     if (this._lastAudioResponse && (Date.now() - this._lastAudioResponse.ts) < 60000) {
@@ -1154,8 +1164,36 @@ class SyncServer extends EventEmitter {
 
   broadcastChatMessage(agentId, text, isUser = false, agentName = null) {
     const payload = { type: 'chat_message', agentId, agentName, text, isUser, ts: Date.now() };
-    // Cache last AI message for reconnect replay
-    if (!isUser) this._lastChatMessage = { payload, ts: Date.now() };
+    // v3.2.23: cache recent AI messages for reconnect replay.
+    // The previous version cached only ONE message with a 60s
+    // window — so a mobile that disconnected for >60s (the
+    // typical case for a phone going to sleep, switching apps,
+    // or briefly losing connectivity) would miss agent replies
+    // that landed during the disconnect. Tobe reported (2026-07-23
+    // 21:29) "i swipe down to the bottom but no more chats
+    // appear" — his phone lost the WS connection during an
+    // agent reply broadcast, and the replay window had long
+    // since expired.
+    //
+    // New behaviour: keep a rolling buffer of the last 50 AI
+    // messages. On reconnect, replay ALL of them in order; the
+    // mobile's appendAgentMessage dedupe (v3.10.89 Stage 1+2+3)
+    // drops duplicates already in its local cache, so the
+    // replay is safe even if the mobile already has some
+    // messages.
+    //
+    // Keep at most 50 entries to bound memory (50 messages ×
+    // ~5KB each = 250KB, negligible).
+    if (!isUser) {
+      if (!this._recentAiMessages) this._recentAiMessages = [];
+      this._recentAiMessages.push({ payload, ts: Date.now() });
+      if (this._recentAiMessages.length > 50) {
+        this._recentAiMessages = this._recentAiMessages.slice(-50);
+      }
+      // v3.2.23 also keep _lastChatMessage for backward compat
+      // with any code path that still reads it.
+      this._lastChatMessage = this._recentAiMessages[this._recentAiMessages.length - 1];
+    }
     this._broadcast(payload);
   }
 
