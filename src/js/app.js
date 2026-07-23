@@ -4084,20 +4084,73 @@ try {
   // both the flat history (mobile tab) and the per-
   // companion history (mobile companion tab) get it.
   //
-  // The session tail ALSO broadcasts directly to
-  // connected mobiles via syncServer.broadcastChatMessage,
-  // so any mobile currently connected gets the message
-  // in real time. This IPC handler is for the renderer-
-  // side history cache so reconnected mobiles see the
-  // message in chat history (the broadcast only reaches
-  // currently-connected mobiles).
+  // v3.2.22 fix: do NOT call addChatMsg here. The
+  // session tail in main.js ALREADY broadcasts the
+  // message to currently-connected mobiles via
+  // syncServer.broadcastChatMessage. addChatMsg would
+  // re-broadcast via sync-broadcast-chat IPC, causing
+  // the mobile to receive each message TWICE. Tobe
+  // reported (2026-07-23 17:54) that the mobile was
+  // "spamming" — 91 addChatMsg broadcasts in a single
+  // debug session because the tail was firing for
+  // EVERY assistant message in the Discord session
+  // (including my own internal exec-driven runs that
+  // ended with a final text reply, all of which got
+  // pushed to the mobile).
+  //
+  // The session tail is also refined in main.js to
+  // skip non-Discord sessions (the desktop's own chat
+  // pipeline handles those via sync-broadcast-chat
+  // already). Combined with this fix, the flow is:
+  //
+  //   user → mobile chat → desktop chat pipeline →
+  //   addChatMsg → sync-broadcast-chat → mobile
+  //
+  //   user → Discord → OpenClaw Discord routing →
+  //   agent reply → tailer onChatMessage →
+  //   syncServer.broadcastChatMessage → mobile
+  //                                + this IPC handler →
+  //   chatHistory push (no broadcast)
+  //
+  // Each path is broadcast-once. No more double-broadcast.
   ipcRenderer.on('openclaw-session-chat-message', (e, { agentId, agentName, text, isUser, ts }) => {
     try {
-      addChatMsg(isUser ? 'user' : 'agent', text, agentName || agentId || 'Clawsuu');
-      // addChatMsg already broadcasts via sync-broadcast-
-      // chat, which goes to the mobile. We just needed
-      // to update the renderer's local history so future
-      // request_chat_history pulls see the message.
+      const resolvedAgentId = agentName || agentId || 'companion';
+      // v3.2.22: push directly to chatHistory /
+      // chatHistoryByAgent, bypassing addChatMsg's
+      // broadcast side effect. The sync-server broadcast
+      // already went out from main.js.
+      chatHistory.push({
+        text,
+        isUser: !!isUser,
+        agentId: resolvedAgentId,
+        ts: ts || Date.now(),
+      });
+      if (chatHistory.length > 100) {
+        chatHistory = chatHistory.slice(-100);
+      }
+      const bucketedAgentId =
+        agentIdForName(resolvedAgentId) ||
+        activeChatAgentId ||
+        (agentOrder[focusIndex]) ||
+        null;
+      if (bucketedAgentId) {
+        if (!chatHistoryByAgent[bucketedAgentId]) {
+          chatHistoryByAgent[bucketedAgentId] = [];
+        }
+        chatHistoryByAgent[bucketedAgentId].push({
+          type: isUser ? 'user' : 'agent',
+          text,
+          name: agentName || null,
+          emoji: null,
+          ts: ts || Date.now(),
+        });
+        if (chatHistoryByAgent[bucketedAgentId].length > 200) {
+          chatHistoryByAgent[bucketedAgentId] =
+            chatHistoryByAgent[bucketedAgentId].slice(-200);
+        }
+        schedulePersistChatHistory();
+      }
       window.addDesktopLog?.('💬', 'OpenClaw tail', text.substring(0, 60));
     } catch (err) {
       console.error('[App] openclaw-session-chat-message handler error:', err);

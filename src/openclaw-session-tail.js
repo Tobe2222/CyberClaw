@@ -129,20 +129,35 @@ class OpenClawSessionTail {
   }
 
   async refreshSessionKeys() {
-    // sessions.json contains an array of session metadata
-    // including sessionId and sessionKey. We rebuild
-    // fileToKey based on filenames.
+    // sessions.json can be either a list (older format)
+    // or a dict keyed by sessionKey (newer format). Both
+    // formats have sessionId fields per entry. We rebuild
+    // fileToKey based on filenames so we can map a JSONL
+    // file to its sessionKey (for Discord-vs-pipeline filtering).
     const sessionsFile = path.join(this.sessionsDir, 'sessions.json');
-    let sessions = [];
+    let entries = [];
     try {
       const raw = fs.readFileSync(sessionsFile, 'utf8');
       const parsed = JSON.parse(raw);
-      sessions = parsed.sessions || (Array.isArray(parsed) ? parsed : []);
+      if (Array.isArray(parsed)) {
+        entries = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.sessions)) {
+          entries = parsed.sessions;
+        } else {
+          // Dict format: keys are sessionKeys, values
+          // are the entry objects. Flatten into a list,
+          // remembering each entry's key from the dict key.
+          entries = Object.entries(parsed).map(
+            ([key, value]) => ({ ...value, key })
+          );
+        }
+      }
     } catch (e) {
       // sessions.json may not exist yet on a fresh install
       return;
     }
-    for (const s of sessions) {
+    for (const s of entries) {
       if (s.sessionId) {
         const fp = path.join(this.sessionsDir, `${s.sessionId}.jsonl`);
         this.fileToKey.set(fp, s.key || '');
@@ -163,6 +178,7 @@ class OpenClawSessionTail {
         .filter(f => !f.includes('.checkpoint.'))
         .filter(f => !f.includes('.trajectory.'));
     } catch (e) {
+      this.onLog('error', `SessionTail poll: readdir failed: ${e.message}`);
       return;
     }
     for (const f of files) {
@@ -188,12 +204,16 @@ class OpenClawSessionTail {
         // Split on newlines; JSONL is line-delimited.
         const newContent = buf.toString('utf8');
         const lines = newContent.split('\n').filter(l => l.trim());
+        if (lines.length > 0) {
+          this.onLog('debug', `SessionTail: read ${lines.length} new lines from ${f} (delta=${len}b, sessionKey=${this.fileToKey.get(fp) || 'unknown'})`);
+        }
         for (const line of lines) {
           this.processLine(fp, line);
         }
       } catch (e) {
         // File might be in the middle of being written;
         // skip this round.
+        this.onLog('error', `SessionTail poll: error reading ${f}: ${e.message}`);
       }
     }
   }
@@ -234,9 +254,19 @@ class OpenClawSessionTail {
     if (isDiscord) {
       for (const part of msg.content) {
         if (part && part.type === 'toolCall' && part.name) {
+          this.onLog('debug', `SessionTail: tool call detected: ${part.name} in session ${path.basename(filePath)}`);
           this.onToolCall({ tool: part.name, sessionKey });
         }
       }
+    } else if (!sessionKey) {
+      // sessionKey is empty — sessions.json hasn't been
+      // populated yet for this file. This is the
+      // most common cause of "agent_tool events aren't
+      // firing" bugs. Log it once per file.
+      this.onLog('debug', `SessionTail: file ${path.basename(filePath)} has no sessionKey mapping (sessions.json out of sync)`);
+      // Trigger a refresh of sessions.json so future
+      // polls pick up the mapping.
+      this.refreshSessionKeys();
     }
     let text = '';
     for (const part of msg.content) {
@@ -251,6 +281,35 @@ class OpenClawSessionTail {
     if (!msgId) return;
     if (this.pipelineOwnedIds.has(msgId)) return;
     if (this.fileLastBroadcastId.get(filePath) === msgId) return;
+
+    // v3.2.22: only broadcast FINAL replies, not mid-run
+    // continuations. The JSONL writes an assistant
+    // message for every model response — some have
+    // `stopReason: "toolUse"` (the agent wants to call
+    // another tool, more assistant messages will follow)
+    // and some have `stopReason: "stop"` or `"end_turn"`
+    // (the agent finished, this is the user-facing reply).
+    //
+    // Without this filter, every exec-driven agent run
+    // fires a chat message broadcast, including my own
+    // internal debugging runs that ended with a final
+    // text reply (none of which were meant for the
+    // user). Tobe reported (2026-07-23 17:54) that the
+    // mobile was "spamming" with 90+ messages during a
+    // debug session because of this. The fix: skip
+    // `stopReason: "toolUse"` messages; only broadcast
+    // `"stop"`, `"end_turn"`, or any non-toolUse stop.
+    const stopReason = msg.stopReason;
+    const isFinalReply =
+      !stopReason || stopReason === 'stop' || stopReason === 'end_turn' || stopReason === 'max_tokens';
+    if (!isFinalReply) {
+      // Mid-run tool-use message — don't broadcast.
+      // Mark this file as recently seen so we don't
+      // reprocess the same line, but skip the
+      // broadcast.
+      this.fileLastBroadcastId.set(filePath, msgId);
+      return;
+    }
 
     // Skip if this session isn't Discord-routed. The
     // chat pipeline uses `agent:<id>:main` and similar

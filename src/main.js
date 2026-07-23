@@ -2752,6 +2752,7 @@ app.whenReady().then(() => {
     // the tool name.
     onToolCall: ({ tool }) => {
       const friendly = toolFriendlyName(tool);
+      console.log(`[openclaw-tail] broadcasting agent_tool tool=${tool} friendly=${friendly}`);
       if (syncServer) {
         syncServer._broadcast({
           type: 'agent_tool',
