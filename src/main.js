@@ -2746,20 +2746,47 @@ app.whenReady().then(() => {
     sessionsDir: path.join(os.homedir(), '.openclaw', 'agents', 'clawsuu', 'sessions'),
     agentId: 'clawsuu',
     onTyping: (active) => {
-      if (syncServer) syncServer.broadcastTyping(active);
+      // v3.2.25: don't broadcast typing from Discord-routed
+      // runs to mobile. Same rationale as onChatMessage
+      // (Tobe: "discord conversation should not appear on
+      // the app"). The mobile's chat panel should only
+      // react to activity that's part of an in-app
+      // conversation. Tool-call broadcasts (onToolCall
+      // below) are similarly suppressed because the user
+      // isn't engaging with the agent via the mobile.
+      // (The onChatMessage and onToolCall callbacks are
+      // all no-ops now since the chat panel shouldn't
+      // show anything from Discord. The tailer is kept
+      // alive because it owns session-key bookkeeping
+      // and the activeQuestRef update for cases where
+      // the desktop-pipeline session does need it.)
+      // See CHANGES_3.2.25.md for the full rationale.
     },
     onChatMessage: ({ agentId, agentName, text, isUser }) => {
-      // Mirror the renderer's addChatMsg behavior:
-      //  - broadcast to mobile via syncServer (so the
-      //    mobile's chat stream gets the message)
-      //  - also push into the renderer's chat panel via
-      //    IPC, so a mobile that pulls chat history
-      //    later still sees the message
-      // The syncServer's broadcastChatMessage fires the
-      // mobile broadcast. For the renderer we send an
-      // IPC that the renderer can use to inject the
-      // message into chatHistoryByAgent.
-      if (syncServer) syncServer.broadcastChatMessage(agentId, text, !!isUser, agentName);
+      // v3.2.25: Discord-routed agent replies do NOT broadcast
+      // to the mobile. Tobe reported (2026-07-24 00:13): "if we
+      // have conversation here on discord it should not appear
+      // on the app." The original v3.2.21 tailer existed to
+      // bridge Discord-routed replies to mobile (which was the
+      // missing case at the time), but that was wrong — the
+      // mobile chat panel should reflect conversations the user
+      // had IN THE APP, not conversations the agent had in
+      // parallel channels (Discord / webchat / cron / etc.).
+      //
+      // The cyberclaw chat pipeline path (mobile-typed,
+      // voice-typed) already broadcasts via
+      // sync-broadcast-chat. This tailer was redundant for
+      // that case. Removing the broadcast keeps the channels
+      // cleanly separated:
+      //   - User → mobile chat → desktop pipeline →
+      //     addChatMsg → sync-broadcast-chat → mobile
+      //   - User → Discord → OpenClaw → agent reply →
+      //     (no mobile broadcast; reply goes to Discord only)
+      //
+      // We still send the IPC to the renderer so the
+      // renderer's chatHistoryByAgent stays in sync — in case
+      // the user later switches to the desktop and views the
+      // chat there. But we do NOT broadcast to mobile.
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('openclaw-session-chat-message', {
           agentId, agentName, text, isUser, ts: Date.now(),
@@ -2777,16 +2804,15 @@ app.whenReady().then(() => {
     // concise") — the mobile cycles the text based on
     // the tool name.
     onToolCall: ({ tool }) => {
-      const friendly = toolFriendlyName(tool);
-      console.log(`[openclaw-tail] broadcasting agent_tool tool=${tool} friendly=${friendly}`);
-      if (syncServer) {
-        syncServer._broadcast({
-          type: 'agent_tool',
-          tool,
-          friendly,
-          ts: Date.now(),
-        });
-      }
+      // v3.2.25: tool-call broadcasts are also suppressed
+      // for Discord-routed runs. The mobile's chat panel
+      // should not react to activity from conversations the
+      // user isn't having in the app. The chat pipeline
+      // path (mobile-typed / voice-typed) handles its own
+      // typing/tool-call visuals internally — no need for
+      // the OpenClaw tailer to broadcast anything for
+      // Discord-routed runs.
+      console.log(`[openclaw-tail] ignoring tool call tool=${tool} for Discord session (no mobile broadcast)`);
     },
     onLog: (level, msg) => {
       discordLog('📡', 'OpenClaw tail', msg, level);
