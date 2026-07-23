@@ -2237,6 +2237,32 @@ app.whenReady().then(() => {
         mainWindow.webContents.send('mobile-wake-request', { agentId });
       }
     },
+    onMobileActivityPing: (agentId, meta) => {
+      // v3.10.91: relay the mobile's activity heartbeat to
+      // the renderer. The renderer's mobile-activity-ping
+      // IPC handler bumps lastInteractionTs on the targeted
+      // agent so its auto-sleep timer resets. The agent
+      // stays awake while the mobile user is actively
+      // engaged (chat tab open + app foregrounded).
+      //
+      // Without this, a mobile-only user (no chat submit,
+      // no voice, no treats on desktop) sees the companion
+      // fall asleep after 12 min, even though they're
+      // actively looking at the chat on mobile. Tobe's
+      // report (2026-07-23 23:28): "The companions should
+      // sleep on the mobile also like they do on desktop."
+      //
+      // Implementation note: the IPC sends through to the
+      // renderer because the agents[] data structure lives
+      // there (renderer is the source of truth for
+      // sleepState + lastInteractionTs). The renderer's
+      // handler calls bumpCompanionInteraction() and is
+      // done — no state update needed since
+      // lastInteractionTs isn't broadcast to the mobile.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mobile-activity-ping', { agentId });
+      }
+    },
     onArenaTreatPlaced: (treat, meta) => {
       // v3.10.72: mobile dropped a food/treat on the
       // arena. Forward to the renderer which calls

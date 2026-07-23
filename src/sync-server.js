@@ -369,6 +369,36 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      case 'mobile_activity_ping': {
+        // v3.10.91: mobile-initiated activity heartbeat. The
+        // mobile sends this every ~30s while the user is
+        // actively engaged (chat tab open, app foregrounded).
+        // The desktop bumps lastInteractionTs on the targeted
+        // agent so its auto-sleep timer resets. Without this,
+        // a mobile-only user (no chat / voice / drops on desktop)
+        // sees the companion fall asleep after 12 min even
+        // though they're actively looking at the chat on
+        // mobile. Tobe's report (2026-07-23 23:28): "The
+        // companions should sleep on the mobile also like they
+        // do on desktop."
+        //
+        // Note: this only RESETS the auto-sleep timer; it does
+        // NOT flip sleepState. If the companion is already
+        // sleeping, this won't wake it — the user has to send
+        // an actual interaction (chat / voice / treat / wake
+        // button) for that. This is intentional: passive viewing
+        // shouldn't wake a sleeping companion; only engagement
+        // should.
+        if (!client.authenticated) return;
+        if (this.onMobileActivityPing) {
+          this.onMobileActivityPing(msg.agentId || 'companion', {
+            ws,
+            deviceName: client.name,
+          });
+        }
+        break;
+      }
       case 'arena_treat_placed': {
         // v3.10.72: mobile dropped a treat on the arena. The
         // desktop handles the AI text reaction so the chat

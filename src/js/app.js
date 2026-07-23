@@ -4355,6 +4355,35 @@ try {
     }
   });
 
+  // v3.10.91: mobile activity heartbeat. The mobile sends
+  // this every ~30s while the user is actively engaged
+  // (chat tab open + app foregrounded) so the desktop can
+  // reset the companion's auto-sleep timer. Without this,
+  // a mobile-only user (no chat submit / voice / treats
+  // on desktop) sees the companion fall asleep after
+  // 12 min even though they're actively looking at the
+  // chat on mobile.
+  //
+  // Only RESETS the timer — does NOT flip sleepState. If
+  // the companion is already sleeping, this won't wake it.
+  // Active engagement (chat / voice / treat / wake) is
+  // required to wake a sleeping companion. Passive viewing
+  // only delays the auto-sleep.
+  ipcRenderer.on('mobile-activity-ping', (e, { agentId } = {}) => {
+    try {
+      const id = agentId || (agentOrder[focusIndex] || pickCurrentCompanionId());
+      if (!id || !agents[id]) return;
+      // Reuses the same bumpCompanionInteraction() that
+      // desktop-side chat/voice/treat actions call. This
+      // resets lastInteractionTs which the desktop's
+      // scheduleAutoSleep() loop checks every minute.
+      bumpCompanionInteraction(id);
+      console.log('[mobile-activity-ping] bumped', id);
+    } catch (err) {
+      console.warn('[mobile-activity-ping] failed:', err?.message);
+    }
+  });
+
   // v3.10.72: mobile dropped a food/treat on the
   // arena. Mirror the desktop's placeTreatOnArena() in
   // src/js/app.js:4905.
