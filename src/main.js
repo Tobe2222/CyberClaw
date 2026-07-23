@@ -212,6 +212,32 @@ function saveQuests(quests) {
 
 const { execSync, exec: execCb, spawn } = require('child_process');
 const SyncServer = require('./sync-server');
+// v3.2.21: friendly tool-name mapping for the better
+// "thinking" indicator. Maps internal OpenClaw tool
+// names to short, concise text the mobile can show
+// while the agent is working. Tobe asked for "short
+// and concise" — each entry is a single short phrase.
+function toolFriendlyName(tool) {
+  switch (tool) {
+    case 'exec': return 'Running command...';
+    case 'read': return 'Reading file...';
+    case 'write': return 'Writing file...';
+    case 'edit': return 'Editing file...';
+    case 'message': return 'Sending message...';
+    case 'browser': return 'Browsing...';
+    case 'web_search': return 'Searching...';
+    case 'process': return 'Running process...';
+    case 'cron': return 'Scheduling...';
+    case 'memory_search': return 'Searching memory...';
+    case 'memory_write': return 'Saving to memory...';
+    default: return 'Thinking...';
+  }
+}
+
+// v3.2.21: tail OpenClaw session JSONL files so Discord-
+// routed agent replies reach the mobile chat. See
+// ./openclaw-session-tail.js for the full rationale.
+const { OpenClawSessionTail } = require('./openclaw-session-tail');
 const httpsNode = require('https');
 const osNode = require('os');
 const localAI = require('./local-ai');
@@ -2674,6 +2700,74 @@ app.whenReady().then(() => {
     },
   });
   syncServer.start();
+
+  // v3.2.21: start the OpenClaw session tailer. When a
+  // Discord-routed agent run completes (e.g. user types
+  // in Discord #cyber-dev), the tailer picks up the
+  // assistant text message from the OpenClaw session
+  // JSONL file and broadcasts it via sync-broadcast-chat
+  // to the mobile. Without this, the mobile's chat
+  // history shows nothing when the user types in Discord
+  // — the chat pipeline only handles replies from its
+  // own channel (mobile chat, voice, typed desktop).
+  //
+  // Sessions owned by the desktop's own chat pipeline
+  // (key `agent:clawsuu:main` and friends) are skipped
+  // because they already broadcast via the normal
+  // addChatMsg + sync-broadcast-chat IPC path. Skipping
+  // them prevents double-broadcasting the same message.
+  const openclawSessionTail = new OpenClawSessionTail({
+    sessionsDir: path.join(os.homedir(), '.openclaw', 'agents', 'clawsuu', 'sessions'),
+    agentId: 'clawsuu',
+    onTyping: (active) => {
+      if (syncServer) syncServer.broadcastTyping(active);
+    },
+    onChatMessage: ({ agentId, agentName, text, isUser }) => {
+      // Mirror the renderer's addChatMsg behavior:
+      //  - broadcast to mobile via syncServer (so the
+      //    mobile's chat stream gets the message)
+      //  - also push into the renderer's chat panel via
+      //    IPC, so a mobile that pulls chat history
+      //    later still sees the message
+      // The syncServer's broadcastChatMessage fires the
+      // mobile broadcast. For the renderer we send an
+      // IPC that the renderer can use to inject the
+      // message into chatHistoryByAgent.
+      if (syncServer) syncServer.broadcastChatMessage(agentId, text, !!isUser, agentName);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('openclaw-session-chat-message', {
+          agentId, agentName, text, isUser, ts: Date.now(),
+        });
+      }
+    },
+    // v3.2.21: tool-call events for the better "thinking"
+    // indicator on mobile. When the agent calls a tool
+    // (exec, read, etc.), we broadcast a tool-call event
+    // so the mobile can show "💭 Running command..."
+    // or "💭 Reading file...". This is a thin event that
+    // doesn't replace the typing broadcast — the mobile
+    // shows it briefly while typing is on. The text is
+    // intentionally short (Tobe asked for "short and
+    // concise") — the mobile cycles the text based on
+    // the tool name.
+    onToolCall: ({ tool }) => {
+      const friendly = toolFriendlyName(tool);
+      if (syncServer) {
+        syncServer._broadcast({
+          type: 'agent_tool',
+          tool,
+          friendly,
+          ts: Date.now(),
+        });
+      }
+    },
+    onLog: (level, msg) => {
+      discordLog('📡', 'OpenClaw tail', msg, level);
+    },
+  });
+  openclawSessionTail.start().catch(e => {
+    console.error('[main] OpenClawSessionTail start failed:', e);
+  });
 
   // v3.1.95: prime the quests cache so a mobile that connects
   // immediately after desktop boot doesn't have to wait for the

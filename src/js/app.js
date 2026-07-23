@@ -4076,6 +4076,52 @@ try {
   ipcRenderer.on('mobile-disconnected', () => { updateMobileStatus(); window.addDesktopLog('📴', 'Mobile disconnected', '', 'warn'); });
   ipcRenderer.on('mobile-paired', () => { updateMobileStatus(); window.addDesktopLog('🔗', 'Mobile paired', '', 'success'); });
 
+  // v3.2.21: OpenClaw session tailer pushes assistant
+  // text messages from Discord-routed agent runs into
+  // the renderer's chat history so the mobile can see
+  // them on the next request_chat_history pull. We add
+  // the message to chatHistory + chatHistoryByAgent so
+  // both the flat history (mobile tab) and the per-
+  // companion history (mobile companion tab) get it.
+  //
+  // The session tail ALSO broadcasts directly to
+  // connected mobiles via syncServer.broadcastChatMessage,
+  // so any mobile currently connected gets the message
+  // in real time. This IPC handler is for the renderer-
+  // side history cache so reconnected mobiles see the
+  // message in chat history (the broadcast only reaches
+  // currently-connected mobiles).
+  ipcRenderer.on('openclaw-session-chat-message', (e, { agentId, agentName, text, isUser, ts }) => {
+    try {
+      addChatMsg(isUser ? 'user' : 'agent', text, agentName || agentId || 'Clawsuu');
+      // addChatMsg already broadcasts via sync-broadcast-
+      // chat, which goes to the mobile. We just needed
+      // to update the renderer's local history so future
+      // request_chat_history pulls see the message.
+      window.addDesktopLog?.('💬', 'OpenClaw tail', text.substring(0, 60));
+    } catch (err) {
+      console.error('[App] openclaw-session-chat-message handler error:', err);
+    }
+  });
+  ipcRenderer.on('openclaw-session-typing', (e, { active }) => {
+    // The tailer emits typing-off when it sees an
+    // assistant text message. We don't have an agent-
+    // run in-flight via the chat pipeline (this came
+    // from Discord), so we don't add a typing bubble
+    // to the chat history. Just update the typing
+    // broadcast so the mobile's "thinking" indicator
+    // clears.
+    if (active === false) {
+      // The chat pipeline owns the typing indicator
+      // when it's in flight. When it isn't, the
+      // indicator should already be off — this is
+      // belt-and-suspenders. The main process's
+      // broadcastTyping IPC handler fires the actual
+      // sync-server broadcast; we don't need to
+      // re-broadcast from here.
+    }
+  });
+
   ipcRenderer.on('mobile-request-chat-history', () => {
     // Send current chat history to mobile
     console.log('[App] Mobile requesting chat history, sending', chatHistory.length, 'messages');

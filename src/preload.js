@@ -5,6 +5,19 @@ window.ipcRenderer = ipcRenderer;
 
 // Expose API on window for renderer scripts
 window.cyberclaw = {
+  // v3.2.21: listener for OpenClaw-session-tailing chat
+  // messages. The main process watches the OpenClaw
+  // session JSONL files for Discord-routed agent runs
+  // and pushes the assistant replies here so the
+  // renderer's chat history stays in sync. The handler
+  // in app.js (around line 2xxx — see comment on
+  // openclaw-session-tail.js) adds the message to
+  // chatHistoryByAgent + chatHistory so it's visible
+  // on subsequent request_chat_history pulls.
+  onSessionChatMessage: (cb) =>
+    ipcRenderer.on('openclaw-session-chat-message', (_, payload) => cb(payload)),
+  onSessionTyping: (cb) =>
+    ipcRenderer.on('openclaw-session-typing', (_, payload) => cb(payload)),
   terminal: {
     spawn: (opts) => ipcRenderer.invoke('terminal:spawn', opts),
     onData: (cb) => ipcRenderer.on('terminal:data', (_, data) => cb(data)),
