@@ -1162,9 +1162,9 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   return quests[idx] || null;
 });
 
-// v3.2.30: per-quest behavior file. Each quest can have a
-// markdown file (default: <quest.directory>/BEHAVIOR.md, or
-// ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md if no
+// v3.2.30: per-quest project instructions file. Each quest can have a
+// markdown file (default: <quest.directory>/INSTRUCTIONS.md, or
+// ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md if no
 // directory is set) that holds project-specific behavior
 // instructions for the companion. The file content is read
 // by buildActiveQuestContext() on the renderer and injected
@@ -1176,19 +1176,19 @@ ipcMain.handle('quests:update', (event, id, updates) => {
 // an Edit button; the mobile shows it read-only (no edit
 // on mobile — the user can edit via the desktop). The
 // IPCs are read-by-id (single quest) and write-by-id.
-function questBehaviorPath(quest) {
+function questInstructionsPath(quest) {
   if (!quest) return null;
   if (quest.directory) {
-    return path.join(quest.directory, 'BEHAVIOR.md');
+    return path.join(quest.directory, 'INSTRUCTIONS.md');
   }
-  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'BEHAVIOR.md');
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'INSTRUCTIONS.md');
 }
 
-ipcMain.handle('quests:read-behavior', (event, questId) => {
+ipcMain.handle('quests:read-project-instructions', (event, questId) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questBehaviorPath(quest);
+  const file = questInstructionsPath(quest);
   try {
     if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
     const content = fs.readFileSync(file, 'utf-8');
@@ -1198,11 +1198,11 @@ ipcMain.handle('quests:read-behavior', (event, questId) => {
   }
 });
 
-ipcMain.handle('quests:save-behavior', (event, questId, content) => {
+ipcMain.handle('quests:save-project-instructions', (event, questId, content) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questBehaviorPath(quest);
+  const file = questInstructionsPath(quest);
   try {
     // Ensure parent dir exists. If the quest has a
     // directory we write into it directly; if not we
@@ -2416,16 +2416,16 @@ app.whenReady().then(() => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
     },
-    // v3.2.30: read a quest's behavior file (markdown).
+    // v3.2.30: read a quest's project instructions file (markdown).
     // The mobile is read-only on this file; the desktop's
     // quest editor is the source of truth for changes.
     // We call the same IPC the desktop's renderer uses
-    // (ipcMain.handle('quests:read-behavior', ...)) so
+    // (ipcMain.handle('quests:read-project-instructions', ...)) so
     // the resolution path is identical: if the quest has
-    // a directory, read <directory>/BEHAVIOR.md; else
-    // read ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md.
+    // a directory, read <directory>/INSTRUCTIONS.md; else
+    // read ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md.
     // Returns { ok, content, path } (or { ok: false, error }).
-    onReadQuestBehavior: async (questId) => {
+    onReadQuestInstructions: async (questId) => {
       try {
         // Re-use the IPC handler's logic by simulating a
         // call. The handler is private to the IPC layer,
@@ -2433,7 +2433,7 @@ app.whenReady().then(() => {
         const quests = loadQuests();
         const quest = quests.find(q => q.id === questId);
         if (!quest) return { ok: false, error: 'quest not found' };
-        const file = questBehaviorPath(quest);
+        const file = questInstructionsPath(quest);
         if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
         const content = fs.readFileSync(file, 'utf-8');
         return { ok: true, content, path: file };
@@ -3132,7 +3132,7 @@ app.whenReady().then(() => {
     // via --user-negative-dir. If nearMissSamples is
     // missing or empty, the script falls back to using
     // only the Piper-TTS-generated adversarial negatives
-    // (the v3.1.49 behavior).
+    // (the v3.1.49 pattern).
     //
     // The python script copies the contents of this dir
     // into negative_train / negative_test (80/20 split) so
@@ -3178,7 +3178,7 @@ app.whenReady().then(() => {
     // v3.1.53: pass the user-negative dir only if we
     // actually wrote some near-miss samples. Without
     // this, the script defaults to using only the Piper
-    // adversarial negatives (v3.1.49 behavior).
+    // adversarial negatives (v3.1.49 pattern).
     if (userNegativeDir) {
       args.push('--user-negative-dir', userNegativeDir);
     }

@@ -718,16 +718,16 @@
 }
 .quest-status-toggle:hover { background: rgba(255,107,53,0.15); }
 
-/* v3.2.30: per-quest behavior file button. Sits in the
+/* v3.2.32: per-quest project instructions file button. Sits in the
    .quest-actions-row next to .quest-status-toggle. Same
    small-font pattern but gold-tinted so it stands out as
    "this opens an editor" vs "this toggles status". */
-.quest-behavior-btn {
+.quest-instructions-btn {
   font-size: 9px; padding: 2px 6px; border-radius: 3px;
   background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25);
   color: #fbbf24; cursor: pointer; margin-top: 4px; margin-left: 4px; display: inline-block;
 }
-.quest-behavior-btn:hover { background: rgba(251,191,36,0.16); }
+.quest-instructions-btn:hover { background: rgba(251,191,36,0.16); }
 
 .quest-log-content {
   padding: 20px;
@@ -1322,18 +1322,18 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
 /* v3.2.31: per-quest behavior file editor (inline in
    the quest editor). The textarea is monospace + dark
    so it looks like a code/file editor, matching the
-   v3.2.30 standalone behavior modal. The hint above
+   v3.2.30 standalone instructions modal. The hint above
    the textarea explains what the file is for; the
    path below the textarea shows where it lives on
    disk so the user can verify it's in the right
    place. */
-.qe-behavior-hint {
+.qe-instructions-hint {
   font-size: 10px;
   color: var(--text-muted);
   margin-bottom: 6px;
   line-height: 1.4;
 }
-.qe-behavior-textarea {
+.qe-instructions-textarea {
   width: 100%;
   font-family: monospace;
   font-size: 11px;
@@ -1346,12 +1346,12 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
   min-height: 200px;
   font-family: 'Menlo', 'Consolas', monospace;
 }
-.qe-behavior-path {
+.qe-instructions-path {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 4px;
 }
-.qe-behavior-path code {
+.qe-instructions-path code {
   background: rgba(0, 0, 0, 0.3);
   padding: 1px 4px;
   border-radius: 3px;
