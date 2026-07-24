@@ -74,8 +74,8 @@ class SyncServer extends EventEmitter {
     this.onCreateQuest = options.onCreateQuest || null;
     this.onListQuests = options.onListQuests || null;
     this.onRequestQuestsList = options.onRequestQuestsList || null;
-    // v3.2.32: per-quest project instructions file read. Mobile calls
-    // request_quest_project_instructions and main.js answers with the
+    // v3.2.33: per-quest project instructions file read. Mobile calls
+    // request_quest_instructions and main.js answers with the
     // file content via the same IPC the desktop's renderer
     // uses. Read-only on mobile.
     this.onReadQuestInstructions = options.onReadQuestInstructions || null;
@@ -548,17 +548,17 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      case 'request_quest_project_instructions': {
+      case 'request_quest_instructions': {
         // v3.2.30: mobile requests the markdown content of
         // a quest's project instructions file. We forward to the
         // main.js callback which calls the same
-        // cyberclaw.quests.readProjectInstructions IPC the desktop's
+        // cyberclaw.quests.readQuestInstructions IPC the desktop's
         // renderer uses. The mobile is read-only on this
         // file — the desktop owns the editor.
         if (!client.authenticated) return;
         const questId = msg.questId;
         if (!questId) {
-          this._send(ws, { type: 'quest_project_instructions', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          this._send(ws, { type: 'quest_instructions', questId: null, ok: false, error: 'questId required', ts: Date.now() });
           return;
         }
         if (!this.onReadQuestInstructions) {
@@ -566,7 +566,7 @@ class SyncServer extends EventEmitter {
           // is running against an older sync-server). Tell
           // the mobile gracefully.
           this._send(ws, {
-            type: 'quest_project_instructions', questId, ok: false,
+            type: 'quest_instructions', questId, ok: false,
             error: 'Desktop does not support quest project instructions yet',
             ts: Date.now(),
           });
@@ -577,7 +577,7 @@ class SyncServer extends EventEmitter {
           if (result && typeof result.then === 'function') {
             result.then((res) => {
               this._send(ws, {
-                type: 'quest_project_instructions',
+                type: 'quest_instructions',
                 questId,
                 ok: !!(res && res.ok),
                 content: res?.content || '',
@@ -586,12 +586,12 @@ class SyncServer extends EventEmitter {
                 ts: Date.now(),
               });
             }).catch((e) => {
-              this._send(ws, { type: 'quest_project_instructions', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+              this._send(ws, { type: 'quest_instructions', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
             });
           } else {
             const res = result || {};
             this._send(ws, {
-              type: 'quest_project_instructions',
+              type: 'quest_instructions',
               questId,
               ok: !!(res && res.ok),
               content: res?.content || '',
@@ -601,7 +601,7 @@ class SyncServer extends EventEmitter {
             });
           }
         } catch (e) {
-          this._send(ws, { type: 'quest_project_instructions', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+          this._send(ws, { type: 'quest_instructions', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
         }
         break;
       }

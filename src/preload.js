@@ -72,13 +72,13 @@ window.cyberclaw = {
     markGoalDone: (id, goalIndex, completed) => ipcRenderer.invoke('quests:mark-goal-done', id, goalIndex, completed),
     // v3.2.30: per-quest project instructions file. Read/write the
     // markdown file associated with a quest (default:
-    // <quest.directory>/INSTRUCTIONS.md). The file content
+    // <quest.directory>/QUEST_QUEST_INSTRUCTIONS.md). The file content
     // is injected into the chat prompt as a per-quest
-    // "project instructions" context block, so the LLM sees
+    // "quest instructions" context block, so the LLM sees
     // project-specific instructions before generating
     // a reply. Read returns { ok, content, path }.
-    readProjectInstructions: (id) => ipcRenderer.invoke('quests:read-project-instructions', id),
-    saveProjectInstructions: (id, content) => ipcRenderer.invoke('quests:save-project-instructions', id, content),
+    readQuestInstructions: (id) => ipcRenderer.invoke('quests:read-quest-instructions', id),
+    saveQuestInstructions: (id, content) => ipcRenderer.invoke('quests:save-quest-instructions', id, content),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

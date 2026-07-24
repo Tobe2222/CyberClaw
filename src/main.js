@@ -1163,8 +1163,8 @@ ipcMain.handle('quests:update', (event, id, updates) => {
 });
 
 // v3.2.30: per-quest project instructions file. Each quest can have a
-// markdown file (default: <quest.directory>/INSTRUCTIONS.md, or
-// ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md if no
+// markdown file (default: <quest.directory>/QUEST_QUEST_INSTRUCTIONS.md, or
+// ~/.openclaw/cyberclaw/quests/<id>/QUEST_QUEST_INSTRUCTIONS.md if no
 // directory is set) that holds project-specific behavior
 // instructions for the companion. The file content is read
 // by buildActiveQuestContext() on the renderer and injected
@@ -1176,19 +1176,19 @@ ipcMain.handle('quests:update', (event, id, updates) => {
 // an Edit button; the mobile shows it read-only (no edit
 // on mobile — the user can edit via the desktop). The
 // IPCs are read-by-id (single quest) and write-by-id.
-function questInstructionsPath(quest) {
+function questInstructionsFilePath(quest) {
   if (!quest) return null;
   if (quest.directory) {
-    return path.join(quest.directory, 'INSTRUCTIONS.md');
+    return path.join(quest.directory, 'QUEST_QUEST_INSTRUCTIONS.md');
   }
-  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'INSTRUCTIONS.md');
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'QUEST_QUEST_INSTRUCTIONS.md');
 }
 
-ipcMain.handle('quests:read-project-instructions', (event, questId) => {
+ipcMain.handle('quests:read-quest-instructions', (event, questId) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questInstructionsPath(quest);
+  const file = questInstructionsFilePath(quest);
   try {
     if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
     const content = fs.readFileSync(file, 'utf-8');
@@ -1198,11 +1198,11 @@ ipcMain.handle('quests:read-project-instructions', (event, questId) => {
   }
 });
 
-ipcMain.handle('quests:save-project-instructions', (event, questId, content) => {
+ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questInstructionsPath(quest);
+  const file = questInstructionsFilePath(quest);
   try {
     // Ensure parent dir exists. If the quest has a
     // directory we write into it directly; if not we
@@ -2420,10 +2420,10 @@ app.whenReady().then(() => {
     // The mobile is read-only on this file; the desktop's
     // quest editor is the source of truth for changes.
     // We call the same IPC the desktop's renderer uses
-    // (ipcMain.handle('quests:read-project-instructions', ...)) so
+    // (ipcMain.handle('quests:read-quest-instructions', ...)) so
     // the resolution path is identical: if the quest has
-    // a directory, read <directory>/INSTRUCTIONS.md; else
-    // read ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md.
+    // a directory, read <directory>/QUEST_QUEST_INSTRUCTIONS.md; else
+    // read ~/.openclaw/cyberclaw/quests/<id>/QUEST_QUEST_INSTRUCTIONS.md.
     // Returns { ok, content, path } (or { ok: false, error }).
     onReadQuestInstructions: async (questId) => {
       try {
@@ -2433,7 +2433,7 @@ app.whenReady().then(() => {
         const quests = loadQuests();
         const quest = quests.find(q => q.id === questId);
         if (!quest) return { ok: false, error: 'quest not found' };
-        const file = questInstructionsPath(quest);
+        const file = questInstructionsFilePath(quest);
         if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
         const content = fs.readFileSync(file, 'utf-8');
         return { ok: true, content, path: file };

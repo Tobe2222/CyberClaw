@@ -1242,9 +1242,9 @@ function buildActiveQuestContext(quest) {
   ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
   ctx += `] `;
 
-  // v3.2.30: per-quest project instructions file. The companion reads
-  // <quest.directory>/INSTRUCTIONS.md (or
-  // ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md if no
+  // v3.2.30: per-quest instructions file. The companion reads
+  // <quest.directory>/QUEST_INSTRUCTIONS.md (or
+  // ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md if no
   // directory) on every chat send and injects its contents
   // as a separate context block. This is the place to write
   // project-specific instructions ("on this quest, never
@@ -1253,14 +1253,14 @@ function buildActiveQuestContext(quest) {
   // follow while working on this quest.
   //
   // Cached at module scope so the read-on-every-send isn't
-  // a real cost. The cache invalidates on saveProjectInstructions (the
-  // renderer's quest editor calls cyberclaw.quests.saveProjectInstructions
+  // a real cost. The cache invalidates on saveQuestInstructions (the
+  // renderer's quest editor calls cyberclaw.quests.saveQuestInstructions
   // then clears the cache here).
-  if (!quest._instructionsCache) quest._instructionsCache = {};
-  const cached = quest._instructionsCache[quest.id];
+  if (!quest._questInstructionsCache) quest._questInstructionsCache = {};
+  const cached = quest._questInstructionsCache[quest.id];
   if (cached !== undefined) {
     if (cached.content) {
-      ctx += `\n[Quest project instructions at ${cached.path}]\n${cached.content}\n[/Quest project instructions] `;
+      ctx += `\n[Quest instructions at ${cached.path}]\n${cached.content}\n[/Quest instructions] `;
     }
   } else {
     // Async read — we can't await here because
@@ -1272,14 +1272,14 @@ function buildActiveQuestContext(quest) {
     // send" so the second-send delay is acceptable. If we
     // need the file on the first send, we can pre-fetch on
     // quest selection in the renderer's selectQuest handler.
-    cyberclaw.quests.readProjectInstructions(quest.id).then((res) => {
+    cyberclaw.quests.readQuestInstructions(quest.id).then((res) => {
       if (res && res.ok) {
-        quest._instructionsCache[quest.id] = { content: res.content, path: res.path };
+        quest._questInstructionsCache[quest.id] = { content: res.content, path: res.path };
       } else {
-        quest._instructionsCache[quest.id] = { content: '', path: null };
+        quest._questInstructionsCache[quest.id] = { content: '', path: null };
       }
     }).catch(() => {
-      quest._instructionsCache[quest.id] = { content: '', path: null };
+      quest._questInstructionsCache[quest.id] = { content: '', path: null };
     });
   }
 
@@ -1493,11 +1493,11 @@ async function renderQuests() {
   // quest reference is local to the function — we don't
   // have a stable handle here. Walk the cached promise
   // resolvers instead by clearing a module-level map. We
-  // set quest._instructionsCache = {} per-call inside
+  // set quest._questInstructionsCache = {} per-call inside
   // buildActiveQuestContext, but that map persists across
   // calls because quest is a stable reference from the
   // cached list. So we just set it on every renderQuests.)
-  for (const q of quests) q._instructionsCache = {};
+  for (const q of quests) q._questInstructionsCache = {};
 
   if (!quests.length) {
     empty.style.display = '';
@@ -1563,7 +1563,7 @@ async function renderQuests() {
         <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
           ${isComplete ? '↩ Reopen' : '🏁 Mark done'}
         </button>
-        <button class="quest-instructions-btn" onclick="openInstructionsEditor(event,'${q.id}')" title="Per-quest project instructions file">📋 Instructions</button>
+        <button class="quest-instructions-btn" onclick="openQuestInstructionsEditor(event,'${q.id}')" title="Per-quest instructions file">📋 Instructions</button>
       </div>
     `;
     list.appendChild(div);
@@ -1616,22 +1616,22 @@ window.openQuestEditor = async function(event, questId) {
   editingQuestId = questId;
   const panel = document.getElementById('panel-left');
 
-  // v3.2.32: load the project instructions content for this
+  // v3.2.33: load the quest instructions content for this
   // quest so it can be edited inline in the quest editor.
-  // The file path is <quest.directory>/INSTRUCTIONS.md if
+  // The file path is <quest.directory>/QUEST_INSTRUCTIONS.md if
   // a directory is set, else
-  // ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md.
+  // ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md.
   // We render a monospace textarea (full width, 12 lines)
   // directly in the editor. Save writes the file via
-  // cyberclaw.quests.saveProjectInstructions. Tobe's v3.10.98
+  // cyberclaw.quests.saveQuestInstructions. Tobe's v3.10.98
   // feedback: "Add such a file creation and edit into the
   // quest editor. It should be deployed into the
   // project/quest directory for that quest." The file
   // path is shown below the textarea so the user can
   // verify it lives in the expected directory.
-  const instructionsRes = await cyberclaw.quests.readProjectInstructions(questId).catch(() => null);
-  const instructionsContent = (instructionsRes && instructionsRes.ok) ? (instructionsRes.content || '') : '';
-  const instructionsPath = (instructionsRes && instructionsRes.ok) ? (instructionsRes.path || '') : '<no path>';
+  const questInstructionsRes = await cyberclaw.quests.readQuestInstructions(questId).catch(() => null);
+  const questInstructionsContent = (questInstructionsRes && questInstructionsRes.ok) ? (questInstructionsRes.content || '') : '';
+  const questInstructionsFilePath = (questInstructionsRes && questInstructionsRes.ok) ? (questInstructionsRes.path || '') : '<no path>';
 
   panel.innerHTML = `
     <div class="panel-header">
@@ -1661,12 +1661,12 @@ window.openQuestEditor = async function(event, questId) {
         </div>
       </div>
       <div class="editor-field">
-        <label>📋 Project instructions</label>
-        <div class="qe-instructions-hint">
-          Per-quest project instructions for the companion. Injected into the chat prompt as a separate context block when this quest is active. Use this to record "how to do tasks" for the project (e.g. "deploy via scp to the VPS", "edit files directly on the server", "always run tests first").
+        <label>📋 Quest instructions</label>
+        <div class="qe-quest-instructions-hint">
+          Per-quest instructions for the companion. Injected into the chat prompt as a separate context block when this quest is active. Use this to record "how to do tasks" for the project (e.g. "deploy via scp to the VPS", "edit files directly on the server", "always run tests first").
         </div>
-        <textarea id="qe-instructions" rows="12" class="qe-instructions-textarea" placeholder="# Workflow for this quest&#10;&#10;## Deploy&#10;- scp dist/* user@vps:/var/www/&#10;- ssh user@vps 'systemctl restart nginx'&#10;&#10;## Build&#10;- npm run build&#10;- verify dist/index.html exists">${escapeHtml(instructionsContent)}</textarea>
-        <div class="qe-instructions-path">File: <code>${escapeHtml(instructionsPath)}</code></div>
+        <textarea id="qe-quest-instructions" rows="12" class="qe-quest-instructions-textarea" placeholder="# Workflow for this quest&#10;&#10;## Deploy&#10;- scp dist/* user@vps:/var/www/&#10;- ssh user@vps 'systemctl restart nginx'&#10;&#10;## Build&#10;- npm run build&#10;- verify dist/index.html exists">${escapeHtml(questInstructionsContent)}</textarea>
+        <div class="qe-quest-instructions-path">File: <code>${escapeHtml(questInstructionsFilePath)}</code></div>
       </div>
       <div class="qe-actions">
         <button class="btn-sm btn-muted" onclick="closeQuestEditor()">Cancel</button>
@@ -1706,24 +1706,24 @@ window.saveQuestEdit = async function() {
   // Update quest
   await cyberclaw.quests.update(editingQuestId, { name, description, goals, directory: directory || undefined });
 
-  // v3.2.31: save the project instructions file (if the editor has
-  // a qe-instructions textarea — older editor versions
+  // v3.2.31: save the quest instructions file (if the editor has
+  // a qe-quest-instructions textarea — older editor versions
   // don't, in which case skip). The save is fire-
   // and-forget; we close the editor regardless of
   // success/failure. A save error is logged to the
   // events panel.
-  const instructionsTa = document.getElementById('qe-instructions');
-  if (instructionsTa) {
-    const instructionsContent = instructionsTa.value;
+  const questInstructionsTa = document.getElementById('qe-quest-instructions');
+  if (questInstructionsTa) {
+    const questInstructionsContent = questInstructionsTa.value;
     try {
-      const res = await cyberclaw.quests.saveProjectInstructions(editingQuestId, instructionsContent);
+      const res = await cyberclaw.quests.saveQuestInstructions(editingQuestId, questInstructionsContent);
       if (res && res.ok) {
         addEventMsg(`📋 Saved project instructions (${res.bytes} bytes) — ${res.path}`);
       } else {
-        addEventMsg(`⚠️ Could not save project instructions: ${res?.error || 'unknown error'}`);
+        addEventMsg(`⚠️ Could not save quest instructions: ${res?.error || 'unknown error'}`);
       }
     } catch (e) {
-      addEventMsg(`⚠️ Project instructions save failed: ${e?.message || e}`);
+      addEventMsg(`⚠️ Quest instructions save failed: ${e?.message || e}`);
     }
   }
 
@@ -1737,19 +1737,19 @@ window.closeQuestEditor = function() {
   renderQuests();
 };
 
-// v3.2.32: per-quest project instructions file editor. Opens a small
-// modal with a textarea bound to the quest's INSTRUCTIONS.md
-// (default: <quest.directory>/INSTRUCTIONS.md, or
-// ~/.openclaw/cyberclaw/quests/<id>/INSTRUCTIONS.md if no
+// v3.2.33: per-quest instructions file editor. Opens a small
+// modal with a textarea bound to the quest's QUEST_INSTRUCTIONS.md
+// (default: <quest.directory>/QUEST_INSTRUCTIONS.md, or
+// ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md if no
 // directory). The file content is injected into the chat
 // prompt as a per-quest "behavior" context block, so the
 // LLM sees project-specific instructions before generating
 // a reply. Save writes the file and invalidates the cache
 // in buildActiveQuestContext so the next chat send picks up
 // the new content.
-window.openInstructionsEditor = async function(event, questId) {
+window.openQuestInstructionsEditor = async function(event, questId) {
   if (event) event.stopPropagation();
-  const res = await cyberclaw.quests.readProjectInstructions(questId);
+  const res = await cyberclaw.quests.readQuestInstructions(questId);
   if (!res || !res.ok) {
     addEventMsg(`⚠️ Could not read project instructions file: ${res?.error || 'unknown error'}`);
     return;
@@ -1764,8 +1764,8 @@ window.openInstructionsEditor = async function(event, questId) {
   // user is.
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.id = 'instructions-editor-overlay';
-  overlay.onclick = (e) => { if (e.target === overlay) closeInstructionsEditor(); };
+  overlay.id = 'quest-instructions-editor-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeQuestInstructionsEditor(); };
 
   const preview = res.path
     ? `File: <code>${escapeHtml(res.path)}</code>`
@@ -1774,44 +1774,44 @@ window.openInstructionsEditor = async function(event, questId) {
   overlay.innerHTML = `
     <div class="modal-content" style="max-width:680px;width:90%;max-height:80vh;display:flex;flex-direction:column;">
       <div class="modal-header">
-        <span class="modal-title">📋 Quest project instructions</span>
-        <button class="modal-close" onclick="closeInstructionsEditor()">✕</button>
+        <span class="modal-title">📋 Quest instructions</span>
+        <button class="modal-close" onclick="closeQuestInstructionsEditor()">✕</button>
       </div>
       <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);">
-        Per-quest project instructions for the companion when this quest is active.
+        Per-quest instructions for the companion when this quest is active.
         Markdown is fine. The content is injected into the chat prompt as a separate context block.
         ${preview}
       </div>
-      <textarea id="instructions-textarea" class="instructions-textarea" placeholder="# Project instructions for this quest&#10;&#10;Workflow / project instructions:&#10;- Never touch the dev DB&#10;- Use British English&#10;- Always run tests before committing"
+      <textarea id="quest-instructions-textarea" class="quest-instructions-textarea" placeholder="# Quest instructions for this quest&#10;&#10;Workflow / project instructions:&#10;- Never touch the dev DB&#10;- Use British English&#10;- Always run tests before committing"
         style="flex:1;min-height:300px;font-family:monospace;font-size:12px;padding:8px;background:#0a0a0a;color:#e0e0e0;border:1px solid #333;border-radius:4px;resize:vertical;">${escapeHtml(res.content || '')}</textarea>
       <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--border-dark);">
-        <button class="btn-sm btn-muted" onclick="closeInstructionsEditor()">Cancel</button>
-        <button class="btn-sm btn-primary" id="instructions-save-btn" onclick="saveProjectInstructionsFile('${questId}')">💾 Save</button>
+        <button class="btn-sm btn-muted" onclick="closeQuestInstructionsEditor()">Cancel</button>
+        <button class="btn-sm btn-primary" id="quest-instructions-save-btn" onclick="saveQuestInstructionsFile('${questId}')">💾 Save</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
   setTimeout(() => {
-    const ta = document.getElementById('instructions-textarea');
+    const ta = document.getElementById('quest-instructions-textarea');
     if (ta) ta.focus();
   }, 50);
 };
 
-window.closeInstructionsEditor = function() {
-  const overlay = document.getElementById('instructions-editor-overlay');
+window.closeQuestInstructionsEditor = function() {
+  const overlay = document.getElementById('quest-instructions-editor-overlay');
   if (overlay) overlay.remove();
 };
 
-window.saveProjectInstructionsFile = async function(questId) {
-  const ta = document.getElementById('instructions-textarea');
-  const btn = document.getElementById('instructions-save-btn');
+window.saveQuestInstructionsFile = async function(questId) {
+  const ta = document.getElementById('quest-instructions-textarea');
+  const btn = document.getElementById('quest-instructions-save-btn');
   if (!ta) return;
   const content = ta.value;
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    const res = await cyberclaw.quests.saveProjectInstructions(questId, content);
+    const res = await cyberclaw.quests.saveQuestInstructions(questId, content);
     if (!res || !res.ok) {
-      addEventMsg(`⚠️ Could not save project instructions: ${res?.error || 'unknown error'}`);
+      addEventMsg(`⚠️ Could not save quest instructions: ${res?.error || 'unknown error'}`);
       if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
       return;
     }
@@ -1821,9 +1821,9 @@ window.saveProjectInstructionsFile = async function(questId) {
     // object in buildActiveQuestContext; renderQuests()
     // also clears the cache, so the next renderQuests (on
     // any other quest change) will pick up fresh.
-    closeInstructionsEditor();
+    closeQuestInstructionsEditor();
   } catch (e) {
-    addEventMsg(`⚠️ Project instructions save failed: ${e?.message || e}`);
+    addEventMsg(`⚠️ Quest instructions save failed: ${e?.message || e}`);
     if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
   }
 };

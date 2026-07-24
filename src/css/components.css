@@ -718,7 +718,7 @@
 }
 .quest-status-toggle:hover { background: rgba(255,107,53,0.15); }
 
-/* v3.2.32: per-quest project instructions file button. Sits in the
+/* v3.2.33: per-quest project instructions file button. Sits in the
    .quest-actions-row next to .quest-status-toggle. Same
    small-font pattern but gold-tinted so it stands out as
    "this opens an editor" vs "this toggles status". */
@@ -1327,13 +1327,13 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
    path below the textarea shows where it lives on
    disk so the user can verify it's in the right
    place. */
-.qe-instructions-hint {
+.qe-quest-instructions-hint {
   font-size: 10px;
   color: var(--text-muted);
   margin-bottom: 6px;
   line-height: 1.4;
 }
-.qe-instructions-textarea {
+.qe-quest-instructions-textarea {
   width: 100%;
   font-family: monospace;
   font-size: 11px;
@@ -1346,12 +1346,12 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
   min-height: 200px;
   font-family: 'Menlo', 'Consolas', monospace;
 }
-.qe-instructions-path {
+.qe-quest-instructions-path {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 4px;
 }
-.qe-instructions-path code {
+.qe-quest-instructions-path code {
   background: rgba(0, 0, 0, 0.3);
   padding: 1px 4px;
   border-radius: 3px;
