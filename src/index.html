@@ -531,6 +531,28 @@
           </div>
         </div>
 
+        <!-- v3.2.26: Companions section in Settings. Each row
+             shows the companion's avatar + name + chattiness slider
+             (1–5), so the user can tune how chatty each companion
+             is from one place without opening the full forge. The
+             Edit button opens the forge (full personalization). The
+             chattiness slider writes to the same sprite config the
+             mobile Personalize screen uses, so the value syncs
+             both ways. -->
+        <div class="settings-section">
+          <div class="settings-section-title">🐾 Companions</div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">
+            Edit your companions — sprite, scale, traits, model, and chattiness.
+            Changes sync to your mobile.
+          </div>
+          <div id="settings-companions-list" class="settings-companions-list">
+            <!-- Populated by renderSettingsCompanionsList() -->
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button class="settings-action-btn" onclick="openCompanionsView()">📋 View All Companions</button>
+          </div>
+        </div>
+
         <!-- Agent Channels -->
         <div class="settings-section">
           <div class="settings-section-title">📡 Agent Channels</div>
@@ -657,6 +679,22 @@
           <div class="settings-row" style="margin-bottom:6px;">
             <span class="settings-label">Scale <span id="forge-size-value">4×</span></span>
             <input type="range" id="forge-size-slider" min="1" max="8" step="1" value="4" class="settings-slider" oninput="updateForgeSize(this.value)" />
+          </div>
+        </div>
+
+        <!-- v3.2.26: chattiness scale (1–5). Controls how often the
+             companion fires an idle chatter message when the user
+             hasn't said anything. 1 = silent (no idle chatter), 5
+             = chatty (every 30–60 min). Default 3 = current 60–90
+             min. Persists in sprites.json as chattiness (1–5). -->
+        <div class="forge-traits-section forge-chattiness-section">
+          <div class="forge-traits-title">💬 Chattiness</div>
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">How chatty <span id="forge-chattiness-value">3</span>/5</span>
+            <input type="range" id="forge-chattiness-slider" min="1" max="5" step="1" value="3" class="settings-slider" oninput="updateForgeChattiness(this.value)" />
+          </div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin:0 0 6px;">
+            <span id="forge-chattiness-desc">Balanced — comments every 60–90 minutes.</span>
           </div>
         </div>
 

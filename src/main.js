@@ -2340,6 +2340,35 @@ app.whenReady().then(() => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
     },
+    // v3.2.26: phone-side companion edit (Personalize
+    // screen). The mobile sends a sprite_config_sync with
+    // { agentId, config: <partial patch> }. We forward it
+    // to the renderer which is the source of truth for the
+    // in-memory agents map — the renderer merges the patch
+    // with the existing config, calls the existing
+    // cyberclaw.agents.saveSpriteConfig (which writes
+    // sprites.json + regenerates the avatar if sprite
+    // changed), and triggers broadcastAgentsListToMobile()
+    // so every connected client (including the phone that
+    // initiated the edit) sees the updated agents_list.
+    //
+    // Return values: { ok: true } on success,
+    // { ok: false, reason, error } on failure. The
+    // sync-server uses this to send a sprite_config_sync_ok
+    // ack or a sprite_config_sync_failed error.
+    onSaveSpriteConfig: (agentId, patch) => {
+      if (!agentId) return { ok: false, reason: 'missing_agentId', error: 'agentId is required' };
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, reason: 'no_main_window', error: 'desktop window not available' };
+      }
+      try {
+        mainWindow.webContents.send('mobile-sprite-config-saved', { agentId, patch });
+        return { ok: true };
+      } catch (e) {
+        console.warn('[SyncServer] onSaveSpriteConfig: webContents.send failed:', e?.message);
+        return { ok: false, reason: 'send_failed', error: e?.message || 'unknown' };
+      }
+    },
     // v3.10.77: returns the current list of quests
     // (with id + name) for diagnostic inclusion in
     // failed-mutation error responses. Lets the mobile

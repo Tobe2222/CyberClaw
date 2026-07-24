@@ -1813,3 +1813,72 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
 .trait-toggle input[type=checkbox]:checked ~ .trait-label { color: var(--orange); }
 .trait-label { font-weight: 600; color: var(--text-primary); display: block; }
 .trait-desc { color: var(--text-muted); font-size: 10px; display: block; }
+
+/* v3.2.26: Settings → Companions list rows. Each row holds
+   the companion's emoji + name + Edit button + a chattiness
+   slider. The slider is a thin strip so the list stays compact
+   even with 5+ companions. */
+.settings-companions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.settings-companion-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 153, 0, 0.18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.settings-companion-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-companion-emoji {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.settings-companion-name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-btn-sm {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 153, 0, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 153, 0, 0.08);
+  color: var(--orange);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.settings-btn-sm:hover {
+  background: rgba(255, 153, 0, 0.16);
+}
+.settings-companion-row-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.settings-companion-row-slider .settings-slider {
+  flex: 1;
+  min-width: 0;
+}
+.settings-companion-chattiness-value {
+  flex-shrink: 0;
+  color: var(--orange);
+  font-weight: 600;
+  min-width: 28px;
+  text-align: right;
+}

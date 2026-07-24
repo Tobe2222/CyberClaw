@@ -227,6 +227,11 @@ async function loadAgents() {
             agents[id].model = formatModelName(cfg.primaryModel);
           }
           if (cfg.secondaryModel) agents[id].secondaryModel = cfg.secondaryModel;
+          // v3.2.26: hydrate chattiness from sprite config. Default 3
+          // (= balanced, matches the v3.1.3 baseline) when missing.
+          const ch = parseInt(cfg.chattiness, 10);
+          if (ch >= 1 && ch <= 5) agents[id].chattiness = ch;
+          else if (agents[id].chattiness == null) agents[id].chattiness = 3;
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
@@ -456,6 +461,12 @@ function broadcastAgentsListToMobile() {
         // companion, triggering a re-broadcast via
         // broadcastAgentsListToMobile() below.
         sleepState: a.sleepState || 'awake',
+        // v3.2.26: chattiness scale (1–5). Mobile Personalize
+        // screen uses this to render the slider's current value
+        // without a separate request. Default 3 if the
+        // companion has no chattiness set yet (legacy
+        // sprite-config without the field).
+        chattiness: typeof a.chattiness === 'number' ? a.chattiness : 3,
       };
     }).filter(Boolean);
     if (mobileList.length > 0) {
@@ -2903,6 +2914,12 @@ window.createNewCompanion = function() {
   const lbl = document.getElementById('forge-size-value');
   if (lbl) lbl.textContent = '4×';
 
+  // v3.2.26: reset chattiness slider to default 3
+  currentForgeChattiness = 3;
+  const chatSlider = document.getElementById('forge-chattiness-slider');
+  if (chatSlider) chatSlider.value = '3';
+  updateForgeChattiness('3');
+
   // Show a blank preview
   showForgeCompanion('boar'); // harmless default; the picker forces a choice
   renderPixelGallery();
@@ -2978,6 +2995,21 @@ let forgeCompanionSprite = null;
 // Forge sprite size — stored per-companion on the sprite config. Default 4.
 let currentForgeScale = 4;
 
+// v3.2.26: chattiness scale (1–5). Default 3 = current 60–90
+// min. The idle chatter scheduler reads this from the
+// companion's stored sprite config on every tick (cheap lookup)
+// so changes apply on the next schedule after save.
+let currentForgeChattiness = 3;
+
+// 1=Silent, 2=Quiet, 3=Balanced, 4=Chatty, 5=Very chatty
+const CHATTINESS_DESCRIPTIONS = {
+  1: 'Silent — never randomly comments.',
+  2: 'Quiet — comments every 3–6 hours.',
+  3: 'Balanced — comments every 60–90 minutes.',
+  4: 'Chatty — comments every 30–60 minutes.',
+  5: 'Very chatty — comments every 15–30 minutes.',
+};
+
 function showForgeCompanion(pixelId) {
   const viewer = document.getElementById('forge-companion-viewer');
   if (!viewer) return;
@@ -2997,6 +3029,20 @@ function updateForgeSize(value) {
   // with the rest of the form. (Previously we'd write the scale
   // immediately, but that raced with the final saveCompanion write
   // and the user-visible bug was that the size "didn't stick".)
+}
+
+// v3.2.26: live chattiness slider update. Same pattern as
+// updateForgeSize — update local state + the label, defer the
+// write to saveCompanion. The label text is mirrored from the
+// CHATTINESS_DESCRIPTIONS table so the user sees the human
+// translation of the number.
+function updateForgeChattiness(value) {
+  const v = parseInt(value, 10);
+  currentForgeChattiness = (v >= 1 && v <= 5) ? v : 3;
+  const valLbl = document.getElementById('forge-chattiness-value');
+  if (valLbl) valLbl.textContent = String(currentForgeChattiness);
+  const descLbl = document.getElementById('forge-chattiness-desc');
+  if (descLbl) descLbl.textContent = CHATTINESS_DESCRIPTIONS[currentForgeChattiness] || CHATTINESS_DESCRIPTIONS[3];
 }
 
 function openCompanionForge(agentId) {
@@ -3024,6 +3070,13 @@ function openCompanionForge(agentId) {
     if (slider) slider.value = String(currentForgeScale);
     const lbl = document.getElementById('forge-size-value');
     if (lbl) lbl.textContent = currentForgeScale + '×';
+    // v3.2.26: restore the saved chattiness (default 3 = balanced).
+    // Clamp to 1–5 so any future expansion doesn't break the slider.
+    const savedChattiness = parseInt(config?.chattiness, 10);
+    currentForgeChattiness = (savedChattiness >= 1 && savedChattiness <= 5) ? savedChattiness : 3;
+    const chatSlider = document.getElementById('forge-chattiness-slider');
+    if (chatSlider) chatSlider.value = String(currentForgeChattiness);
+    updateForgeChattiness(String(currentForgeChattiness));
     // Show preview
     showForgeCompanion(pixelId);
     // Render gallery for picker
@@ -3100,12 +3153,16 @@ window.saveCompanion = async function() {
       primaryModel: document.getElementById('forge-model-primary')?.value || agent.primaryModel,
       secondaryModel: document.getElementById('forge-model-secondary')?.value || '',
       scale: currentForgeScale, // v3.1.6: persist the size slider value
+      chattiness: currentForgeChattiness, // v3.2.26: persist the chattiness slider value
     });
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
     agent._pixelCompanionId = selectedPixelCompanion;
     if (newName) agent.name = newName;
     agent.traits = getCheckedTraits();
+    // v3.2.26: mirror chattiness onto the in-memory agent so the
+    // idle chatter scheduler can read it without a disk lookup.
+    agent.chattiness = currentForgeChattiness;
     const savedModel = document.getElementById('forge-model-primary')?.value;
     if (savedModel) {
       agent.primaryModel = savedModel;
@@ -3504,7 +3561,99 @@ window.openSettings = function() {
   // Gateway status
   const gwEl = document.getElementById('settings-gateway-status');
   if (gwEl) gwEl.textContent = typeof cyberclaw !== 'undefined' ? '🟢 Connected' : '🔴 Not connected';
+  // v3.2.26: render the per-companion Chatti list with quick
+  // chattiness sliders. One slider per companion + full Edit
+  // button. Slider changes write directly to sprites.json via
+  // cyberclaw.agents.saveSpriteConfig and re-broadcast the
+  // agents_list so the mobile's Personalize screen stays in sync.
+  try { renderSettingsCompanionsList(); } catch (e) { console.warn('renderSettingsCompanionsList:', e); }
 };
+
+// v3.2.26: render the Settings → Companions list. Each row
+// shows the companion's emoji/icon, name, and a 1–5 chattiness
+// slider + Edit button. The slider is the same scale the
+// mobile's Personalize screen uses; values are clamped 1–5
+// and persisted to sprites.json via the existing surface.
+async function renderSettingsCompanionsList() {
+  const listEl = document.getElementById('settings-companions-list');
+  if (!listEl) return;
+  if (!agentOrder || agentOrder.length === 0) {
+    listEl.innerHTML = '<div style="color:#888;font-size:12px;font-style:italic;">No companions yet.</div>';
+    return;
+  }
+  // Hydrate chattiness from sprite config (one read each).
+  const html = [];
+  for (const id of agentOrder) {
+    const a = agents[id];
+    if (!a) continue;
+    let cfg = {};
+    try { cfg = await cyberclaw.agents.getSpriteConfig(id); } catch {}
+    const chattiness = (typeof a.chattiness === 'number') ? a.chattiness
+      : (typeof cfg.chattiness === 'number') ? cfg.chattiness
+      : 3;
+    const emoji = (a.emoji && a.emoji !== '🤖') ? a.emoji : (getSpriteIcon(a._pixelCompanionId) || '🐾');
+    // Use data-id on the wrapper so the slider's oninput can
+    // resolve the agent without a global lookup. Also expose
+    // the original value so the description line can be
+    // updated without re-rendering.
+    html.push(`
+      <div class="settings-companion-row" data-agent-id="${id}">
+        <div class="settings-companion-row-head">
+          <span class="settings-companion-emoji">${emoji}</span>
+          <span class="settings-companion-name">${escapeHtml(a.name || id)}</span>
+          <button class="settings-btn-sm" onclick="openCompanionForge('${id}')">✏️ Edit</button>
+        </div>
+        <div class="settings-companion-row-slider">
+          <span class="settings-label">Chattiness</span>
+          <input type="range" min="1" max="5" step="1" value="${chattiness}" class="settings-slider"
+                 oninput="updateSettingsCompanionChattiness('${id}', this.value)"
+                 onchange="saveSettingsCompanionChattiness('${id}', this.value)" />
+          <span class="settings-companion-chattiness-value" id="settings-companion-chattiness-${id}">${chattiness}/5</span>
+        </div>
+      </div>
+    `);
+  }
+  listEl.innerHTML = html.join('');
+}
+
+// v3.2.26: live-update the displayed value next to the slider
+// while the user drags. Debounced save happens on onchange.
+window.updateSettingsCompanionChattiness = function(agentId, value) {
+  const v = Math.max(1, Math.min(5, parseInt(value, 10) || 3));
+  const lbl = document.getElementById('settings-companion-chattiness-' + agentId);
+  if (lbl) lbl.textContent = v + '/5';
+};
+
+// v3.2.26: persist the slider value to sprites.json. Same
+// surface as the forge + mobile Personalize screen. On success,
+// re-broadcast agents_list so the mobile's Personalize slider
+// reflects the new value (and the idle chatter scheduler picks
+// up the new interval on its next tick).
+window.saveSettingsCompanionChattiness = async function(agentId, value) {
+  const v = Math.max(1, Math.min(5, parseInt(value, 10) || 3));
+  try {
+    const existing = await cyberclaw.agents.getSpriteConfig(agentId).catch(() => null) || {};
+    const merged = Object.assign({}, existing, { chattiness: v });
+    await cyberclaw.agents.saveSpriteConfig(agentId, merged);
+    if (agents[agentId]) agents[agentId].chattiness = v;
+    broadcastAgentsListToMobile();
+    console.log('[Companion] chattiness saved for', agentId, '=', v);
+  } catch (e) {
+    console.warn('[Companion] chattiness save failed for', agentId, ':', e?.message);
+  }
+};
+
+// v3.2.26: tiny HTML escaper used by the Settings list
+// renderer. Matches the light escaper used elsewhere in the
+// file (single-quote-safe, handles &, <, >).
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 window.closeSettings = function(e) {
   if (e && e.target !== e.currentTarget) return;
@@ -4288,6 +4437,77 @@ try {
       ipcRenderer.invoke('sync-broadcast-agents-list', { agents: mobileList });
     } catch (e) {
       console.log('[App] Error re-broadcasting agents list:', e?.message);
+    }
+  });
+
+  // v3.2.26: mobile-initiated companion edit (Personalize screen).
+  // The mobile sends a sprite_config_sync with a partial patch;
+  // main.js forwards it here. We merge the patch into the existing
+  // sprite config, persist via the existing cyberclaw.agents.
+  // saveSpriteConfig (which writes sprites.json + regenerates the
+  // avatar if the sprite changed), then broadcast the updated
+  // agents_list so every connected client (including the phone
+  // that initiated the edit) sees the change.
+  ipcRenderer.on('mobile-sprite-config-saved', async (e, { agentId, patch } = {}) => {
+    try {
+      if (!agentId || !agents[agentId]) {
+        console.warn('[mobile-sprite-config-saved] unknown agentId:', agentId);
+        return;
+      }
+      console.log('[mobile-sprite-config-saved] applying patch for', agentId, Object.keys(patch || {}).join(','));
+      const existing = await cyberclaw.agents.getSpriteConfig(agentId).catch(() => null) || {};
+      // Merge: patch wins, but preserve any fields we don't
+      // manage here (defensive against future schema additions).
+      const merged = Object.assign({}, existing, patch);
+      // Persist via the same surface the desktop forge uses.
+      await cyberclaw.agents.saveSpriteConfig(agentId, merged);
+      // Mirror onto the in-memory agent so the local UI
+      // reflects the change immediately.
+      const a = agents[agentId];
+      if (typeof patch.customName === 'string' && patch.customName.trim()) a.name = patch.customName.trim();
+      if (Array.isArray(patch.traits)) a.traits = patch.traits;
+      if (typeof patch.primaryModel === 'string' && patch.primaryModel) {
+        a.primaryModel = patch.primaryModel;
+        a.model = formatModelName(patch.primaryModel);
+      }
+      if (typeof patch.secondaryModel === 'string') a.secondaryModel = patch.secondaryModel;
+      if (typeof patch.pixelCompanionId === 'string' && patch.pixelCompanionId) {
+        a._pixelCompanionId = patch.pixelCompanionId;
+      }
+      if (typeof patch.scale === 'number') a._pixelCompanionScale = patch.scale;
+      if (typeof patch.chattiness === 'number') a.chattiness = patch.chattiness;
+      // If the sprite changed, regenerate the avatar so the
+      // desktop's picket/avatar also gets the new look.
+      if (patch.pixelCompanionId && patch.pixelCompanionId !== existing.pixelCompanionId) {
+        try {
+          const _path = require('path');
+          const catalog = loadPixelCatalog();
+          const comp = catalog.companions.find(c => c.id === patch.pixelCompanionId);
+          if (comp) {
+            const idlePath = _path.join(__dirname, 'assets', 'companions', comp.folder, comp.animations.idle.file);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const [fw, fh] = comp.frameSize;
+            canvas.width = fw; canvas.height = fh;
+            const img = new Image();
+            await new Promise(r => { img.onload = r; img.src = `file://${idlePath}`; });
+            ctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+            await cyberclaw.agents.saveAvatar(agentId, canvas.toDataURL('image/png'));
+            a.avatar = canvas.toDataURL('image/png');
+          }
+        } catch (e) {
+          console.warn('[mobile-sprite-config-saved] avatar regen failed:', e?.message);
+        }
+      }
+      // Re-broadcast agents list so the change syncs back to
+      // the phone that initiated it (and any other connected
+      // client). broadcastAgentsListToMobile uses the unified
+      // map that includes chattiness + sleepState.
+      try { broadcastAgentsListToMobile(); } catch (_) {}
+      try { buildCarousel(); } catch (_) {}
+      console.log('[mobile-sprite-config-saved] applied + broadcast for', agentId);
+    } catch (e) {
+      console.warn('[mobile-sprite-config-saved] failed:', e?.message, e?.stack);
     }
   });
 
@@ -5407,15 +5627,58 @@ function scheduleAutoSleep() {
 }
 
 function scheduleIdleChatter() {
-  // v3.1.3: bumped from ~20min to ~60-90min so chatter stays sparse.
-  var minMs = 60 * 60 * 1000;
-  var maxMs = 90 * 60 * 1000;
+  // v3.2.26: chattiness scale (1–5) controls the idle chatter
+  // interval. 1 = silent (never fires), 5 = chatty (every 15–30
+  // min). The default of 3 matches the v3.1.3 baseline (60–90
+  // min). We resolve the interval per current companion so each
+  // companion can have its own chattiness; if the user switches
+  // focus mid-tick, the next tick will pick up the new companion's
+  // value. (We deliberately don't cancel the in-flight timer — the
+  // next tick will pick up the new value within minutes.)
+  var cid = pickCurrentCompanionId();
+  var chattiness = (cid && agents[cid] && agents[cid].chattiness) || 3;
+  chattiness = Math.max(1, Math.min(5, chattiness));
+  var minMs, maxMs;
+  switch (chattiness) {
+    case 1: // Silent — never fires. Schedule a long interval just
+            // so the function reschedules itself for any future
+            // change (1h is a fine heartbeat).
+      minMs = 60 * 60 * 1000;
+      maxMs = 60 * 60 * 1000;
+      break;
+    case 2: // Quiet — 3–6h
+      minMs = 3 * 60 * 60 * 1000;
+      maxMs = 6 * 60 * 60 * 1000;
+      break;
+    case 3: // Balanced — 60–90min (default)
+      minMs = 60 * 60 * 1000;
+      maxMs = 90 * 60 * 1000;
+      break;
+    case 4: // Chatty — 30–60min
+      minMs = 30 * 60 * 1000;
+      maxMs = 60 * 60 * 1000;
+      break;
+    case 5: // Very chatty — 15–30min
+      minMs = 15 * 60 * 1000;
+      maxMs = 30 * 60 * 1000;
+      break;
+    default:
+      minMs = 60 * 60 * 1000;
+      maxMs = 90 * 60 * 1000;
+  }
   var delay = minMs + Math.random() * (maxMs - minMs);
 
   setTimeout(function() {
     // v3.1.3: skip if the current companion is manually sleeping
-    const cid = pickCurrentCompanionId();
-    if (cid && agents[cid] && agents[cid].sleepState !== 'sleeping') {
+    // v3.2.26: also skip if chattiness is 1 (silent). Re-read
+    // chattiness at fire time so it can be changed without
+    // restarting the desktop.
+    const fireCid = pickCurrentCompanionId();
+    const fireChattiness = (fireCid && agents[fireCid] && agents[fireCid].chattiness) || 3;
+    if (fireChattiness < 1) {
+      // defensive — should never happen (clamped to 1)
+    }
+    if (fireCid && agents[fireCid] && agents[fireCid].sleepState !== 'sleeping' && fireChattiness >= 2) {
       var userCtx = getUserContext();
       var randomPrompt = IDLE_PROMPTS[Math.floor(Math.random() * IDLE_PROMPTS.length)];
       var fullPrompt = '[Idle companion comment — the user hasn\'t said anything for a while. ' +

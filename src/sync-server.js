@@ -74,6 +74,14 @@ class SyncServer extends EventEmitter {
     this.onCreateQuest = options.onCreateQuest || null;
     this.onListQuests = options.onListQuests || null;
     this.onRequestQuestsList = options.onRequestQuestsList || null;
+    // v3.2.26: phone-side companion edit. The mobile's
+    // Personalize screen sends a sprite_config_sync with the
+    // agentId + a partial config patch; main.js applies the
+    // patch via cyberclaw.agents.saveSpriteConfig (same
+    // surface the desktop forge uses) and broadcasts the
+    // updated agents_list so the change appears on every
+    // connected client.
+    this.onSaveSpriteConfig = options.onSaveSpriteConfig || null;
 
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
@@ -657,6 +665,60 @@ class SyncServer extends EventEmitter {
           this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
           this._send(ws, { type: 'companion_id', companionId, ts: Date.now() });
         }, 100);
+        break;
+      }
+
+      case 'sprite_config_sync': {
+        // v3.2.26: phone-side companion edit (Personalize screen).
+        // `{ agentId, config }` where config is a partial sprite
+        // config patch (only the fields the user changed). main.js
+        // merges it with the existing config + persists + broadcasts
+        // the updated agents_list so the change appears on every
+        // connected client (including the mobile that initiated it).
+        if (!client.authenticated) return;
+        if (!this.onSaveSpriteConfig) {
+          console.warn('[SyncServer] sprite_config_sync: no onSaveSpriteConfig callback wired');
+          this._send(ws, { type: 'sprite_config_sync_failed', reason: 'no_callback', error: 'sprite_config_sync not supported on this desktop version', ts: Date.now() });
+          return;
+        }
+        const agentId = msg.agentId;
+        const patch = msg.config || {};
+        if (!agentId) {
+          this._send(ws, { type: 'sprite_config_sync_failed', reason: 'missing_agentId', error: 'agentId required', ts: Date.now() });
+          return;
+        }
+        // Whitelist of accepted fields. Anything else is
+        // silently dropped — this prevents the mobile from
+        // (accidentally or otherwise) overwriting unrelated
+        // state. The whitelist mirrors the desktop forge's
+        // saveSpriteConfig call.
+        const ALLOWED = ['pixelCompanionId', 'spiritId', 'customName', 'focusSkills', 'traits', 'primaryModel', 'secondaryModel', 'scale', 'chattiness'];
+        const sanitized = {};
+        for (const k of ALLOWED) {
+          if (Object.prototype.hasOwnProperty.call(patch, k)) {
+            sanitized[k] = patch[k];
+          }
+        }
+        // v3.2.26: chattiness comes in as a number 1–5 from
+        // the mobile slider. Clamp before forwarding so a
+        // bad value can't disable the scheduler.
+        if (typeof sanitized.chattiness === 'number') {
+          sanitized.chattiness = Math.max(1, Math.min(5, Math.round(sanitized.chattiness)));
+        }
+        // v3.2.26: scale must be 1–8 (matches the desktop slider).
+        if (typeof sanitized.scale === 'number') {
+          sanitized.scale = Math.max(1, Math.min(8, Math.round(sanitized.scale)));
+        }
+        const ok = this.onSaveSpriteConfig(agentId, sanitized);
+        if (ok && ok.ok !== false) {
+          // Ack explicit success so the mobile can show a
+          // "Saved" toast and stop its spinner. The full
+          // updated agents_list will arrive via the regular
+          // broadcast ~100ms later.
+          this._send(ws, { type: 'sprite_config_sync_ok', agentId, ts: Date.now() });
+        } else {
+          this._send(ws, { type: 'sprite_config_sync_failed', agentId, reason: ok?.reason || 'unknown', error: ok?.error || 'save failed', ts: Date.now() });
+        }
         break;
       }
 
