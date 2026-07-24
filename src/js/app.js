@@ -1996,13 +1996,24 @@ window.sendChat = async function() {
   const escalationTimers = [];
   const escalateTyping = (text) => {
     // Find the typing message's text span and update
-    // it in place. The message id is `typingId` and
-    // addChatMsg returns a div with a `data-msg-id`
-    // attribute. We don't need to add/remove a new
-    // message — just mutate the existing one. The
-    // addChatMsg helper exposes the id we can use.
-    const el = document.querySelector(`[data-msg-id="${typingId}"] .msg-text`);
-    if (el) el.textContent = text;
+    // it in place. addChatMsg sets the div's `id` to
+    // `chat-msg-{N}` where N is the typed return value
+    // (we capture that as `typingId`). We then select by
+    // that id and update the .msg-text child's text.
+    //
+    // v3.2.29 fix: previous code (v3.2.28) used
+    // `[data-msg-id="${typingId}"]`, but addChatMsg sets
+    // the div's `id` attribute, not a data-* attribute.
+    // The selector matched nothing and the escalation
+    // silently failed — the typing message stayed at
+    // "is thinking..." for the full request duration.
+    // Tobe's v3.10.97 feedback: "It still only says
+    // thinking." Now we use the correct id selector.
+    const el = document.getElementById(typingId);
+    if (el) {
+      const textSpan = el.querySelector('.msg-text');
+      if (textSpan) textSpan.textContent = text;
+    }
   };
   escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is thinking (working on it)...`), 8000));
   escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is taking a moment...`), 20000));
