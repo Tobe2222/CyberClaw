@@ -406,7 +406,26 @@ async function initArenaCompanions() {
 // periodic sync. Earlier this only ran on init/reconnect,
 // which is why changing a companion's size in the forge
 // didn't update the mobile until up to 60s later.
-function broadcastAgentsListToMobile() {
+// v3.2.27: now async. We need to await the sprite config
+// read for each agent so the broadcast can include the
+// full per-companion sprite config (traits, scale,
+// chattiness, pixelCompanionId, models). The mobile's
+// Personalize screen was rendering defaults (empty
+// traits) because the agents_list broadcast didn't carry
+// the sprite config — the mobile would only know what the
+// user just SAVED, not what was already set on the
+// desktop. Tobe's v3.10.94 feedback: "i still dont get
+// the current settings. If you see the behaviours, none
+// of them are selected, even tho they are on the
+// desktop. The settings should be consistent between
+// desktop and phone."
+//
+// Each sprite config is ~200 bytes JSON; reading 6 of
+// them in parallel takes ~1ms (disk cache hit on second
+// call). Awaiting in a map() is fine — the Promise.all
+// pattern keeps the broadcast latency at one disk read,
+// not six.
+async function broadcastAgentsListToMobile() {
   try {
     // Reuse the same visibleOrder construction as
     // initArenaCompanions: active chat companion first, then
@@ -417,9 +436,20 @@ function broadcastAgentsListToMobile() {
         id !== activeChatAgentId && !hiddenCompanions.has(id)
       ),
     ];
-    const mobileList = order.map(id => {
+    const mobileList = (await Promise.all(order.map(async id => {
       const a = agents[id];
       if (!a) return null;
+      // v3.2.27: read the full sprite config so the mobile
+      // can hydrate its Personalize screen with the same
+      // values the desktop has. cyberclaw.agents.getSpriteConfig
+      // reads from sprites.json (cached on second call).
+      // Errors are swallowed: a missing/corrupt file is
+      // treated as "no config" and the mobile falls back
+      // to its own defaults.
+      let spriteConfig = null;
+      try {
+        spriteConfig = await cyberclaw.agents.getSpriteConfig(id);
+      } catch (_) { /* ignore */ }
       return {
         id: a.id,
         name: a.name,
@@ -450,6 +480,17 @@ function broadcastAgentsListToMobile() {
         // React Native's <Image> can render it without needing
         // to resolve a relative file path from the broadcast.
         iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
+        // v3.2.27: the actual pixel-art sprite (not the
+        // Twemoji SVG). This is the first frame of the
+        // idle animation, the same PNG that shows in the
+        // arena + the chat tab icon + the desktop forge
+        // preview. Tobe's v3.10.94 feedback: the mobile
+        // preview was rendering the catalog emoji, not the
+        // pixel sprite. Sending the avatar data URL
+        // (5–11KB per sprite) lets the mobile render the
+        // same art. Null if no avatar yet (legacy companion
+        // or saveAvatar hasn't run).
+        avatar: a.avatar || null,
         // v3.10.3: include sleepState so the mobile arena can
         // render a sleeping-sprite visual (CSS grayscale +
         // dim) when the desktop considers the companion
@@ -467,8 +508,14 @@ function broadcastAgentsListToMobile() {
         // companion has no chattiness set yet (legacy
         // sprite-config without the field).
         chattiness: typeof a.chattiness === 'number' ? a.chattiness : 3,
+        // v3.2.27: the full sprite config (traits, scale,
+        // pixelCompanionId, models, customName, focusSkills).
+        // The mobile hydrates the Personalize screen from
+        // this so the user sees the same selections the
+        // desktop has, not defaults. Null if no config.
+        spriteConfig: spriteConfig || null,
       };
-    }).filter(Boolean);
+    }))).filter(Boolean);
     if (mobileList.length > 0) {
       ipcRenderer.invoke('sync-broadcast-agents-list', { agents: mobileList });
     }
@@ -4392,52 +4439,20 @@ try {
   // broadcastAgentsList — populating the cache and sending the
   // list to the requesting mobile (and any others).
   ipcRenderer.on('mobile-request-agents-list', () => {
+    // v3.2.27: delegate to broadcastAgentsListToMobile so
+    // both broadcast sites use the SAME list shape (with
+    // spriteConfig + avatar). Previously this handler
+    // built its own list without those fields, which meant
+    // a late-reconnecting client got a stripped-down
+    // payload until the next 60s sync. The unified list
+    // shape is small (~10-15KB per companion with the
+    // avatar data URL) and the same code path that runs
+    // on every periodic sync. The .catch is defense in
+    // depth for the floating promise.
     console.log('[App] Sync server requested agents list refresh');
-    try {
-      if (typeof agentOrder === 'undefined' || !Array.isArray(agentOrder) || agentOrder.length === 0) {
-        console.warn('[App] agentOrder empty, cannot refresh agents list');
-        return;
-      }
-      // Reuse the same visibleOrder construction as
-      // initArenaCompanions: active chat companion first, then the
-      // rest, minus hidden ones.
-      const visibleOrder = [
-        ...(typeof activeChatAgentId !== 'undefined' && activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
-        ...agentOrder.filter(id =>
-          id !== activeChatAgentId && !hiddenCompanions.has(id)
-        ),
-      ];
-      const mobileList = visibleOrder.map(id => {
-        const a = agents[id];
-        if (!a) return null;
-        return {
-          id: a.id,
-          name: a.name,
-          sprite: a._pixelCompanionId || null,
-          scale: a._pixelCompanionScale || null,
-          // v3.1.30: same as the other broadcast site — don't
-          // send the desktop's 🤖 default as the user's emoji,
-          // and send the sprite icon independently. See the
-          // matching comment in the other broadcast site.
-          emoji: a.emoji === '🤖' ? null : (a.emoji || null),
-          icon: getSpriteIcon(a._pixelCompanionId) || null,
-          // v3.1.26: also send iconFile for the Twemoji SVG.
-          iconFile: getSpriteIconFile(a._pixelCompanionId),
-          // v3.1.29: also send the SVG as a base64 data URI so
-          // React Native's <Image> can render it without
-          // resolving a relative file path.
-          iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
-        };
-      }).filter(Boolean);
-      if (mobileList.length === 0) {
-        console.warn('[App] mobileList empty after filter, not broadcasting');
-        return;
-      }
-      console.log(`[App] Re-broadcasting agents list: ${mobileList.length} agent(s) (${mobileList.map(a => a.id).join(',')})`);
-      ipcRenderer.invoke('sync-broadcast-agents-list', { agents: mobileList });
-    } catch (e) {
+    broadcastAgentsListToMobile().catch((e) => {
       console.log('[App] Error re-broadcasting agents list:', e?.message);
-    }
+    });
   });
 
   // v3.2.26: mobile-initiated companion edit (Personalize screen).
@@ -4502,8 +4517,14 @@ try {
       // Re-broadcast agents list so the change syncs back to
       // the phone that initiated it (and any other connected
       // client). broadcastAgentsListToMobile uses the unified
-      // map that includes chattiness + sleepState.
-      try { broadcastAgentsListToMobile(); } catch (_) {}
+      // map that includes chattiness + sleepState. v3.2.27:
+      // the function is now async (reads sprite config per
+      // agent). The catch covers the floating-promise case
+      // — the function's own try/catch handles inner errors,
+      // but we add .catch as defense in depth.
+      broadcastAgentsListToMobile().catch((e) => {
+        console.warn('[mobile-sprite-config-saved] rebroadcast failed:', e?.message);
+      });
       try { buildCarousel(); } catch (_) {}
       console.log('[mobile-sprite-config-saved] applied + broadcast for', agentId);
     } catch (e) {
