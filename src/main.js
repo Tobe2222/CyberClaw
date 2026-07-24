@@ -2441,6 +2441,26 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
+    // v3.2.33: write counterpart for the read above. The
+    // mobile's quest editor sends save_quest_instructions
+    // with the file content; we write via the same IPC
+    // the desktop's renderer uses (which mkdirs the
+    // parent dir if needed). Returns { ok, path, bytes }
+    // or { ok: false, error }.
+    onSaveQuestInstructions: async (questId, content) => {
+      try {
+        const quests = loadQuests();
+        const quest = quests.find(q => q.id === questId);
+        if (!quest) return { ok: false, error: 'quest not found' };
+        const file = questInstructionsFilePath(quest);
+        const parent = path.dirname(file);
+        fs.mkdirSync(parent, { recursive: true });
+        fs.writeFileSync(file, content || '', 'utf-8');
+        return { ok: true, path: file, bytes: Buffer.byteLength(content || '', 'utf-8') };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    },
     // v3.2.26: phone-side companion edit (Personalize
     // screen). The mobile sends a sprite_config_sync with
     // { agentId, config: <partial patch> }. We forward it

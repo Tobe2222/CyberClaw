@@ -79,6 +79,11 @@ class SyncServer extends EventEmitter {
     // file content via the same IPC the desktop's renderer
     // uses. Read-only on mobile.
     this.onReadQuestInstructions = options.onReadQuestInstructions || null;
+    // v3.2.33: write counterpart for the read above.
+    // Mobile's quest editor sends save_quest_instructions
+    // with the file content; the desktop writes via the
+    // same IPC the desktop's renderer uses.
+    this.onSaveQuestInstructions = options.onSaveQuestInstructions || null;
     // v3.2.26: phone-side companion edit. The mobile's
     // Personalize screen sends a sprite_config_sync with the
     // agentId + a partial config patch; main.js applies the
@@ -602,6 +607,63 @@ class SyncServer extends EventEmitter {
           }
         } catch (e) {
           this._send(ws, { type: 'quest_instructions', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      case 'save_quest_instructions': {
+        // v3.2.33: mobile saves the quest instructions file
+        // (used by the mobile's quest editor). We forward
+        // to the same onSaveQuestInstructions callback
+        // the desktop's quest editor uses. The mobile
+        // waits for the ack before closing its editor
+        // (so the file is actually written before the
+        // user moves on). Shape: { questId, content }.
+        if (!client.authenticated) return;
+        const questId = msg.questId;
+        const content = msg.content || '';
+        if (!questId) {
+          this._send(ws, { type: 'quest_instructions_saved', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onSaveQuestInstructions) {
+          this._send(ws, {
+            type: 'quest_instructions_saved', questId, ok: false,
+            error: 'Desktop does not support quest project instructions yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const result = this.onSaveQuestInstructions(questId, content);
+          if (result && typeof result.then === 'function') {
+            result.then((res) => {
+              this._send(ws, {
+                type: 'quest_instructions_saved',
+                questId,
+                ok: !!(res && res.ok),
+                path: res?.path || null,
+                bytes: res?.bytes,
+                error: res?.ok ? undefined : (res?.error || 'unknown error'),
+                ts: Date.now(),
+              });
+            }).catch((e) => {
+              this._send(ws, { type: 'quest_instructions_saved', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+            });
+          } else {
+            const res = result || {};
+            this._send(ws, {
+              type: 'quest_instructions_saved',
+              questId,
+              ok: !!(res && res.ok),
+              path: res?.path || null,
+              bytes: res?.bytes,
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          }
+        } catch (e) {
+          this._send(ws, { type: 'quest_instructions_saved', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
         }
         break;
       }
