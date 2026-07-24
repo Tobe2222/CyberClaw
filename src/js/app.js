@@ -53,6 +53,61 @@ function getSpriteIconFile(pixelId) {
 // paths from a broadcast payload, but it DOES render data URIs
 // reliably. The SVG is tiny (<3KB) so the base64 overhead is
 // negligible.
+
+// v3.2.28: convert an avatar value to a data URI suitable for
+// the mobile. The desktop stores a.avatar as either a file
+// path (read from IDENTITY.md's Avatar: field, or the
+// assets/avatars/ fallback at boot) OR as a base64 data URI
+// (set after saveAvatar in the desktop forge). React Native's
+// <Image> cannot resolve file paths from a broadcast payload,
+// so the broadcast must always be a data URI.
+//
+// Strategy: if it already starts with "data:" we pass it
+// through; otherwise treat it as a file path and read +
+// base64-encode it. Cached at module scope (one read per
+// agent) so the 60s broadcast doesn't re-read the file each
+// tick.
+let _avatarCache = new Map(); // path -> { dataUri, mtimeMs }
+function getAvatarDataUri(avatar) {
+  if (!avatar) return null;
+  if (typeof avatar === 'string' && avatar.startsWith('data:')) return avatar;
+  // Resolve ~ to the user home. The desktop's openclaw config
+  // uses ~/workspace paths from the IDENTITY.md read.
+  let resolved = avatar;
+  if (typeof avatar === 'string' && avatar.startsWith('~')) {
+    try {
+      const _os = require('os');
+      resolved = _path.join(_os.homedir(), avatar.slice(1));
+    } catch { return null; }
+  }
+  try {
+    const _fs2 = require('fs');
+    let stat;
+    try { stat = _fs2.statSync(resolved); } catch { return null; }
+    if (!stat.isFile()) return null;
+    // Cache hit if mtime matches (file hasn't changed).
+    const cached = _avatarCache.get(resolved);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      return cached.dataUri;
+    }
+    const buf = _fs2.readFileSync(resolved);
+    const b64 = buf.toString('base64');
+    // PNG signature sniff. If the file is something else
+    // (e.g. JPEG, WebP), use the matching data URI prefix.
+    // Default to image/png since the avatar is rendered
+    // through canvas.toDataURL('image/png') in the forge.
+    let mime = 'image/png';
+    if (buf[0] === 0xff && buf[1] === 0xd8) mime = 'image/jpeg';
+    else if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) mime = 'image/webp';
+    else if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) mime = 'image/gif';
+    const dataUri = `data:${mime};base64,${b64}`;
+    _avatarCache.set(resolved, { dataUri, mtimeMs: stat.mtimeMs, size: stat.size });
+    return dataUri;
+  } catch {
+    return null;
+  }
+}
+
 function getSpriteIconDataUri(pixelId) {
   const f = getSpriteIconFile(pixelId);
   if (!f) return null;
@@ -490,7 +545,16 @@ async function broadcastAgentsListToMobile() {
         // (5–11KB per sprite) lets the mobile render the
         // same art. Null if no avatar yet (legacy companion
         // or saveAvatar hasn't run).
-        avatar: a.avatar || null,
+        //
+        // v3.2.28: convert file paths to data URIs at
+        // broadcast time. At boot the desktop loads
+        // a.avatar from IDENTITY.md (which holds a file
+        // path, not a data URL) or the assets/avatars/
+        // fallback. The mobile can't render a file path
+        // from a broadcast payload — getAvatarDataUri
+        // reads the file, base64-encodes it, and caches by
+        // mtime so the 60s broadcast is fast.
+        avatar: getAvatarDataUri(a.avatar),
         // v3.10.3: include sleepState so the mobile arena can
         // render a sleeping-sprite visual (CSS grayscale +
         // dim) when the desktop considers the companion
@@ -1916,8 +1980,66 @@ window.sendChat = async function() {
   document.getElementById('chat-send').disabled = true;
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
+  // v3.2.28: escalate the typing indicator so the user
+  // has a visible signal that the request is still
+  // being processed during long model retries. The
+  // openclaw agent internally retries on transient
+  // failures (model timeout → 2min cooldown → retry),
+  // and the user used to see "is thinking..." for the
+  // entire retry window (could be 15+ minutes if the
+  // model is misbehaving). Tobe's v3.10.96 feedback:
+  // "And it still just says clawsuu is thinking, not
+  // executing etc." Now we step through messages at
+  // 8s, 20s, 45s, and 90s so the user sees progress.
+  // The timers are cleared on the result/catch so the
+  // escalation can't continue past the response.
+  const escalationTimers = [];
+  const escalateTyping = (text) => {
+    // Find the typing message's text span and update
+    // it in place. The message id is `typingId` and
+    // addChatMsg returns a div with a `data-msg-id`
+    // attribute. We don't need to add/remove a new
+    // message — just mutate the existing one. The
+    // addChatMsg helper exposes the id we can use.
+    const el = document.querySelector(`[data-msg-id="${typingId}"] .msg-text`);
+    if (el) el.textContent = text;
+  };
+  escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is thinking (working on it)...`), 8000));
+  escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is taking a moment...`), 20000));
+  escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is still working (model is slow today)...`), 45000));
+  escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is still working (model keeps timing out — hang tight)...`), 90000));
+  const clearEscalation = () => {
+    for (const t of escalationTimers) clearTimeout(t);
+    escalationTimers.length = 0;
+  };
+
   try {
-    const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
+    // v3.2.28: cap the openclaw agent call at 2 minutes
+    // on the desktop side too. The openclaw CLI internally
+    // retries with a 2min cooldown each — if the model
+    // is misbehaving, the user used to wait 15-20min
+    // before getting any signal. The desktop's exec
+    // timeout is already 120s but the openclaw agent
+    // stays alive across internal retries, so the
+    // timeout never fires. Promise.race with a
+    // setTimeout-rejected promise caps the total wait
+    // here. On cap, we surface "the request is taking
+    // too long, but you can wait or cancel" and the
+    // openclaw agent keeps running in the background.
+    let capHandle;
+    const capPromise = new Promise((_, reject) => {
+      capHandle = setTimeout(() => reject(new Error('Request timed out after 2 minutes')), 120000);
+    });
+    let result;
+    try {
+      result = await Promise.race([
+        cyberclaw.chat.sendMessage(mainAgentId, fullMessage),
+        capPromise,
+      ]);
+    } finally {
+      clearTimeout(capHandle);
+    }
+    clearEscalation();
     removeChatMsg(typingId);
 
     if (result.ok) {
@@ -2054,6 +2176,7 @@ window.sendChat = async function() {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
   } catch (err) {
+    clearEscalation();
     removeChatMsg(typingId);
     addChatMsg('error', `Error: ${err.message}`);
   }
