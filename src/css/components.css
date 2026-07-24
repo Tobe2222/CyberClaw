@@ -718,6 +718,17 @@
 }
 .quest-status-toggle:hover { background: rgba(255,107,53,0.15); }
 
+/* v3.2.30: per-quest behavior file button. Sits in the
+   .quest-actions-row next to .quest-status-toggle. Same
+   small-font pattern but gold-tinted so it stands out as
+   "this opens an editor" vs "this toggles status". */
+.quest-behavior-btn {
+  font-size: 9px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25);
+  color: #fbbf24; cursor: pointer; margin-top: 4px; margin-left: 4px; display: inline-block;
+}
+.quest-behavior-btn:hover { background: rgba(251,191,36,0.16); }
+
 .quest-log-content {
   padding: 20px;
   overflow-y: auto;

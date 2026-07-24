@@ -74,6 +74,11 @@ class SyncServer extends EventEmitter {
     this.onCreateQuest = options.onCreateQuest || null;
     this.onListQuests = options.onListQuests || null;
     this.onRequestQuestsList = options.onRequestQuestsList || null;
+    // v3.2.30: per-quest behavior file read. Mobile calls
+    // request_quest_behavior and main.js answers with the
+    // file content via the same IPC the desktop's renderer
+    // uses. Read-only on mobile.
+    this.onReadQuestBehavior = options.onReadQuestBehavior || null;
     // v3.2.26: phone-side companion edit. The mobile's
     // Personalize screen sends a sprite_config_sync with the
     // agentId + a partial config patch; main.js applies the
@@ -539,6 +544,64 @@ class SyncServer extends EventEmitter {
           try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
         } else if (this._lastQuestsList) {
           this._send(ws, this._lastQuestsList.payload);
+        }
+        break;
+      }
+
+      case 'request_quest_behavior': {
+        // v3.2.30: mobile requests the markdown content of
+        // a quest's behavior file. We forward to the
+        // main.js callback which calls the same
+        // cyberclaw.quests.readBehavior IPC the desktop's
+        // renderer uses. The mobile is read-only on this
+        // file — the desktop owns the editor.
+        if (!client.authenticated) return;
+        const questId = msg.questId;
+        if (!questId) {
+          this._send(ws, { type: 'quest_behavior', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onReadQuestBehavior) {
+          // Desktop doesn't have v3.2.30 wired yet (or this
+          // is running against an older sync-server). Tell
+          // the mobile gracefully.
+          this._send(ws, {
+            type: 'quest_behavior', questId, ok: false,
+            error: 'Desktop does not support quest behavior files yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const result = this.onReadQuestBehavior(questId);
+          if (result && typeof result.then === 'function') {
+            result.then((res) => {
+              this._send(ws, {
+                type: 'quest_behavior',
+                questId,
+                ok: !!(res && res.ok),
+                content: res?.content || '',
+                path: res?.path || null,
+                error: res?.ok ? undefined : (res?.error || 'unknown error'),
+                ts: Date.now(),
+              });
+            }).catch((e) => {
+              this._send(ws, { type: 'quest_behavior', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+            });
+          } else {
+            const res = result || {};
+            this._send(ws, {
+              type: 'quest_behavior',
+              questId,
+              ok: !!(res && res.ok),
+              content: res?.content || '',
+              path: res?.path || null,
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          }
+        } catch (e) {
+          this._send(ws, { type: 'quest_behavior', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
         }
         break;
       }

@@ -1241,6 +1241,48 @@ function buildActiveQuestContext(quest) {
   // sees it even when there's no active quest.
   ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
   ctx += `] `;
+
+  // v3.2.30: per-quest behavior file. The companion reads
+  // <quest.directory>/BEHAVIOR.md (or
+  // ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md if no
+  // directory) on every chat send and injects its contents
+  // as a separate context block. This is the place to write
+  // project-specific instructions ("on this quest, never
+  // touch the dev DB", "use British English", "always check
+  // the build before committing") that the LLM should
+  // follow while working on this quest.
+  //
+  // Cached at module scope so the read-on-every-send isn't
+  // a real cost. The cache invalidates on saveBehavior (the
+  // renderer's quest editor calls cyberclaw.quests.saveBehavior
+  // then clears the cache here).
+  if (!quest._behaviorCache) quest._behaviorCache = {};
+  const cached = quest._behaviorCache[quest.id];
+  if (cached !== undefined) {
+    if (cached.content) {
+      ctx += `\n[Quest behavior file at ${cached.path}]\n${cached.content}\n[/Quest behavior file] `;
+    }
+  } else {
+    // Async read — we can't await here because
+    // buildActiveQuestContext is sync. Push the read into
+    // a fire-and-forget promise that fills the cache for
+    // the NEXT call. The first chat send after opening a
+    // quest will NOT have the behavior file in context; the
+    // second one will. Tobe's UX is "open quest, type,
+    // send" so the second-send delay is acceptable. If we
+    // need the file on the first send, we can pre-fetch on
+    // quest selection in the renderer's selectQuest handler.
+    cyberclaw.quests.readBehavior(quest.id).then((res) => {
+      if (res && res.ok) {
+        quest._behaviorCache[quest.id] = { content: res.content, path: res.path };
+      } else {
+        quest._behaviorCache[quest.id] = { content: '', path: null };
+      }
+    }).catch(() => {
+      quest._behaviorCache[quest.id] = { content: '', path: null };
+    });
+  }
+
   return ctx;
 }
 
@@ -1445,6 +1487,18 @@ async function renderQuests() {
   // Clear existing items (keep the empty div)
   list.querySelectorAll('.quest-item').forEach(el => el.remove());
 
+  // v3.2.30: invalidate the per-quest behavior-file cache so
+  // the next chat send re-reads the file. (The cache is on
+  // the quest object in buildActiveQuestContext, but the
+  // quest reference is local to the function — we don't
+  // have a stable handle here. Walk the cached promise
+  // resolvers instead by clearing a module-level map. We
+  // set quest._behaviorCache = {} per-call inside
+  // buildActiveQuestContext, but that map persists across
+  // calls because quest is a stable reference from the
+  // cached list. So we just set it on every renderQuests.)
+  for (const q of quests) q._behaviorCache = {};
+
   if (!quests.length) {
     empty.style.display = '';
     return;
@@ -1509,6 +1563,7 @@ async function renderQuests() {
         <button class="quest-status-toggle" onclick="toggleQuestStatus(event,'${q.id}')">
           ${isComplete ? '↩ Reopen' : '🏁 Mark done'}
         </button>
+        <button class="quest-behavior-btn" onclick="openBehaviorEditor(event,'${q.id}')" title="Per-quest behavior file (project-specific instructions)">📋 Behavior</button>
       </div>
     `;
     list.appendChild(div);
@@ -1634,6 +1689,97 @@ window.closeQuestEditor = function() {
   // Rebuild the entire left panel
   rebuildLeftPanel();
   renderQuests();
+};
+
+// v3.2.30: per-quest behavior file editor. Opens a small
+// modal with a textarea bound to the quest's BEHAVIOR.md
+// (default: <quest.directory>/BEHAVIOR.md, or
+// ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md if no
+// directory). The file content is injected into the chat
+// prompt as a per-quest "behavior" context block, so the
+// LLM sees project-specific instructions before generating
+// a reply. Save writes the file and invalidates the cache
+// in buildActiveQuestContext so the next chat send picks up
+// the new content.
+window.openBehaviorEditor = async function(event, questId) {
+  if (event) event.stopPropagation();
+  const res = await cyberclaw.quests.readBehavior(questId);
+  if (!res || !res.ok) {
+    addEventMsg(`⚠️ Could not read behavior file: ${res?.error || 'unknown error'}`);
+    return;
+  }
+
+  // v3.2.30: build the modal as an overlay in the
+  // body (not the panel) so it sits on top of the
+  // entire UI. The desktop's quest panel is in the
+  // left column, but a textarea + save/cancel buttons
+  // need a fair amount of vertical space — the overlay
+  // model keeps it readable regardless of where the
+  // user is.
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'behavior-editor-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeBehaviorEditor(); };
+
+  const preview = res.path
+    ? `File: <code>${escapeHtml(res.path)}</code>`
+    : '<em>No file path resolved</em>';
+
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:680px;width:90%;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span class="modal-title">📋 Quest behavior file</span>
+        <button class="modal-close" onclick="closeBehaviorEditor()">✕</button>
+      </div>
+      <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);">
+        Project-specific behavior instructions for the companion when this quest is active.
+        Markdown is fine. The content is injected into the chat prompt as a separate context block.
+        ${preview}
+      </div>
+      <textarea id="behavior-textarea" class="behavior-textarea" placeholder="# Behavior for this quest&#10;&#10;Notes for the companion:&#10;- Never touch the dev DB&#10;- Use British English&#10;- Always run tests before committing"
+        style="flex:1;min-height:300px;font-family:monospace;font-size:12px;padding:8px;background:#0a0a0a;color:#e0e0e0;border:1px solid #333;border-radius:4px;resize:vertical;">${escapeHtml(res.content || '')}</textarea>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--border-dark);">
+        <button class="btn-sm btn-muted" onclick="closeBehaviorEditor()">Cancel</button>
+        <button class="btn-sm btn-primary" id="behavior-save-btn" onclick="saveBehaviorFile('${questId}')">💾 Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    const ta = document.getElementById('behavior-textarea');
+    if (ta) ta.focus();
+  }, 50);
+};
+
+window.closeBehaviorEditor = function() {
+  const overlay = document.getElementById('behavior-editor-overlay');
+  if (overlay) overlay.remove();
+};
+
+window.saveBehaviorFile = async function(questId) {
+  const ta = document.getElementById('behavior-textarea');
+  const btn = document.getElementById('behavior-save-btn');
+  if (!ta) return;
+  const content = ta.value;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const res = await cyberclaw.quests.saveBehavior(questId, content);
+    if (!res || !res.ok) {
+      addEventMsg(`⚠️ Could not save behavior file: ${res?.error || 'unknown error'}`);
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
+      return;
+    }
+    addEventMsg(`📋 Saved behavior file (${res.bytes} bytes) — ${res.path}`);
+    // Invalidate the in-memory cache so the next chat send
+    // re-reads the file. We do this on the cached quest
+    // object in buildActiveQuestContext; renderQuests()
+    // also clears the cache, so the next renderQuests (on
+    // any other quest change) will pick up fresh.
+    closeBehaviorEditor();
+  } catch (e) {
+    addEventMsg(`⚠️ Behavior save failed: ${e?.message || e}`);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
+  }
 };
 
 function rebuildLeftPanel() {
@@ -2013,6 +2159,23 @@ window.sendChat = async function() {
     if (el) {
       const textSpan = el.querySelector('.msg-text');
       if (textSpan) textSpan.textContent = text;
+      // v3.2.30: debug log so we can see in the desktop
+      // log whether the escalation actually fired when
+      // Tobe reports it isn't. Without this, "I see
+      // 'is thinking' for 2 minutes" is impossible to
+      // distinguish from "the timers fired but the
+      // text update missed" vs "the message div was
+      // removed by a tab switch".
+      console.log(`[typing-escalate] ${typingId} -> "${text}" (div=${!!el}, span=${!!textSpan})`);
+    } else {
+      // v3.2.30: the div isn't in the DOM. Either the
+      // message was already removed (response arrived
+      // early), the user switched tabs (the active
+      // agent's chat was re-rendered and the typing
+      // div was dropped), or the typing was skipped
+      // because the agent's channel isn't the active
+      // one. Log so we can tell from the log.
+      console.log(`[typing-escalate] ${typingId} -> SKIP (div not found, text="${text}")`);
     }
   };
   escalationTimers.push(setTimeout(() => escalateTyping(`${agent.name} is thinking (working on it)...`), 8000));

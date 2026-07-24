@@ -1139,6 +1139,60 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
   return quests[idx] || null;
 });
+
+// v3.2.30: per-quest behavior file. Each quest can have a
+// markdown file (default: <quest.directory>/BEHAVIOR.md, or
+// ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md if no
+// directory is set) that holds project-specific behavior
+// instructions for the companion. The file content is read
+// by buildActiveQuestContext() on the renderer and injected
+// into the chat prompt as a separate context block, so the
+// LLM sees "when working on this quest, behave like this"
+// before generating a reply.
+//
+// The renderer's Quests panel shows the file content with
+// an Edit button; the mobile shows it read-only (no edit
+// on mobile — the user can edit via the desktop). The
+// IPCs are read-by-id (single quest) and write-by-id.
+function questBehaviorPath(quest) {
+  if (!quest) return null;
+  if (quest.directory) {
+    return path.join(quest.directory, 'BEHAVIOR.md');
+  }
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'BEHAVIOR.md');
+}
+
+ipcMain.handle('quests:read-behavior', (event, questId) => {
+  const quests = loadQuests();
+  const quest = quests.find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  const file = questBehaviorPath(quest);
+  try {
+    if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
+    const content = fs.readFileSync(file, 'utf-8');
+    return { ok: true, content, path: file };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+});
+
+ipcMain.handle('quests:save-behavior', (event, questId, content) => {
+  const quests = loadQuests();
+  const quest = quests.find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  const file = questBehaviorPath(quest);
+  try {
+    // Ensure parent dir exists. If the quest has a
+    // directory we write into it directly; if not we
+    // create ~/.openclaw/cyberclaw/quests/<id>/.
+    const parent = path.dirname(file);
+    fs.mkdirSync(parent, { recursive: true });
+    fs.writeFileSync(file, content || '', 'utf-8');
+    return { ok: true, path: file, bytes: Buffer.byteLength(content || '', 'utf-8') };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+});
 ipcMain.handle('companion:stats', (event, agentId) => {
   const stats = loadStats();
   return stats[agentId] || { level: 1, xp: 0, xpTotal: 0, skills: {} };
@@ -2339,6 +2393,31 @@ app.whenReady().then(() => {
     onRequestQuestsList: () => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
+    },
+    // v3.2.30: read a quest's behavior file (markdown).
+    // The mobile is read-only on this file; the desktop's
+    // quest editor is the source of truth for changes.
+    // We call the same IPC the desktop's renderer uses
+    // (ipcMain.handle('quests:read-behavior', ...)) so
+    // the resolution path is identical: if the quest has
+    // a directory, read <directory>/BEHAVIOR.md; else
+    // read ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md.
+    // Returns { ok, content, path } (or { ok: false, error }).
+    onReadQuestBehavior: async (questId) => {
+      try {
+        // Re-use the IPC handler's logic by simulating a
+        // call. The handler is private to the IPC layer,
+        // so we inline the path-resolution + read here.
+        const quests = loadQuests();
+        const quest = quests.find(q => q.id === questId);
+        if (!quest) return { ok: false, error: 'quest not found' };
+        const file = questBehaviorPath(quest);
+        if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
+        const content = fs.readFileSync(file, 'utf-8');
+        return { ok: true, content, path: file };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
     },
     // v3.2.26: phone-side companion edit (Personalize
     // screen). The mobile sends a sprite_config_sync with

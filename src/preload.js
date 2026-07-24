@@ -70,6 +70,15 @@ window.cyberclaw = {
     // v3.1.50: toggle a goal's completed flag by index. Returns
     // the updated quest or null if the id/index is invalid.
     markGoalDone: (id, goalIndex, completed) => ipcRenderer.invoke('quests:mark-goal-done', id, goalIndex, completed),
+    // v3.2.30: per-quest behavior file. Read/write the
+    // markdown file associated with a quest (default:
+    // <quest.directory>/BEHAVIOR.md). The file content
+    // is injected into the chat prompt as a per-quest
+    // "behavior" context block, so the LLM sees
+    // project-specific instructions before generating
+    // a reply. Read returns { ok, content, path }.
+    readBehavior: (id) => ipcRenderer.invoke('quests:read-behavior', id),
+    saveBehavior: (id, content) => ipcRenderer.invoke('quests:save-behavior', id, content),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),
