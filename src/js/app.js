@@ -1616,6 +1616,23 @@ window.openQuestEditor = async function(event, questId) {
   editingQuestId = questId;
   const panel = document.getElementById('panel-left');
 
+  // v3.2.31: load the behavior file content for this
+  // quest so it can be edited inline in the quest editor.
+  // The file path is <quest.directory>/BEHAVIOR.md if
+  // a directory is set, else
+  // ~/.openclaw/cyberclaw/quests/<id>/BEHAVIOR.md.
+  // We render a monospace textarea (full width, 12 lines)
+  // directly in the editor. Save writes the file via
+  // cyberclaw.quests.saveBehavior. Tobe's v3.10.98
+  // feedback: "Add such a file creation and edit into the
+  // quest editor. It should be deployed into the
+  // project/quest directory for that quest." The file
+  // path is shown below the textarea so the user can
+  // verify it lives in the expected directory.
+  const behaviorRes = await cyberclaw.quests.readBehavior(questId).catch(() => null);
+  const behaviorContent = (behaviorRes && behaviorRes.ok) ? (behaviorRes.content || '') : '';
+  const behaviorPath = (behaviorRes && behaviorRes.ok) ? (behaviorRes.path || '') : '<no path>';
+
   panel.innerHTML = `
     <div class="panel-header">
       <span class="rune-icon">📜</span> EDIT QUEST
@@ -1642,6 +1659,14 @@ window.openQuestEditor = async function(event, questId) {
           <input type="text" id="qe-dir" value="${escapeHtml(quest.directory || '')}" readonly />
           <button class="quest-dir-btn" onclick="pickQuestEditorDir()">📁</button>
         </div>
+      </div>
+      <div class="editor-field">
+        <label>📋 Behavior file</label>
+        <div class="qe-behavior-hint">
+          Per-quest workflow notes for the companion. Injected into the chat prompt as a separate context block when this quest is active. Use this to record "how to do tasks" for the project (e.g. "deploy via <code>scp</code> to the VPS", "edit files directly on the server", "always run tests first").
+        </div>
+        <textarea id="qe-behavior" rows="12" class="qe-behavior-textarea" placeholder="# Workflow for this quest&#10;&#10;## Deploy&#10;- scp dist/* user@vps:/var/www/&#10;- ssh user@vps 'systemctl restart nginx'&#10;&#10;## Build&#10;- npm run build&#10;- verify dist/index.html exists">${escapeHtml(behaviorContent)}</textarea>
+        <div class="qe-behavior-path">File: <code>${escapeHtml(behaviorPath)}</code></div>
       </div>
       <div class="qe-actions">
         <button class="btn-sm btn-muted" onclick="closeQuestEditor()">Cancel</button>
@@ -1680,6 +1705,27 @@ window.saveQuestEdit = async function() {
 
   // Update quest
   await cyberclaw.quests.update(editingQuestId, { name, description, goals, directory: directory || undefined });
+
+  // v3.2.31: save the behavior file (if the editor has
+  // a qe-behavior textarea — older editor versions
+  // don't, in which case skip). The save is fire-
+  // and-forget; we close the editor regardless of
+  // success/failure. A save error is logged to the
+  // events panel.
+  const behaviorTa = document.getElementById('qe-behavior');
+  if (behaviorTa) {
+    const behaviorContent = behaviorTa.value;
+    try {
+      const res = await cyberclaw.quests.saveBehavior(editingQuestId, behaviorContent);
+      if (res && res.ok) {
+        addEventMsg(`📋 Saved behavior file (${res.bytes} bytes) — ${res.path}`);
+      } else {
+        addEventMsg(`⚠️ Could not save behavior file: ${res?.error || 'unknown error'}`);
+      }
+    } catch (e) {
+      addEventMsg(`⚠️ Behavior save failed: ${e?.message || e}`);
+    }
+  }
 
   closeQuestEditor();
 };

@@ -1319,6 +1319,46 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
   border-top: 1px solid var(--border);
 }
 
+/* v3.2.31: per-quest behavior file editor (inline in
+   the quest editor). The textarea is monospace + dark
+   so it looks like a code/file editor, matching the
+   v3.2.30 standalone behavior modal. The hint above
+   the textarea explains what the file is for; the
+   path below the textarea shows where it lives on
+   disk so the user can verify it's in the right
+   place. */
+.qe-behavior-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.qe-behavior-textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 8px;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  resize: vertical;
+  min-height: 200px;
+  font-family: 'Menlo', 'Consolas', monospace;
+}
+.qe-behavior-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.qe-behavior-path code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  word-break: break-all;
+}
+
 /* ─── Equipment Search ─── */
 .equip-search-btn {
   background: none;

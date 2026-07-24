@@ -864,9 +864,31 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
             // Extract reply from various response formats:
             // 1. OpenClaw agent --json: { result: { payloads: [{ text: "..." }] } }
             // 2. Simple: { reply: "..." } or { message: "..." } or { text: "..." }
+            //
+            // v3.2.31: the LLM can emit multiple text messages in
+            // a single turn (e.g. "Let me check the file..." then
+            // later "Done, here's the answer..." after tool
+            // calls). When the agent does that, openclaw's
+            // `payloads` array contains one entry per assistant
+            // text message in order. Reading only
+            // `payloads[0].text` was the bug — Tobe saw
+            // "Clawsuu is thinking" → "Let me check..." (the
+            // first payload) → silence for the second payload
+            // ("Done, here's the answer"), because the second
+            // one was logged to the session but never
+            // broadcast to the renderer. v3.2.31 concatenates
+            // all payload text in order so the user sees the
+            // full reply in one message. Blank payloads
+            // (e.g. media-only) are skipped.
             let reply = null;
             if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
-              reply = parsed.result.payloads[0].text;
+              const parts = [];
+              for (const p of parsed.result.payloads) {
+                if (p && typeof p.text === 'string' && p.text.trim()) {
+                  parts.push(p.text);
+                }
+              }
+              if (parts.length > 0) reply = parts.join('\n\n');
             }
             if (!reply) reply = parsed.reply || parsed.message || parsed.text;
             if (!reply && typeof parsed === 'string') reply = parsed;
