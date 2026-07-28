@@ -92,6 +92,13 @@ class SyncServer extends EventEmitter {
     // updated agents_list so the change appears on every
     // connected client.
     this.onSaveSpriteConfig = options.onSaveSpriteConfig || null;
+    // v3.2.35: companion soul + memory read/clear from mobile.
+    // Mobile is read-only on soul (the desktop forge is the editor);
+    // memory is also read-only except clear, which mirrors the
+    // desktop's companion:clear-memory IPC.
+    this.onReadCompanionSoul = options.onReadCompanionSoul || null;
+    this.onReadCompanionMemory = options.onReadCompanionMemory || null;
+    this.onClearCompanionMemory = options.onClearCompanionMemory || null;
 
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
@@ -664,6 +671,160 @@ class SyncServer extends EventEmitter {
           }
         } catch (e) {
           this._send(ws, { type: 'quest_instructions_saved', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.35: mobile requests a companion's soul.md. Read-only
+      // — the desktop's Companion Forge is the editor. The
+      // response carries the same fields the IPC handler returns
+      // (content + presets) so the mobile can offer preset chips.
+      case 'read_companion_soul': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        if (!agentId) {
+          this._send(ws, { type: 'companion_soul', agentId: null, ok: false, error: 'agentId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onReadCompanionSoul) {
+          this._send(ws, {
+            type: 'companion_soul', agentId, ok: false,
+            error: 'Desktop does not support companion soul yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const result = this.onReadCompanionSoul(agentId);
+          if (result && typeof result.then === 'function') {
+            result.then((res) => {
+              this._send(ws, {
+                type: 'companion_soul',
+                agentId,
+                ok: !!(res && res.ok),
+                content: res?.content || '',
+                presets: res?.presets || null,
+                error: res?.ok ? undefined : (res?.error || 'unknown error'),
+                ts: Date.now(),
+              });
+            }).catch((e) => {
+              this._send(ws, { type: 'companion_soul', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
+            });
+          } else {
+            const res = result || {};
+            this._send(ws, {
+              type: 'companion_soul',
+              agentId,
+              ok: !!(res && res.ok),
+              content: res?.content || '',
+              presets: res?.presets || null,
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          }
+        } catch (e) {
+          this._send(ws, { type: 'companion_soul', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.35: mobile requests a companion's memory.md.
+      // Read-only — the desktop's Companion Forge viewer is the
+      // canonical display; the mobile mirrors the content.
+      case 'read_companion_memory': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        if (!agentId) {
+          this._send(ws, { type: 'companion_memory', agentId: null, ok: false, error: 'agentId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onReadCompanionMemory) {
+          this._send(ws, {
+            type: 'companion_memory', agentId, ok: false,
+            error: 'Desktop does not support companion memory yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const result = this.onReadCompanionMemory(agentId);
+          if (result && typeof result.then === 'function') {
+            result.then((res) => {
+              this._send(ws, {
+                type: 'companion_memory',
+                agentId,
+                ok: !!(res && res.ok),
+                content: res?.content || '',
+                error: res?.ok ? undefined : (res?.error || 'unknown error'),
+                ts: Date.now(),
+              });
+            }).catch((e) => {
+              this._send(ws, { type: 'companion_memory', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
+            });
+          } else {
+            const res = result || {};
+            this._send(ws, {
+              type: 'companion_memory',
+              agentId,
+              ok: !!(res && res.ok),
+              content: res?.content || '',
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          }
+        } catch (e) {
+          this._send(ws, { type: 'companion_memory', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.35: mobile asks the desktop to clear a companion's
+      // memory.md. The desktop's IPC returns `{ ok, content }`
+      // (content is the new empty string), which we forward as
+      // the ack so the mobile can refresh its viewer.
+      case 'clear_companion_memory': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        if (!agentId) {
+          this._send(ws, { type: 'companion_memory_cleared', agentId: null, ok: false, error: 'agentId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onClearCompanionMemory) {
+          this._send(ws, {
+            type: 'companion_memory_cleared', agentId, ok: false,
+            error: 'Desktop does not support clearing companion memory yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const result = this.onClearCompanionMemory(agentId);
+          if (result && typeof result.then === 'function') {
+            result.then((res) => {
+              this._send(ws, {
+                type: 'companion_memory_cleared',
+                agentId,
+                ok: !!(res && res.ok),
+                content: res?.content || '',
+                error: res?.ok ? undefined : (res?.error || 'unknown error'),
+                ts: Date.now(),
+              });
+            }).catch((e) => {
+              this._send(ws, { type: 'companion_memory_cleared', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
+            });
+          } else {
+            const res = result || {};
+            this._send(ws, {
+              type: 'companion_memory_cleared',
+              agentId,
+              ok: !!(res && res.ok),
+              content: res?.content || '',
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          }
+        } catch (e) {
+          this._send(ws, { type: 'companion_memory_cleared', agentId, ok: false, error: e?.message || String(e), ts: Date.now() });
         }
         break;
       }

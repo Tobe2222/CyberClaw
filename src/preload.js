@@ -44,6 +44,24 @@ window.cyberclaw = {
     saveAvatar: (agentId, dataUrl) => ipcRenderer.invoke('companion:save-avatar', agentId, dataUrl),
     listSkills: () => ipcRenderer.invoke('openclaw:list-skills'),
     addXP: (agentId, skill, amount) => ipcRenderer.invoke('companion:add-xp', agentId, skill, amount),
+    // v3.2.32: companion soul + memory. The soul is the
+    // character definition (user-editable). The memory is
+    // auto-written by the companion via remember-memory,
+    // read back via get-memory, cleared via clear-memory.
+    getSoul: (agentId) => ipcRenderer.invoke('companion:get-soul', agentId),
+    saveSoul: (agentId, content) => ipcRenderer.invoke('companion:save-soul', agentId, content),
+    applySoulPreset: (agentId, presetKey) => ipcRenderer.invoke('companion:apply-soul-preset', agentId, presetKey),
+    getMemory: (agentId) => ipcRenderer.invoke('companion:get-memory', agentId),
+    rememberMemory: (agentId, line) => ipcRenderer.invoke('companion:remember-memory', agentId, line),
+    clearMemory: (agentId) => ipcRenderer.invoke('companion:clear-memory', agentId),
+  },
+  system: {
+    // v3.2.32: overarching CYBERCLAW.md prompt shared by
+    // all companions. User-editable; "reset" deletes the
+    // file so the next read returns the default.
+    getCyberclaw: () => ipcRenderer.invoke('system:get-cyberclaw'),
+    saveCyberclaw: (content) => ipcRenderer.invoke('system:save-cyberclaw', content),
+    resetCyberclaw: () => ipcRenderer.invoke('system:reset-cyberclaw'),
   },
   doctorWindow: {
     close: () => ipcRenderer.send('doctor:close'),

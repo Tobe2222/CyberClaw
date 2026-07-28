@@ -385,6 +385,28 @@
           </div>
         </div>
 
+        <!-- v3.2.32: CyberClaw System Prompt. This is the
+             overarching prompt shared by every companion.
+             Edits affect ALL companions — bad edits can break
+             context, leak data, or cause infinite loops. Show
+             the warning, give a clear "Restore default" path. -->
+        <div class="settings-section">
+          <div class="settings-section-title">🛡️ CyberClaw System Prompt</div>
+          <div class="settings-warning" style="background:rgba(220,80,80,0.12);border:1px solid rgba(220,80,80,0.4);border-radius:4px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:#ffb4b4;">
+            ⚠️ <strong>Warning:</strong> This prompt affects <em>every</em> companion.
+            Bad edits can break context, leak data, or cause infinite loops.
+            If unsure, click <em>Restore default</em>.
+          </div>
+          <textarea id="settings-cyberclaw-editor" class="settings-textarea" rows="10" placeholder="(loading...)"></textarea>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+            <span id="settings-cyberclaw-status">Empty</span> · Capped at 16KB · Path: <code id="settings-cyberclaw-path">~/.openclaw/cyberclaw/CYBERCLAW.md</code>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;">
+            <button class="btn-sm btn-primary" onclick="saveCyberclawPrompt()">💾 Save</button>
+            <button class="btn-sm btn-muted" onclick="resetCyberclawPrompt()">↩️ Restore default</button>
+          </div>
+        </div>
+
         <!-- Voice -->
         <div class="settings-section">
           <div class="settings-section-title">🎤 Voice Input</div>
@@ -764,6 +786,51 @@
             <label class="trait-toggle"><input type="checkbox" id="trait-stoic"> <span class="trait-label">🗿 Stoic</span><span class="trait-desc">Calm, dry, matter-of-fact</span></label>
             <label class="trait-toggle"><input type="checkbox" id="trait-adventurous"> <span class="trait-label">⚔️ Adventurous</span><span class="trait-desc">Always wants to go on quests</span></label>
             <label class="trait-toggle"><input type="checkbox" id="trait-goblin"> <span class="trait-label">👺 Goblin</span><span class="trait-desc">Angry smartass, curses freely</span></label>
+          </div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-top:6px;">
+            Tip: pick presets below to auto-fill the soul, or write your own.
+          </div>
+        </div>
+
+        <!-- v3.2.32: Soul — character definition. Replaces the
+             old trait-as-system-prompt approach. Traits are
+             kept above for quick toggling but the soul.md is
+             the source of truth injected into the LLM context. -->
+        <div class="forge-traits-section forge-soul-section">
+          <div class="forge-traits-title">📜 Soul</div>
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">Preset</span>
+            <select id="forge-soul-preset" class="settings-select">
+              <option value="custom">Custom (edit below)</option>
+              <option value="sassy">😏 Sassy</option>
+              <option value="curious">🔍 Curious</option>
+              <option value="lazy">😴 Lazy</option>
+              <option value="cheerful">🌟 Cheerful</option>
+              <option value="foodobsessed">🍖 Food-obsessed</option>
+              <option value="dramatic">🎭 Dramatic</option>
+              <option value="stoic">🗿 Stoic</option>
+              <option value="adventurous">⚔️ Adventurous</option>
+              <option value="goblin">👺 Goblin</option>
+            </select>
+            <button class="btn-sm btn-muted" onclick="applySoulPreset()" style="margin-left:6px;">Apply preset</button>
+          </div>
+          <textarea id="forge-soul-editor" class="settings-textarea" rows="6" placeholder="Describe this companion's character — personality, voice, how they talk. Markdown OK."></textarea>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+            <span id="forge-soul-status">Empty</span> · Capped at 8KB · Injected into every chat as system context
+          </div>
+        </div>
+
+        <!-- v3.2.32: Memory — read-only log of what the companion
+             remembers. The companion writes here automatically
+             via the remember_fact tool; the user can clear it. -->
+        <div class="forge-traits-section forge-memory-section">
+          <div class="forge-traits-title">🧠 Memory</div>
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">
+            Auto-written by this companion. Edit or clear on desktop only.
+          </div>
+          <textarea id="forge-memory-viewer" class="settings-textarea" rows="4" readonly placeholder="(empty — companion hasn't remembered anything yet)"></textarea>
+          <div style="margin-top:6px;">
+            <button class="btn-sm btn-muted" onclick="clearCompanionMemory()">🗑 Clear memory</button>
           </div>
         </div>
       </div>

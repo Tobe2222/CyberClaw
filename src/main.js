@@ -3,6 +3,8 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const pty = require('node-pty');
+// v3.2.32: companion soul + memory + CYBERCLAW.md prompt loader
+const companionPrompts = require('./companion-prompts');
 
 // Desktop log panel — sends structured log entries to renderer via IPC
 function discordLog(emoji, title, detail = '', level = 'info') {
@@ -846,13 +848,25 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
   const bin = findOpenClaw();
   if (!bin) return { ok: false, error: 'OpenClaw not found' };
 
+  // v3.2.32: prepend the assembled system context (safety preamble +
+  // CYBERCLAW.md + soul.md + memory.md) to the user message before
+  // sending to the LLM. The user message itself is unchanged.
+  let ctx;
+  try {
+    ctx = companionPrompts.assembleContext(agentId);
+  } catch (e) {
+    console.error('[chat:send] context assembly failed:', e.message);
+    ctx = '';
+  }
+  const finalMessage = ctx ? ctx + message : message;
+
   try {
     const result = await new Promise((resolve) => {
       // Note: we intentionally do NOT use `2>&1` here. Stderr is captured
       // separately so it can't pollute the JSON payload and cause raw
       // debug output to leak into the chat.
       execCb(
-        `"${bin}" agent -m "${message.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
+        `"${bin}" agent -m "${finalMessage.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
         { timeout: 120000, maxBuffer: 1024 * 512, env: { ...process.env } },
         (err, stdout, stderr) => {
           if (err && (!stdout || !stdout.trim())) {
@@ -1228,7 +1242,12 @@ ipcMain.handle('companion:add-xp', (event, agentId, skill, amount) => {
 // ─── Companion Sprite Config ───
 const spriteConfigPath = path.join(CYBERCLAW_DIR, 'sprites.json');
 function loadSpriteConfigs() {
-  try { return JSON.parse(fs.readFileSync(spriteConfigPath, 'utf8')); } catch { return {}; }
+  try {
+    const configs = JSON.parse(fs.readFileSync(spriteConfigPath, 'utf8'));
+    // v3.2.32: migrate any companion with traits but no soul.md yet.
+    try { companionPrompts.migrateAllSouls(configs); } catch (e) { console.error('[companion-prompts] migration error:', e.message); }
+    return configs;
+  } catch { return {}; }
 }
 function saveSpriteConfigs(configs) {
   fs.writeFileSync(spriteConfigPath, JSON.stringify(configs, null, 2));
@@ -1252,6 +1271,53 @@ ipcMain.handle('companion:save-avatar', (event, agentId, dataUrl) => {
   const avatarPath = path.join(avatarsDir, `${agentId}.png`);
   fs.writeFileSync(avatarPath, Buffer.from(base64, 'base64'));
   return avatarPath;
+});
+
+// v3.2.32: companion soul + memory IPC. The renderer (and
+// mobile via sync) reads/writes soul.md + memory.md through
+// these. write-soul and remember-memory go through
+// `cyberclaw.companions.*` from preload.js.
+ipcMain.handle('companion:get-soul', (event, agentId) => {
+  return { ok: true, content: companionPrompts.readSoul(agentId), presets: companionPrompts.SOUL_PRESETS };
+});
+ipcMain.handle('companion:save-soul', (event, agentId, content) => {
+  try { return { ok: true, ...companionPrompts.writeSoul(agentId, content) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('companion:apply-soul-preset', (event, agentId, presetKey) => {
+  const preset = companionPrompts.SOUL_PRESETS[presetKey];
+  if (preset === undefined) return { ok: false, error: 'unknown preset: ' + presetKey };
+  // For 'custom' preset, leave the soul as-is. Otherwise replace.
+  if (presetKey === 'custom') return { ok: true, content: companionPrompts.readSoul(agentId) };
+  try { return { ok: true, content: preset, ...companionPrompts.writeSoul(agentId, preset) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('companion:get-memory', (event, agentId) => {
+  return { ok: true, content: companionPrompts.readMemory(agentId) };
+});
+ipcMain.handle('companion:remember-memory', (event, agentId, line) => {
+  try { return companionPrompts.appendMemory(agentId, line); }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('companion:clear-memory', (event, agentId) => {
+  return companionPrompts.clearMemory(agentId);
+});
+
+// v3.2.32: overarching system prompt IPC.
+ipcMain.handle('system:get-cyberclaw', () => {
+  return {
+    ok: true,
+    content: companionPrompts.readSystemPrompt(),
+    defaultContent: companionPrompts.DEFAULT_SYSTEM_PROMPT,
+    path: companionPrompts.SYSTEM_PROMPT_FILE,
+  };
+});
+ipcMain.handle('system:save-cyberclaw', (event, content) => {
+  try { return { ok: true, ...companionPrompts.writeSystemPrompt(content) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('system:reset-cyberclaw', () => {
+  return companionPrompts.resetSystemPrompt();
 });
 
 // ─── Custom LLM Providers ────────────────────────────────────────────────
@@ -2415,6 +2481,25 @@ app.whenReady().then(() => {
     onRequestQuestsList: () => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
+    },
+    // v3.2.32: read a companion's soul.md for the mobile.
+    // Mobile is read-only — the desktop forge is the editor.
+    onReadCompanionSoul: async (agentId) => {
+      try {
+        return { ok: true, content: companionPrompts.readSoul(agentId) };
+      } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+    },
+    // v3.2.32: read a companion's memory.md for the mobile.
+    onReadCompanionMemory: async (agentId) => {
+      try {
+        return { ok: true, content: companionPrompts.readMemory(agentId) };
+      } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+    },
+    // v3.2.32: clear a companion's memory.md from the mobile.
+    // Mirrors the desktop's companion:clear-memory IPC.
+    onClearCompanionMemory: async (agentId) => {
+      try { return companionPrompts.clearMemory(agentId); }
+      catch (e) { return { ok: false, error: e?.message || String(e) }; }
     },
     // v3.2.30: read a quest's project instructions file (markdown).
     // The mobile is read-only on this file; the desktop's

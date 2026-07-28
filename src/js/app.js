@@ -3494,12 +3494,123 @@ function openCompanionForge(agentId) {
     if (modelEl2) modelEl2.value = agent.secondaryModel || '';
   });
 
+  // v3.2.32: load soul.md + memory.md into the editor and viewer.
+  // The soul is the character definition injected into every chat
+  // turn. The memory is auto-written by the companion, read-only here.
+  loadCompanionSoulEditor(agentId);
+  loadCompanionMemoryViewer(agentId);
+
   document.getElementById('companion-editor-overlay').classList.remove('hidden');
 }
 
 window.toggleCompanionPicker = function() {
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.toggle('hidden');
+};
+
+// v3.2.32: Soul editor helpers. Load/save the soul.md
+// for the currently-edited companion, apply presets,
+// refresh the status label with byte count + warn.
+async function loadCompanionSoulEditor(agentId) {
+  const ta = document.getElementById('forge-soul-editor');
+  const presetSel = document.getElementById('forge-soul-preset');
+  const status = document.getElementById('forge-soul-status');
+  if (!ta) return;
+  try {
+    const r = await cyberclaw.agents.getSoul(agentId);
+    ta.value = r.content || '';
+    presetSel.value = 'custom'; // don't auto-select a preset
+    updateSoulStatus();
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+  ta.oninput = updateSoulStatus;
+}
+
+function updateSoulStatus() {
+  const ta = document.getElementById('forge-soul-editor');
+  const status = document.getElementById('forge-soul-status');
+  if (!ta || !status) return;
+  const bytes = new Blob([ta.value]).size;
+  if (bytes === 0) {
+    status.textContent = 'Empty';
+    status.style.color = '';
+  } else if (bytes > 8192) {
+    status.textContent = bytes + ' bytes — OVER 8KB LIMIT (save disabled)';
+    status.style.color = '#ff8080';
+  } else if (bytes > 4096) {
+    status.textContent = bytes + ' bytes — large, will warn on save';
+    status.style.color = '#ffb060';
+  } else {
+    status.textContent = bytes + ' bytes';
+    status.style.color = '';
+  }
+}
+
+window.applySoulPreset = async function() {
+  if (!editorAgentId) return;
+  const presetSel = document.getElementById('forge-soul-preset');
+  const ta = document.getElementById('forge-soul-editor');
+  const preset = presetSel.value;
+  if (preset === 'custom') {
+    // leave as-is
+    return;
+  }
+  try {
+    const r = await cyberclaw.agents.applySoulPreset(editorAgentId, preset);
+    if (!r.ok) { alert('Could not apply preset: ' + (r.error || 'unknown')); return; }
+    ta.value = r.content || '';
+    updateSoulStatus();
+    discordLog('🎭', 'Soul preset applied', preset + ' → ' + editorAgentId);
+  } catch (e) {
+    alert('Could not apply preset: ' + e.message);
+  }
+};
+
+// Save the soul when the editor is saved. Hooked from saveCompanion.
+async function saveCompanionSoul(agentId) {
+  const ta = document.getElementById('forge-soul-editor');
+  if (!ta) return { ok: true }; // no editor in DOM, skip
+  if (ta.value.length > 8192) {
+    return { ok: false, error: 'soul exceeds 8KB limit' };
+  }
+  if (ta.value.length === 0) {
+    // empty is allowed (clears the soul); user may want to start fresh
+  }
+  try {
+    const r = await cyberclaw.agents.saveSoul(agentId, ta.value);
+    if (!r.ok) return r;
+    if (r.warn) {
+      console.warn('[soul] saved large soul for ' + agentId + ' (' + r.bytes + ' bytes)');
+    }
+    return r;
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// v3.2.32: Memory viewer. Read-only textarea + Clear button.
+async function loadCompanionMemoryViewer(agentId) {
+  const ta = document.getElementById('forge-memory-viewer');
+  if (!ta) return;
+  try {
+    const r = await cyberclaw.agents.getMemory(agentId);
+    ta.value = r.content || '';
+  } catch (e) {
+    ta.value = '(error loading memory: ' + e.message + ')';
+  }
+}
+
+window.clearCompanionMemory = async function() {
+  if (!editorAgentId) return;
+  if (!confirm('Clear all memory for this companion? This cannot be undone.')) return;
+  try {
+    await cyberclaw.agents.clearMemory(editorAgentId);
+    await loadCompanionMemoryViewer(editorAgentId);
+    discordLog('🧠', 'Memory cleared', editorAgentId);
+  } catch (e) {
+    alert('Could not clear memory: ' + e.message);
+  }
 };
 
 window.closeCompanionEditor = function(e) {
@@ -3545,6 +3656,16 @@ window.saveCompanion = async function() {
       scale: currentForgeScale, // v3.1.6: persist the size slider value
       chattiness: currentForgeChattiness, // v3.2.26: persist the chattiness slider value
     });
+    // v3.2.32: persist the soul.md alongside the sprite config.
+    // Soul failures don't block the rest of the save — we warn
+    // but continue. (Bad soul = bad character, but the user can
+    // edit it later. A 5KB+ save failure shouldn't kill the
+    // avatar/name/etc. updates.)
+    const soulResult = await saveCompanionSoul(editorAgentId);
+    if (!soulResult.ok) {
+      console.warn('[save] soul save failed:', soulResult.error);
+      addChatMsg('system', '⚠️ Soul save failed: ' + soulResult.error);
+    }
     await cyberclaw.agents.saveAvatar(editorAgentId, canvas.toDataURL('image/png'));
     agent.avatar = canvas.toDataURL('image/png');
     agent._pixelCompanionId = selectedPixelCompanion;
@@ -3925,6 +4046,8 @@ window.openSettings = function() {
   if (keybindLabel) keybindLabel.textContent = s.voiceKeybindLabel || 'V';
   const modelEl = document.getElementById('settings-default-model');
   if (modelEl) modelEl.value = s.defaultModel || '';
+  // v3.2.32: load the CYBERCLAW.md overarching system prompt.
+  loadCyberclawEditor();
   // Refresh the dynamic providers list + default-model dropdown whenever settings opens
   try { renderProvidersList(); } catch (e) { console.warn('renderProvidersList:', e); }
   try { renderLlmEndpoints(); } catch (e) { console.warn('renderLlmEndpoints:', e); }
@@ -4044,6 +4167,79 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+// v3.2.32: CyberClaw.md editor — the overarching system
+// prompt shared by every companion. Saved/loaded via the
+// `cyberclaw.system.*` IPC bridge. Restore default deletes
+// the file so the next read returns DEFAULT_SYSTEM_PROMPT.
+async function loadCyberclawEditor() {
+  const ta = document.getElementById('settings-cyberclaw-editor');
+  const status = document.getElementById('settings-cyberclaw-status');
+  const pathEl = document.getElementById('settings-cyberclaw-path');
+  if (!ta) return;
+  try {
+    const r = await cyberclaw.system.getCyberclaw();
+    ta.value = r.content || '';
+    if (pathEl && r.path) pathEl.textContent = r.path;
+    updateCyberclawStatus();
+  } catch (e) {
+    if (status) status.textContent = 'Error: ' + e.message;
+  }
+  // Live byte counter as the user types.
+  ta.oninput = updateCyberclawStatus;
+}
+
+function updateCyberclawStatus() {
+  const ta = document.getElementById('settings-cyberclaw-editor');
+  const status = document.getElementById('settings-cyberclaw-status');
+  if (!ta || !status) return;
+  const bytes = new Blob([ta.value]).size;
+  if (bytes === 0) {
+    status.textContent = 'Empty (using default)';
+    status.style.color = '';
+  } else if (bytes > 16384) {
+    status.textContent = bytes + ' bytes — OVER 16KB LIMIT';
+    status.style.color = '#ff8080';
+  } else if (bytes > 8192) {
+    status.textContent = bytes + ' bytes — large';
+    status.style.color = '#ffb060';
+  } else {
+    status.textContent = bytes + ' bytes · in use';
+    status.style.color = '';
+  }
+}
+
+window.saveCyberclawPrompt = async function() {
+  const ta = document.getElementById('settings-cyberclaw-editor');
+  const status = document.getElementById('settings-cyberclaw-status');
+  if (!ta) return;
+  if (ta.value.length > 16384) {
+    alert('CYBERCLAW.md exceeds 16KB limit');
+    return;
+  }
+  try {
+    const r = await cyberclaw.system.saveCyberclaw(ta.value);
+    if (!r.ok) { alert('Save failed: ' + (r.error || 'unknown')); return; }
+    if (status) status.textContent = 'Saved · ' + r.bytes + ' bytes';
+    discordLog('🛡️', 'CyberClaw prompt saved', r.bytes + ' bytes');
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+};
+
+window.resetCyberclawPrompt = async function() {
+  if (!confirm('Restore CYBERCLAW.md to the default?\n\nThis will overwrite your current edits. The default is the shipped behavior.')) return;
+  try {
+    const r = await cyberclaw.system.resetCyberclaw();
+    if (!r.ok) { alert('Reset failed'); return; }
+    const ta = document.getElementById('settings-cyberclaw-editor');
+    if (ta) ta.value = r.content || '';
+    updateCyberclawStatus();
+    discordLog('🛡️', 'CyberClaw prompt restored', 'to default');
+  } catch (e) {
+    alert('Reset failed: ' + e.message);
+  }
+};
 
 window.closeSettings = function(e) {
   if (e && e.target !== e.currentTarget) return;
