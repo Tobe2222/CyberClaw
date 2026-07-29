@@ -1306,6 +1306,41 @@ function buildActiveQuestContext(quest) {
 function buildQuestToolsHint() {
   return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
+// v3.2.36: strip any quest-tool tags from a reply before
+// showing it in the chat. The tag parsers run on the
+// ORIGINAL `result.reply` and still execute the side
+// effect (logged change, marked goal, switched quest,
+// created quest) — this only hides the LLM-facing
+// markup from the user-visible bubble.
+//
+// Tobe's 2026-07-29 complaint: "why does it say the
+// quest append thing? i dont want that."
+// (The full `[QUEST_APPEND_CHANGE: text="..."] Helpful
+// human reply` had the tag showing inline in the chat
+// bubble, with the helpful reply right after it.)
+//
+// The strip also kills the buildQuestToolsHint() string
+// (the "Quest tools available — emit these tags..." line
+// that the hint occasionally re-emits) and any other
+// bracketed tag that LOOKS like a quest tool, so the
+// bubble stays clean.
+function stripQuestTags(reply) {
+  if (!reply) return reply;
+  return reply
+    // Each tag form. Match the [TAG_NAME: ...] chunk up
+    // to the closing "]". The tag parsers below still run
+    // on the unmodified reply.
+    .replace(/\[CREATE_QUEST:[^\]]*\]/g, '')
+    .replace(/\[QUEST_APPEND_CHANGE:[^\]]*\]/g, '')
+    .replace(/\[QUEST_MARK_GOAL:[^\]]*\]/g, '')
+    .replace(/\[QUEST_SET_ACTIVE:[^\]]*\]/g, '')
+    // The full hint string the LLM occasionally echoes back.
+    .replace(/\[Quest tools available[^\]]*\]/g, '')
+    // Collapse leftover blank lines so a tag-alone line
+    // doesn't leave a double blank behind.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 // Helper: pull the current active quest id from the quest list
 // without going through disk. Falls back to the in-memory cache
 // if the list is empty.
@@ -2271,7 +2306,7 @@ window.sendChat = async function() {
       // v3.1.96: strip the desktop's 🤖 default so the mobile's
       // chat history doesn't get a stray robot next to every
       // message from agents without an explicit emoji.
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      addChatMsg('agent', stripQuestTags(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
 
       // Check for quest commands in the reply. v3.1.50: the agent
 // can read + edit quests via structured-output tags. Three new
@@ -2442,6 +2477,13 @@ window.sendChatMessage = async function(message) {
   bumpCompanionInteraction(wakeTargetId); // reset auto-sleep timer
   if (chatBusy) {
     console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
+    // v3.2.36: also surface this in the desktop log so the
+    // user can see when a message is being held up. The
+    // mobile user often sees "clawsuu not answering" with
+    // no clue that the previous request is still in
+    // flight. The reasoning was the same in v3.2.28 (the
+    // 2-min cap) — make the wait visible.
+    window.addDesktopLog?.('⏳', 'Waiting for previous AI reply', message.substring(0, 60), 'warn');
     // Wait up to 15s for chatBusy to clear, then force-reset and proceed
     let waited = 0;
     while (chatBusy && waited < 15000) {
@@ -2450,6 +2492,7 @@ window.sendChatMessage = async function(message) {
     }
     if (chatBusy) {
       console.warn('[sendChatMessage] chatBusy stuck, force-resetting');
+      window.addDesktopLog?.('⚠️', 'AI reply stuck > 15s, force-resetting', message.substring(0, 60), 'warn');
       chatBusy = false;
     }
   }
@@ -2498,7 +2541,21 @@ window.sendChatMessage = async function(message) {
   // Add quest context if active
   if (activeQuestId) {
     try {
-      const quests = await cyberclaw.quests.list();
+      // v3.2.36: cap the quest-list IPC at 3s. Tobe hit
+      // "Why wont you answer?" on 2026-07-29 — the log
+      // showed the message reached `sendChatMessage`,
+      // reached the chatBusy queue, was force-reset, but
+      // then no `AI thinking` log ever appeared. The most
+      // likely culprit is the IPC `cyberclaw.quests.list()`
+      // hanging: the `await` blocks indefinitely if the
+      // renderer is wedged, and the existing `try/catch`
+      // only catches throws, not hangs. With a 3s timeout
+      // we either get the data or we proceed without it,
+      // and the chat reply goes through either way.
+      const quests = await Promise.race([
+        cyberclaw.quests.list(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('quests.list timeout')), 3000)),
+      ]);
       const q = quests.find(q => q.id === activeQuestId);
       if (q) {
         // v3.1.50: same context builder as the regular chat path.
@@ -2506,11 +2563,22 @@ window.sendChatMessage = async function(message) {
         // mode has the same project context as typed chat.
         fullMessage = buildActiveQuestContext(q) + fullMessage;
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[sendChatMessage] quest context fetch failed (continuing without):', e?.message);
+    }
   }
 
   chatBusy = true;
+  // v3.2.36: log here so the user can see the message
+  // actually reached the agent-call stage. Pre-this log,
+  // a hang in `cyberclaw.quests.list()` (line ~2540) would
+  // look identical to a hang in the openclaw agent call
+  // itself, because no log line appeared between the
+  // chatBusy reset and the agent response. With both
+  // stage markers visible, future "why wont you answer"
+  // reports can pinpoint which stage is stuck.
   window.addDesktopLog?.('🧠', 'AI thinking', message.substring(0, 60), 'voice');
+  console.log('[sendChatMessage] dispatching to agent, mainAgentId:', mainAgentId);
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
   try { ipcRenderer.invoke('sync-broadcast-typing', { active: true }); } catch {}
 
@@ -2523,10 +2591,10 @@ window.sendChatMessage = async function(message) {
       const leader = agents[mainAgentId];
       // v3.1.96: see sibling site — strip the desktop's 🤖
       // default before sending.
-      addChatMsg('agent', result.reply, leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
-      window.addDesktopLog?.('💬', 'AI responded', result.reply.substring(0, 60), 'success');
+      addChatMsg('agent', stripQuestTags(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      window.addDesktopLog?.('💬', 'AI responded', stripQuestTags(result.reply).substring(0, 60), 'success');
       // Notify main process for mobile TTS response
-      try { ipcRenderer.send('mobile-tts-response', { text: result.reply }); } catch {}
+      try { ipcRenderer.send('mobile-tts-response', { text: stripQuestTags(result.reply) }); } catch {}
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
@@ -5564,7 +5632,7 @@ window.sendChat = async function() {
       if (result.ok) {
         const leader = agents[mainAgentId];
         // v3.1.96: strip the desktop's 🤖 default before sending.
-        addChatMsg('agent', result.reply, leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
+        addChatMsg('agent', stripQuestTags(result.reply), leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
         // Check for quest creation command
         if (result.reply) {
           var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
