@@ -364,7 +364,28 @@ class SyncServer extends EventEmitter {
       }
 
       case 'chat': {
-        if (!client.authenticated) return;
+        if (!client.authenticated) {
+          // v3.2.39: log dropped chats so they're visible in the
+          // desktop log. Tobe's 2026-07-29 18:30 report: "Yoyo"
+          // typed on the mobile got a reply ("raid a captcha
+          // farm...") but the chat-event log doesn't show the
+          // inbound message, AND the bubble doesn't appear in
+          // the mobile chat history. The most likely culprit is
+          // this guard: when a WS reconnect completes, the
+          // mobile's WS opens first (this code runs the case
+          // 'open' / pair_result / auth_result handshake) — but
+          // there's a brief window where the mobile sends a
+          // chat BEFORE the desktop sets client.authenticated
+          // true. The user's chat silently hits this guard and
+          // is dropped; the agent never sees it. The reply
+          // visible in the chat history was actually likely a
+          // cached previous-turn reply that got replayed on
+          // full-state request, not a fresh response to "Yoyo".
+          // Logging the dropped message here gives us a paper
+          // trail — even if we still drop, we'll know why.
+          console.warn(`[SyncServer] chat dropped for ${client.id} (${client.name || 'no-name'}): not authenticated yet (text="${(msg.text || '').substring(0, 60)}")`);
+          return;
+        }
         if (this.onChatMessage) {
           const deviceTag = client.name && client.name !== 'Desktop' ? `[From: ${client.name}] ` : '';
           this.onChatMessage(deviceTag + msg.text, msg.agentId || 'companion', {
