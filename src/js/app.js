@@ -2582,8 +2582,52 @@ window.sendChatMessage = async function(message) {
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
   try { ipcRenderer.invoke('sync-broadcast-typing', { active: true }); } catch {}
 
+  // v3.2.37: typed inputs sometimes left the "thinking..."
+  // bubble stuck on the user's screen when the openclaw
+  // call hung or was abandoned. With `try { ... } catch`,
+  // only thrown errors trigger the cleanup path. A silent
+  // hang / abandoned promise / unexpected code path would
+  // leave the typing indicator showing forever. The
+  // `finally` block makes the cleanup unconditional; the
+  // additional 110-second `setTimeout` is the
+  // failsafe-in-failsafe for the case where even the
+  // `finally` doesn't run (e.g. the renderer's JS thread
+  // is wedged — at that point the indicator is the least
+  // of our problems, but we don't want a permanently-
+  // stuck "thinking" bubble in recovered state).
+  //
+  // v3.2.37 also caps the agent call itself with a
+  // Promise.race against an explicit 90-second timeout,
+  // so even if the openclaw process is genuinely wedged
+  // (e.g. waiting on a model that's hung server-side),
+  // the renderer returns from the await within a bounded
+  // time and the cleanup runs. The desktop logs the
+  // timeout as a warning so the user can see "openclaw
+  // took > 90s, please retry" instead of a silent hang.
+  const AGENT_TIMEOUT_MS = 90000; // 90s — slightly longer than the IPC's 120s safety net so the user gets the desktop's error message in the typical case
+  const typingFailsafe = setTimeout(() => {
+    console.warn('[sendChatMessage] typing bubble > 110s, force-clearing');
+    window.addDesktopLog?.('⚠️', 'AI still thinking after 110s — clearing indicator', message.substring(0, 60), 'warn');
+    try { removeChatMsg(typingId); } catch {}
+    try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
+  }, 110000);
+
   try {
-    const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage);
+    let result;
+    try {
+      result = await Promise.race([
+        cyberclaw.chat.sendMessage(mainAgentId, fullMessage),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('agent call timed out after 90s')), AGENT_TIMEOUT_MS)
+        ),
+      ]);
+    } catch (timeoutErr) {
+      // Surface the timeout as an error message in the chat
+      // and let the user retry. Without this the user just
+      // sees the typing bubble forever.
+      window.addDesktopLog?.('⏱️', 'Agent call > 90s, aborted', message.substring(0, 60), 'warn');
+      throw timeoutErr;
+    }
     removeChatMsg(typingId);
     try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
 
@@ -2599,12 +2643,18 @@ window.sendChatMessage = async function(message) {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
   } catch (err) {
-    removeChatMsg(typingId);
-    try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
     addChatMsg('error', `Error: ${err.message}`);
+  } finally {
+    // v3.2.37: clear the typing bubble + chatBusy flag
+    // unconditionally. Before this, a hung openclaw call
+    // left "still thinking" stuck on the user's mobile +
+    // desktop, and chatBusy=true meant the next message
+    // got queued for up to 15s before being force-reset.
+    clearTimeout(typingFailsafe);
+    try { removeChatMsg(typingId); } catch {}
+    try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
+    chatBusy = false;
   }
-
-  chatBusy = false;
 };
 
 let chatMsgId = 0;
@@ -5625,9 +5675,35 @@ window.sendChat = async function() {
     chatBusy = true;
     document.getElementById('chat-send').disabled = true;
     const typingId = addChatMsg('typing', agent.name + ' is thinking...');
+    // v3.2.37: same cleanup-hardening as sendChatMessage.
+    // The image-attach path here has the same hung-bubble
+    // and stuck-chatBusy problems if the agent call hangs.
+    // The 110s typingFailsafe is the belt; the
+    // Promise.race timeout (AGENT_TIMEOUT_MS=90s) is the
+    // suspenders. Without these, a wedged openclaw call
+    // would leave the image-attach path frozen with
+    // "thinking..." showing indefinitely and chatBusy=true
+    // blocking the next message for 15s on each retry.
+    const AGENT_TIMEOUT_MS = 90000;
+    const typingFailsafe = setTimeout(() => {
+      console.warn('[sendChat:img] typing bubble > 110s, force-clearing');
+      window.addDesktopLog?.('⚠️', 'AI still thinking after 110s (image path)', message.substring(0, 60), 'warn');
+      try { removeChatMsg(typingId); } catch {}
+    }, 110000);
 
     try {
-      const result = await cyberclaw.chat.sendMessage(mainAgentId, fullMessage, { image: imgData.dataUrl });
+      let result;
+      try {
+        result = await Promise.race([
+          cyberclaw.chat.sendMessage(mainAgentId, fullMessage, { image: imgData.dataUrl }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('agent call timed out after 90s')), AGENT_TIMEOUT_MS)
+          ),
+        ]);
+      } catch (timeoutErr) {
+        window.addDesktopLog?.('⏱️', 'Agent call > 90s (image path), aborted', message.substring(0, 60), 'warn');
+        throw timeoutErr;
+      }
       removeChatMsg(typingId);
       if (result.ok) {
         const leader = agents[mainAgentId];
@@ -5654,13 +5730,14 @@ window.sendChat = async function() {
         addChatMsg('error', 'Error: ' + (result.error || 'Failed to get response'));
       }
     } catch (err) {
-      removeChatMsg(typingId);
       addChatMsg('error', 'Error: ' + err.message);
+    } finally {
+      clearTimeout(typingFailsafe);
+      try { removeChatMsg(typingId); } catch {}
+      chatBusy = false;
+      document.getElementById('chat-send').disabled = false;
+      input.focus();
     }
-
-    chatBusy = false;
-    document.getElementById('chat-send').disabled = false;
-    input.focus();
     return;
   }
 
