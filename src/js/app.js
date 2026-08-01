@@ -5208,13 +5208,25 @@ try {
       }
     }
     addChatMsg('user', text, null);
+    // v3.2.40: strip the `[From: <deviceName>]` prefix from the
+    // text before forwarding to the LLM. The sync-server adds
+    // it so the chat-history bubble shows the source, but the
+    // LLM doesn't need it (and gets confused by it — Tobe
+    // reported 2026-08-01: "clawsuu seems a bit confused
+    // still of where to respond"). The chat-history bubble
+    // already got the prefixed text via the addChatMsg call
+    // above; only the LLM-facing copy is stripped. Same rule
+    // for the voice transcript path (mobile sends voice
+    // transcripts prefixed too, see HomeScreen.tsx ~line
+    // 2533 for the matching mobile-side prefix).
+    const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
     if (typeof window.sendChatMessage === 'function') {
-      window.sendChatMessage(text);
+      window.sendChatMessage(llmText);
     } else {
       // Fallback: retry after 2s if not ready yet
       setTimeout(() => {
         console.log('[mobile-chat] retry sendChatMessage, defined:', typeof window.sendChatMessage);
-        if (typeof window.sendChatMessage === 'function') window.sendChatMessage(text);
+        if (typeof window.sendChatMessage === 'function') window.sendChatMessage(llmText);
       }, 2000);
     }
   });
@@ -5331,9 +5343,16 @@ try {
   });
 
   ipcRenderer.on('mobile-voice', (e, { id, transcript, context, meta }) => {
+    // v3.2.40: strip the `[From: <deviceName>]` prefix from
+    // the transcript before forwarding. The mobile pre-pends
+    // it on send (HomeScreen.tsx line ~2533), but the LLM
+    // already gets the `[Voice from mobile]` wrapper below
+    // — the inner prefix is redundant + confusing. Same
+    // rationale as the `mobile-chat` handler above.
+    const cleanTranscript = (transcript || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
     const prompt = context
-      ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${transcript}`
-      : transcript;
+      ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${cleanTranscript}`
+      : cleanTranscript;
     console.log('[mobile-voice] received:', id, transcript?.substring(0, 60));
     window.addDesktopLog?.('🎤', 'Voice → AI', transcript?.substring(0, 50), 'info');
     addChatMsg('user', `🎤 ${transcript}`);

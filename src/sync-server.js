@@ -1546,7 +1546,18 @@ class SyncServer extends EventEmitter {
     if (this._recentAiMessages && this._recentAiMessages.length > 0) {
       console.log(`[SyncServer] Replaying ${this._recentAiMessages.length} recent AI message(s) to reconnected client`);
       for (const entry of this._recentAiMessages) {
-        this._send(ws, entry.payload);
+        // v3.2.40: tag the payload with replay:true so the
+        // mobile can suppress notifications for replays.
+        // Without this flag, a mobile that reconnects after
+        // the agent sent N replies during the disconnect
+        // window would get N notifications fired one after
+        // another — clearly wrong (the user wasn't there to
+        // be notified), Tobe reported 2026-08-01.
+        // The chat-message handler on the mobile still
+        // appends the message to the chat history (correct:
+        // the user DOES want to see what was said); only
+        // the system notification is suppressed.
+        this._send(ws, { ...entry.payload, replay: true });
       }
     }
     // Replay last audio response if it arrived while client was disconnected (60s window)
