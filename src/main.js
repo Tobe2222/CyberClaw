@@ -998,6 +998,15 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
   };
   const url = `${gw.baseUrl}/v1/chat/completions`;
   try {
+    // v3.2.53: log the request shape we're sending so we
+    // can debug what the model actually receives. Tobe
+    // 2026-08-02 22:25: 'he claims to still not see the
+    // images.' We need to know whether the bytes are
+    // reaching the gateway or getting truncated along
+    // the way.
+    const bodySize = Buffer.byteLength(JSON.stringify(body), 'utf8');
+    const attachmentsCount = Array.isArray(attachments) ? attachments.length : 0;
+    console.log(`[chat:send/http] POST ${url} (body=${bodySize}b, attachments=${attachmentsCount})`);
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -1014,6 +1023,7 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
       return await sendChatMessageViaCli(agentId, message, attachments, `HTTP ${res.status}: ${text?.slice(0, 120)}`);
     }
     const json = await res.json();
+    console.log(`[chat:send/http] response status=${res.status} keys=${Object.keys(json || {}).join(',')}`);
     // OpenAI shape: choices[0].message.content (string).
     // Some models can return multiple choices; we take the
     // first. v3.2.31's multi-payload concat still applies
@@ -1023,6 +1033,13 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     if (json && Array.isArray(json.choices) && json.choices[0]) {
       const m = json.choices[0].message || {};
       reply = m.content || m.reasoning_content || '';
+      // v3.2.53: log whether the model's response includes
+      // any image_url content (vision model acknowledging
+      // it saw the image) — helps debug the "I can't see
+      // the images" claim. Tobe 2026-08-02 22:25.
+      if (Array.isArray(m.content)) {
+        console.log(`[chat:send/http] multimodal reply content parts=${m.content.length}`);
+      }
     }
     if (reply && reply.trim()) {
       const result = { ok: true, reply: reply.trim() };
