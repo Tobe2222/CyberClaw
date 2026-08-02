@@ -881,21 +881,18 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
       // separately so it can't pollute the JSON payload and cause raw
       // debug output to leak into the chat.
       //
-      // v3.2.38: IPC timeout dropped to 90s (was 120s). The
-      // renderer's Promise.race timeout is 90s; if the IPC's own
-      // timeout fires AFTER the renderer's, the renderer has
-      // already given up and surfaced its own error message
-      // ("agent call timed out after 90s"). So aligning the IPC
-      // timeout DOWN to 90s means: when the model genuinely hangs,
-      // the user sees ONE coherent error ("agent call > 90s,
-      // aborted") instead of two conflicting ones (the
-      // renderer's 90s timeout THEN the main process's 120s
-      // timeout). Picking 90s over 60s keeps it slightly above
-      // openclaw's normal-process-time so the typical case still
-      // works — typical clawsuu responses come back in 5-30s.
+      // v3.2.46: IPC timeout bumped to 180s (was 90s). Tobe
+      // hit a 90s timeout on 2026-08-02 20:16 with a 7-file
+      // edit task — the openclaw process was making progress
+      // (20+ tool calls visible in SessionTail) but hadn't
+      // finished. The IPC killed it mid-edit. Now we give
+      // multi-step tasks a longer leash. The renderer's
+      // Promise.race timeout also bumped to 180s so the two
+      // stay aligned (the renderer sees its own error first).
+      // Typical clawsuu responses still come back in 5-30s.
       execCb(
         `"${bin}" agent -m "${finalMessage.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
-        { timeout: 90000, maxBuffer: 1024 * 512, env: { ...process.env } },
+        { timeout: 180000, maxBuffer: 1024 * 512, env: { ...process.env } },
         (err, stdout, stderr) => {
           if (err && (!stdout || !stdout.trim())) {
             resolve({ ok: false, error: err.message, output: stderr || err.message });

@@ -2827,14 +2827,27 @@ const __sendChatMessageImpl = async function(message) {
   // stuck "thinking" bubble in recovered state).
   //
   // v3.2.37 also caps the agent call itself with a
-  // Promise.race against an explicit 90-second timeout,
+  // Promise.race against an explicit timeout,
   // so even if the openclaw process is genuinely wedged
   // (e.g. waiting on a model that's hung server-side),
   // the renderer returns from the await within a bounded
   // time and the cleanup runs. The desktop logs the
   // timeout as a warning so the user can see "openclaw
-  // took > 90s, please retry" instead of a silent hang.
-  const AGENT_TIMEOUT_MS = 90000; // 90s — slightly longer than the IPC's 120s safety net so the user gets the desktop's error message in the typical case
+  // took > N s, please retry" instead of a silent hang.
+  //
+  // v3.2.46: bumped 90s → 180s. Tobe hit a 90s timeout on
+  // 2026-08-02 20:16 with a 7-file edit task. The openclaw
+  // process was clearly making progress (20+ tool calls
+  // visible in SessionTail), it just hadn't finished yet.
+  // The IPC killed the process at 90s, the result came back
+  // ok:false with the timeout error, and the error message
+  // only went to the renderer's chat — the mobile's
+  // typing bubble just vanished, leaving Tobe with no
+  // signal of what happened. The error message is now also
+  // broadcast to the mobile (v3.2.46 broadcast fix), but
+  // 180s gives complex multi-step tasks a fair shot at
+  // completing without being killed mid-edit.
+  const AGENT_TIMEOUT_MS = 180000; // 180s
   const typingFailsafe = setTimeout(() => {
     console.warn('[sendChatMessage] typing bubble > 110s, force-clearing');
     window.addDesktopLog?.('⚠️', 'AI still thinking after 110s — clearing indicator', message.substring(0, 60), 'warn');
@@ -3073,8 +3086,16 @@ function addChatMsg(type, text, name, emoji) {
   }
 
   // Broadcast to mobile companion app
-  if (type === 'agent' || type === 'user') {
-    console.log(`[addChatMsg] Broadcasting ${type} message to mobile`);
+  // v3.2.46: also broadcast error messages. Previously only
+  // 'agent' and 'user' messages went to the mobile, so an
+  // IPC timeout or other failure left the mobile with the
+  // typing bubble and no follow-up — the user thought the
+  // agent went silent. Tobe 2026-08-02 20:16: 'It appeared
+  // for a few seconds then its gone. He cant possibly
+  // have done the task so fast.' The agent hadn't done
+  // anything — the IPC had timed out and the error message
+  // only went to the renderer's chat, not the mobile.
+  if (type === 'agent' || type === 'user' || type === 'error') {
     try {
       const { ipcRenderer } = require('electron');
       // v3.1.15: send the resolved agentId (not just the display name)
