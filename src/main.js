@@ -43,6 +43,16 @@ function flushAttachmentBatch() {
   const batch = pendingAttachments;
   pendingAttachments = [];
   attachmentFlushTimer = null;
+  // v3.2.54: log the batch we're about to send so we
+  // can see whether the base64 data is actually in the
+  // payload. Tobe 2026-08-02 22:35 test showed the
+  // desktop log had body=4483b with attachments=1 — way
+  // too small for a 264KB image. The base64 must be
+  // getting dropped somewhere in the IPC chain.
+  for (const a of batch) {
+    const dataLen = a.data ? a.data.length : 0;
+    console.log(`[mobile-attachment-batch] flushing ${a.fileName} (${a.size} bytes on disk, data=${dataLen} chars of base64, hasData=${!!a.data})`);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('mobile-attachment-batch', {
       attachments: batch,

@@ -5821,6 +5821,15 @@ try {
   ipcRenderer.on('mobile-attachment-batch', (e, { attachments: batch }) => {
     try {
       if (!Array.isArray(batch) || batch.length === 0) return;
+      // v3.2.54: log each incoming attachment so we can
+      // verify the base64 data actually arrived via the
+      // IPC. The v3.2.53 desktop log showed body=4483b
+      // with attachments=1, which means the image data
+      // got dropped somewhere. Tobe 2026-08-02 22:35.
+      for (const a of batch) {
+        const dataLen = a.data ? a.data.length : 0;
+        console.log(`[mobile-attachment-batch] received ${a.fileName} (size=${a.size}, data=${dataLen} chars, hasData=${!!a.data})`);
+      }
       // Build the attachments array in the format the
       // desktop IPC expects. Each entry has dataUri (or
       // data + mimeType) so the handler can build the
@@ -5841,6 +5850,7 @@ try {
         console.warn('[mobile-attachment-batch] no usable attachments in batch');
         return;
       }
+      console.log(`[mobile-attachment-batch] built ${attachments.length} attachment(s); dataUri total length=${attachments.reduce((s, a) => s + a.dataUri.length, 0)}`);
       // The user prompt is empty — the attachments ARE the
       // message. The model will see all images in one
       // multimodal content array.
