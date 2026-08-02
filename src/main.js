@@ -719,6 +719,41 @@ function findOpenClaw() {
   return null;
 }
 
+// v3.2.51: read the OpenClaw gateway config to get the
+// base URL and bearer token for HTTP API calls. The
+// gateway runs on the loopback by default (port 18789)
+// and is reachable as http://127.0.0.1:<port>/. Auth is
+// a token configured under gateway.auth.token (mode
+// 'token') in ~/.openclaw/openclaw.json.
+//
+// We re-read the config on every call (not cached) so
+// config changes take effect without restarting the
+// desktop. The read is cheap — one JSON.parse of a
+// small file. If the file is unreadable, we return null
+// and the caller falls back to the CLI path.
+function readGatewayConfig() {
+  try {
+    const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return null;
+    const raw = fs.readFileSync(cfgPath, 'utf8');
+    const cfg = JSON.parse(raw);
+    const gw = cfg.gateway || {};
+    const port = gw.port || 18789;
+    const bind = gw.bind || 'loopback';
+    // Default host: 127.0.0.1 for loopback bind,
+    // 0.0.0.0 / [lan-ip] for non-loopback. The
+    // gateway is always loopback in local mode.
+    const host = bind === 'loopback' ? '127.0.0.1' : '0.0.0.0';
+    const baseUrl = `http://${host}:${port}`;
+    const token = (gw.auth && gw.auth.token) || null;
+    const httpEnabled = !!(gw.http && gw.http.endpoints && gw.http.endpoints.chatCompletions && gw.http.endpoints.chatCompletions.enabled);
+    return { baseUrl, token, httpEnabled, port };
+  } catch (e) {
+    console.warn('[gateway-config] read failed:', e?.message);
+    return null;
+  }
+}
+
 function killPty(p) {
   if (!p) return;
   try { p.kill(); } catch {}
@@ -859,37 +894,145 @@ function extractFirstJsonObject(buf) {
   return null;
 }
 
-ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
-  const bin = findOpenClaw();
-  if (!bin) return { ok: false, error: 'OpenClaw not found' };
+ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments }) => {
+  // v3.2.51: prefer the OpenAI-compatible HTTP API on the
+  // gateway over the `openclaw agent -m` CLI. The HTTP path
+  // supports multimodal content (text + image_url), which is
+  // the Discord-style attachment flow Tobe asked for on
+  // 2026-08-02 21:45 ("make it such that it works like it
+  // does in discord"). The CLI path is text-only.
+  //
+  // The CLI path is kept as a fallback if the gateway's HTTP
+  // endpoint is disabled or unreachable.
+  const gw = readGatewayConfig();
+  if (gw && gw.httpEnabled && gw.token) {
+    return await sendChatMessageViaHttp(agentId, message, attachments, gw);
+  }
+  return await sendChatMessageViaCli(agentId, message, attachments);
+});
 
-  // v3.2.32: prepend the assembled system context (safety preamble +
-  // CYBERCLAW.md + soul.md + memory.md) to the user message before
-  // sending to the LLM. The user message itself is unchanged.
+// v3.2.51: HTTP API path. POSTs to /v1/chat/completions
+// on the gateway. multimodal content array (text +
+// image_url with base64 data URL) when attachments are
+// present; plain string content otherwise.
+async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
+  // v3.2.32: prepend the assembled system context (safety
+  // preamble + CYBERCLAW.md + soul.md + memory.md) to the
+  // user message before sending to the LLM.
   let ctx;
   try {
     ctx = companionPrompts.assembleContext(agentId);
   } catch (e) {
-    console.error('[chat:send] context assembly failed:', e.message);
+    console.error('[chat:send/http] context assembly failed:', e.message);
     ctx = '';
   }
-  const finalMessage = ctx ? ctx + message : message;
+  // Build the user-content array. With attachments, the
+  // OpenAI multimodal shape is:
+  //   content: [
+  //     {type: 'text', text: '...'},
+  //     {type: 'image_url', image_url: {url: 'data:...'}}
+  //   ]
+  // Without attachments, plain string content is fine.
+  let userContent;
+  const textPart = ctx ? ctx + message : message;
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    const parts = [{ type: 'text', text: textPart }];
+    for (const att of attachments) {
+      // att: { data: base64, mimeType, fileName, dataUri }
+      // The gateway accepts data: URIs in image_url.url per
+      // the OpenAI spec. Pass through as-is.
+      const dataUri = att.dataUri || (att.data ? `data:${att.mimeType || 'image/png'};base64,${att.data}` : null);
+      if (!dataUri) continue;
+      // image_url is the multimodal content type for images.
+      // We send the data URI directly; the gateway forwards
+      // it to the underlying model.
+      parts.push({
+        type: 'image_url',
+        image_url: { url: dataUri },
+      });
+    }
+    userContent = parts;
+  } else {
+    userContent = textPart;
+  }
+  // Build the request body. The model id 'openclaw/<id>'
+  // routes to the specific agent (vs 'openclaw/default'
+  // which routes to the configured default).
+  const body = {
+    model: `openclaw/${agentId}`,
+    messages: [{ role: 'user', content: userContent }],
+    user: `cyberclaw:${agentId}`,
+  };
+  const url = `${gw.baseUrl}/v1/chat/completions`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${gw.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.warn('[chat:send/http] non-2xx:', res.status, text?.slice(0, 200));
+      // Fall back to CLI path so a gateway hiccup doesn't
+      // kill chat.
+      return await sendChatMessageViaCli(agentId, message, attachments, `HTTP ${res.status}: ${text?.slice(0, 120)}`);
+    }
+    const json = await res.json();
+    // OpenAI shape: choices[0].message.content (string).
+    // Some models can return multiple choices; we take the
+    // first. v3.2.31's multi-payload concat still applies
+    // if the message is a concatenation; for now we trust
+    // the gateway's normalization.
+    let reply = null;
+    if (json && Array.isArray(json.choices) && json.choices[0]) {
+      const m = json.choices[0].message || {};
+      reply = m.content || m.reasoning_content || '';
+    }
+    if (reply && reply.trim()) {
+      const result = { ok: true, reply: reply.trim() };
+      result.taskSkill = classifyTask(message);
+      return result;
+    }
+    return { ok: false, error: 'No reply in HTTP response', output: JSON.stringify(json).slice(0, 300) };
+  } catch (e) {
+    console.warn('[chat:send/http] fetch failed:', e?.message);
+    return await sendChatMessageViaCli(agentId, message, attachments, `HTTP fetch failed: ${e?.message}`);
+  }
+}
+
+// v3.2.51: legacy CLI path. Kept as the fallback when the
+// gateway's HTTP endpoint is disabled or unreachable.
+// Pre-3.2.51 code was inlined in the chat:send-message
+// handler; we split it out for clarity.
+async function sendChatMessageViaCli(agentId, message, attachments, hint) {
+  // Attachments are not supported on the CLI path (the
+  // -m flag is text-only). If attachments were provided
+  // we include a hint in the text so the LLM knows they
+  // arrived but couldn't be embedded inline.
+  const bin = findOpenClaw();
+  if (!bin) return { ok: false, error: 'OpenClaw not found' };
+
+  let ctx;
+  try {
+    ctx = companionPrompts.assembleContext(agentId);
+  } catch (e) {
+    console.error('[chat:send/cli] context assembly failed:', e.message);
+    ctx = '';
+  }
+  let finalMessage = ctx ? ctx + message : message;
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    const lines = attachments.map((a, i) => `  ${i + 1}. ${a.fileName || 'attachment'} (${a.mimeType || 'image/png'}, ${a.size || '?'} bytes) — saved at ${a.path || a.uri || 'unknown'}`);
+    finalMessage += `\n\n[Attachments received but not embedded inline (CLI path doesn't support image content):\n${lines.join('\n')}\n\nPlease acknowledge the attachments and ask the user to describe them if you cannot view them.]`;
+  }
+  if (hint) {
+    finalMessage = `[Note: the HTTP API path was attempted but failed: ${hint}]\n\n` + finalMessage;
+  }
 
   try {
     const result = await new Promise((resolve) => {
-      // Note: we intentionally do NOT use `2>&1` here. Stderr is captured
-      // separately so it can't pollute the JSON payload and cause raw
-      // debug output to leak into the chat.
-      //
-      // v3.2.46: IPC timeout bumped to 180s (was 90s). Tobe
-      // hit a 90s timeout on 2026-08-02 20:16 with a 7-file
-      // edit task — the openclaw process was making progress
-      // (20+ tool calls visible in SessionTail) but hadn't
-      // finished. The IPC killed it mid-edit. Now we give
-      // multi-step tasks a longer leash. The renderer's
-      // Promise.race timeout also bumped to 180s so the two
-      // stay aligned (the renderer sees its own error first).
-      // Typical clawsuu responses still come back in 5-30s.
       execCb(
         `"${bin}" agent -m "${finalMessage.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
         { timeout: 180000, maxBuffer: 1024 * 512, env: { ...process.env } },
@@ -900,25 +1043,6 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
           }
           const parsed = extractFirstJsonObject(stdout);
           if (parsed) {
-            // Extract reply from various response formats:
-            // 1. OpenClaw agent --json: { result: { payloads: [{ text: "..." }] } }
-            // 2. Simple: { reply: "..." } or { message: "..." } or { text: "..." }
-            //
-            // v3.2.31: the LLM can emit multiple text messages in
-            // a single turn (e.g. "Let me check the file..." then
-            // later "Done, here's the answer..." after tool
-            // calls). When the agent does that, openclaw's
-            // `payloads` array contains one entry per assistant
-            // text message in order. Reading only
-            // `payloads[0].text` was the bug — Tobe saw
-            // "Clawsuu is thinking" → "Let me check..." (the
-            // first payload) → silence for the second payload
-            // ("Done, here's the answer"), because the second
-            // one was logged to the session but never
-            // broadcast to the renderer. v3.2.31 concatenates
-            // all payload text in order so the user sees the
-            // full reply in one message. Blank payloads
-            // (e.g. media-only) are skipped.
             let reply = null;
             if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
               const parts = [];
@@ -934,11 +1058,9 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
             if (reply && reply.trim()) {
               resolve({ ok: true, reply: reply });
             } else {
-              // Parsed but no reply field — surface a friendly note rather than dumping JSON
               resolve({ ok: false, error: parsed.error || 'No reply in agent response', output: stderr || '' });
             }
           } else {
-            // No valid JSON — return stdout only if it looks like text, not a debug dump
             const trimmed = (stdout || '').trim();
             const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
             if (trimmed && !looksLikeJson) {
@@ -950,16 +1072,14 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message }) => {
         }
       );
     });
-    // Classify task for XP (awarded by frontend to the right companion)
     if (result.ok) {
       result.taskSkill = classifyTask(message);
     }
-
     return result;
   } catch (err) {
     return { ok: false, error: err.message };
   }
-});
+}
 
 function classifyTask(message) {
   const m = message.toLowerCase();
@@ -3014,11 +3134,29 @@ app.whenReady().then(() => {
         // (GPT-4V / Claude Sonnet 4 / etc.) or skip it
         // for text-only models.
         if (mainWindow && !mainWindow.isDestroyed()) {
+          // v3.2.51: include the base64-encoded attachment
+          // data in the IPC payload. The renderer-side
+          // handler passes it through to chat:send-message
+          // as an OpenAI multimodal image_url content block.
+          // This is what makes Discord-style attachments
+          // work: the image bytes reach the model inline
+          // rather than as a path the model can't read.
+          // We read the file we just wrote (it's small
+          // for typical screenshots, but the IPC payload
+          // could grow for big files; that's an
+          // acceptable trade-off for the simpler flow).
+          let dataBase64 = null;
+          try {
+            dataBase64 = fs.readFileSync(savedPath, 'base64');
+          } catch (e) {
+            console.warn('[Attachment] failed to re-read for IPC payload:', e?.message);
+          }
           mainWindow.webContents.send('mobile-attachment', {
             path: savedPath,
             mimeType,
             fileName,
             size: fileSize,
+            data: dataBase64,
             meta: {
               source: 'mobile',
               deviceName: meta?.deviceName || 'Mobile',

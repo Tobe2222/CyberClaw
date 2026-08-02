@@ -26,7 +26,14 @@ window.cyberclaw = {
     resize: (cols, rows) => ipcRenderer.send('terminal:resize', { cols, rows }),
   },
   chat: {
-    sendMessage: (agentId, message) => ipcRenderer.invoke('chat:send-message', { agentId, message }),
+    // v3.2.51: accept optional attachments array for
+    // multimodal (text + image) content. main.js's
+    // chat:send-message handler turns each attachment's
+    // dataUri / base64 into an OpenAI image_url content
+    // block when the gateway's /v1/chat/completions
+    // endpoint is enabled. Without attachments, behaves
+    // the same as before (plain text message).
+    sendMessage: (agentId, message, attachments) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments }),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

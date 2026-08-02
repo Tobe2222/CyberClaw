@@ -2439,7 +2439,11 @@ window.sendChat = async function() {
     let result;
     try {
       result = await Promise.race([
-        cyberclaw.chat.sendMessage(mainAgentId, fullMessage),
+        // v3.2.51: pass attachments (multimodal content)
+        // through to the IPC. The renderer's sendChatMessage
+        // function passes them here. Empty array for text-
+        // only sends.
+        cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         capPromise,
       ]);
     } finally {
@@ -2691,9 +2695,19 @@ window.sendChatMessage = async function(message) {
   }
 };
 
-const __sendChatMessageImpl = async function(message) {
-  window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}"`, 'info');
-  if (!message) return;
+// v3.2.51: accepts an optional attachments array
+// for multimodal (text + image) chat. Each attachment
+// is { dataUri, mimeType, fileName, size, path? }.
+// Passed through to cyberclaw.chat.sendMessage which
+// sends them to main.js's chat:send-message IPC, which
+// in turn builds the OpenAI multimodal content array.
+const __sendChatMessageImpl = async function(message, attachments) {
+  window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}" atts=${(attachments||[]).length}`, 'info');
+  // v3.2.51: allow empty message when attachments are
+  // present (an image-only send). The user pasted an
+  // image and tapped send with no text — the model
+  // should see the image, not get a silent no-op.
+  if (!message && (!attachments || attachments.length === 0)) return;
   // Wake companion if sleeping
   nudgeNightWake();
   // v3.10.3: ALSO explicitly flip sleepState from 'sleeping'
@@ -2897,9 +2911,15 @@ const __sendChatMessageImpl = async function(message) {
     let result;
     try {
       result = await Promise.race([
-        cyberclaw.chat.sendMessage(mainAgentId, fullMessage),
+        // v3.2.51: pass attachments (multimodal content).
+        cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('agent call timed out after 90s')), AGENT_TIMEOUT_MS)
+          // v3.2.46: AGENT_TIMEOUT_MS is 180s (180000).
+          // The 90s in the error message is the legacy
+          // string; keeping it for now to avoid masking
+          // what the user actually saw. The actual cap
+          // is AGENT_TIMEOUT_MS.
+          setTimeout(() => reject(new Error('agent call timed out (90s+ legacy string; actual cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms)')), AGENT_TIMEOUT_MS)
         ),
       ]);
     } catch (timeoutErr) {
@@ -5782,20 +5802,53 @@ try {
   // That's the same behavior Discord bots without
   // vision enabled show — they get the file metadata
   // and a URL/path, but the bytes don't reach the model.
-  ipcRenderer.on('mobile-attachment', (e, { path: filePath, mimeType, fileName, size, meta }) => {
+  //
+  // v3.2.51: now passes the base64-encoded image data
+  // through to chat:send-message as an OpenAI multimodal
+  // image_url content block. The gateway's
+  // /v1/chat/completions endpoint accepts data: URIs in
+  // image_url.url and forwards them to the model. This is
+  // what makes Discord-style attachments work — the image
+  // bytes reach the model inline rather than as a path
+  // the model can't read. Tobe 2026-08-02 21:45: 'Just
+  // make it such that it works like it does in discord.'
+  ipcRenderer.on('mobile-attachment', (e, { path: filePath, mimeType, fileName, size, data, meta }) => {
     try {
-      const prompt = `[The user sent an image attachment: "${fileName || 'image'}" (${mimeType || 'image/jpeg'}, ${size || '?'} bytes). The file is saved at: ${filePath}\n\nRespond as if the user just sent this image in chat. If you have a way to view images (vision capability or a read tool that handles images), look at the file and tell the user what you see. Otherwise, acknowledge the attachment and ask what they'd like you to do with it.]`;
-      console.log('[mobile-attachment] forwarding to chat:', fileName, filePath, size);
+      // Build the attachments array in the format the
+      // desktop IPC expects. Each entry has dataUri (or
+      // data + mimeType) so the handler can build the
+      // multimodal content block.
+      const dataUri = data ? `data:${mimeType || 'image/png'};base64,${data}` : null;
+      if (!dataUri) {
+        console.warn('[mobile-attachment] no base64 data in IPC payload, falling back to text prompt');
+      }
+      const attachments = dataUri ? [{
+        dataUri,
+        mimeType: mimeType || 'image/png',
+        fileName: fileName || 'image',
+        size: size || 0,
+        path: filePath,
+      }] : null;
+      // The user prompt is empty — the attachment IS the
+      // message. The model will see the image first and
+      // the (possibly empty) text after.
+      const prompt = '';
+      console.log('[mobile-attachment] forwarding to chat:', fileName, filePath, size, 'attachments:', attachments?.length || 0);
       window.addDesktopLog?.('📎', 'Attachment → AI', `${fileName} (${size} bytes)`, 'info');
       // No user-attribution bubble — the user already
       // sees their own message in the chat. The
       // attachment metadata is a private side-channel
       // to the LLM.
       if (typeof window.sendChatMessage === 'function') {
-        window.sendChatMessage(prompt);
+        // v3.2.51: pass attachments as the third arg.
+        // sendChatMessageImpl passes them through to
+        // cyberclaw.chat.sendMessage which sends them
+        // to main.js's chat:send-message IPC, which
+        // builds the multimodal content array.
+        window.sendChatMessage(prompt, attachments);
       } else {
         setTimeout(() => {
-          if (typeof window.sendChatMessage === 'function') window.sendChatMessage(prompt);
+          if (typeof window.sendChatMessage === 'function') window.sendChatMessage(prompt, attachments);
         }, 2000);
       }
     } catch (err) {
