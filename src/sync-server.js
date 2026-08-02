@@ -869,6 +869,16 @@ class SyncServer extends EventEmitter {
       case 'set_quest_active': {
         if (!client.authenticated) return;
         const { id } = msg;
+        // v3.2.42: debug log so we can see if the
+        // mobile's click is actually sending the WS
+        // message. Tobe reported (2026-08-02 16:46)
+        // "i tried to activate a another quest but it
+        // wont change when clicking the button." We
+        // don't know yet if the click is registering on
+        // the mobile, if the WS message is being sent,
+        // or if the desktop is silently dropping it.
+        // This log answers the third question.
+        console.log(`[SyncServer] set_quest_active received from ${client.name}: id=${id}`);
         try {
           if (this.onSetQuestActive) this.onSetQuestActive(id);
         } catch (e) {
