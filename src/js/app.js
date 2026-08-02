@@ -5264,6 +5264,31 @@ try {
   // avatar if the sprite changed), then broadcast the updated
   // agents_list so every connected client (including the phone
   // that initiated the edit) sees the change.
+  // v3.2.42: re-render quests when the list changes
+  // externally. Without this, the renderer's in-memory
+  // activeQuestId stays stale after a mobile-side quest
+  // edit (set-active, update, delete, etc.) because the
+  // renderer only re-reads disk state when something IT
+  // does triggers renderQuests(). The next chat send then
+  // builds the context with the stale active quest and
+  // the companion replies with the wrong quest name.
+  // Tobe hit this on 2026-08-02 17:27: the mobile
+  // switched to CYBERHIVE_WEBSITE V3, but Clawsuu's
+  // reply said "Yeah it says Cyber_Music is active"
+  // because the renderer still had Cyber_Music cached.
+  ipcRenderer.on('quests-updated', (e, list) => {
+    try {
+      if (!Array.isArray(list)) return;
+      // Update the module-level activeQuestId from the
+      // canonical list. renderQuests() also does this,
+      // so re-rendering covers the visual side.
+      activeQuestId = list.find(q => q.active)?.id || null;
+      renderQuests();
+    } catch (err) {
+      console.warn('[quests-updated] handler failed:', err?.message);
+    }
+  });
+
   ipcRenderer.on('mobile-sprite-config-saved', async (e, { agentId, patch } = {}) => {
     try {
       if (!agentId || !agents[agentId]) {

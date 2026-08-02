@@ -210,6 +210,21 @@ function saveQuests(quests) {
   if (syncServer) {
     try { syncServer.broadcastQuestsList(loadQuests()); } catch (e) { console.warn('[IPC] broadcastQuestsList after save failed:', e?.message); }
   }
+  // v3.2.42: also push the updated list to the desktop's own
+  // renderer. Without this, when the mobile changes the
+  // active quest, the renderer's in-memory activeQuestId
+  // stays stale — the renderer only re-reads the disk
+  // state when something it does triggers renderQuests().
+  // The next chat send then builds the context with the
+  // stale active quest and the companion's reply says
+  // 'wait, what's the active quest?' — exactly the bug
+  // Tobe hit on 2026-08-02 17:27: "Yeah it says
+  // Cyber_Music is active" when the disk (and the mobile)
+  // said CYBERHIVE_WEBSITE V3 was active. mainWindow is
+  // declared at module scope above; safe to reference here.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('quests-updated', loadQuests()); } catch (e) { console.warn('[IPC] quests-updated to renderer failed:', e?.message); }
+  }
 }
 
 const { execSync, exec: execCb, spawn } = require('child_process');
