@@ -5751,6 +5751,56 @@ try {
     }
   });
 
+  // v3.2.49: handle attachments sent from the mobile.
+  // main.js's onAttachment handler saves the base64
+  // payload to ~/.openclaw/cyberclaw/attachments/ and
+  // fires this IPC with the on-disk path. Before this
+  // commit the IPC fired but nothing on the renderer
+  // side listened, so the LLM never knew an attachment
+  // had arrived — the file sat on disk unseen.
+  // Tobe 2026-08-02 21:27: 'the companion could not see
+  // them after they were sent, or looks to be sent
+  // from the user perspective.'
+  //
+  // We forward the file path to the active companion
+  // as a chat message so the LLM can use its tools
+  // (read/grep on the file) to actually look at the
+  // image. Without tools enabled on the agent (see the
+  // v3.2.49 openclaw.json tools fix), the LLM would
+  // still be unable to read it — the chat-side fix
+  // surfaces the path; the config-side fix gives the
+  // tools to act on it.
+  //
+  // Format:
+  //   [Image from mobile — <fileName>, saved at <path>,
+  //    <size> bytes. You can read this file with your
+  //    read tool to see it. Please respond to the user
+  //    about it.]
+  //
+  // We don't try to embed the base64 in the prompt
+  // (too large for some models, and OpenClaw's
+  // text-only -m flag wouldn't accept it anyway). The
+  // path-based approach is the standard pattern: the
+  // model reads the file like any other local file.
+  ipcRenderer.on('mobile-attachment', (e, { path: filePath, mimeType, fileName, size, meta }) => {
+    try {
+      const prompt = `[Image from mobile — ${fileName || 'attachment'} (${mimeType || 'image/jpeg'}, ${size || '?'} bytes). Saved at: ${filePath}\n\nPlease look at this image with your read tool and tell me what you see.`;
+      console.log('[mobile-attachment] forwarding to chat:', fileName, filePath, size);
+      window.addDesktopLog?.('📎', 'Attachment → AI', `${fileName} (${size} bytes)`, 'info');
+      addChatMsg('user', `📎 [attached: ${fileName || 'image'}]`);
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage(prompt);
+      } else {
+        setTimeout(() => {
+          if (typeof window.sendChatMessage === 'function') window.sendChatMessage(prompt);
+        }, 2000);
+      }
+    } catch (err) {
+      console.warn('[mobile-attachment] handler failed:', err?.message);
+      window.addDesktopLog?.('❌', 'Attachment forward failed', err?.message, 'error');
+    }
+  });
+
   // v3.2.4: readiness ping. When main.js sends
   // `renderer-ready-check` (on page load), ack back
   // immediately. This proves the renderer's JS
