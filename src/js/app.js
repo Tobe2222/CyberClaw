@@ -1343,6 +1343,27 @@ async function buildActiveQuestContext(quest) {
 function buildQuestToolsHint() {
   return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
+
+// v3.2.48: work-first reminder appended at the END of
+// every user message. The LLM reads top-to-bottom; the
+// system prompt sets the general rules, but the LAST
+// thing it sees in the user message is the most
+// actionable for that specific turn. Tobe 2026-08-02
+// 21:10: 'why did he/you not do the changes? Only
+// talk?' — the LLM was over-applying the 'ask one
+// specific question' clause from the system prompt and
+// replying with clarifying questions instead of doing
+// the work. Putting the rule at the bottom of every
+// user message is the most reliable nudge: it can't be
+// pushed out by a long user message the way the system
+// prompt can, and it's the freshest signal in the
+// prompt window.
+//
+// Keep this short — it's the last thing read, so every
+// word matters. Don't bloat it with examples or context.
+function buildWorkFirstSuffix() {
+  return '[Action rule: do the work in this turn, then reply with the result. If you genuinely cannot proceed without more information, ask ONE specific question — do not promise work you have not started. The user should see your reply when the work is done, not when you start.]';
+}
 // v3.2.36: strip any quest-tool tags from a reply before
 // showing it in the chat. The tag parsers run on the
 // ORIGINAL `result.reply` and still execute the side
@@ -2307,6 +2328,19 @@ window.sendChat = async function() {
   // for the full rationale.
   fullMessage = buildQuestToolsHint() + fullMessage;
 
+  // v3.2.48: append a strong work-first reminder at the
+  // END of the user message. The LLM reads the system
+  // prompt at the top, then the user message; the LAST
+  // thing it sees in the user message is the most
+  // actionable. Tobe 2026-08-02 21:10: 'why did he/you
+  // not do the changes? Only talk?' — the system prompt
+  // rule was being ignored. Putting the rule at the
+  // END of the user message (last thing read, most
+  // salient) is the most reliable fix. We DON'T mark
+  // this as an injection — it's a genuine instruction
+  // to the LLM, just delivered in a different position.
+  fullMessage = fullMessage + '\n\n' + buildWorkFirstSuffix();
+
   // Add quest context if active. v3.1.50: use the new
   // buildActiveQuestContext helper which adds goals + recent
   // changes to the context, so the LLM has memory of what it
@@ -2767,6 +2801,10 @@ const __sendChatMessageImpl = async function(message) {
   // sendChat() injection above so voice/mobile/typed paths
   // all see the available quest tags.
   fullMessage = buildQuestToolsHint() + fullMessage;
+
+  // v3.2.48: append the work-first reminder. See the
+  // matching block in sendChat() for the full rationale.
+  fullMessage = fullMessage + '\n\n' + buildWorkFirstSuffix();
 
   // Add quest context if active
   if (activeQuestId) {
