@@ -2660,7 +2660,7 @@ window.sendChat = async function() {
  * this agent before starting its own work. Different agents
  * can still run in parallel.
  */
-window.sendChatMessage = async function(message) {
+window.sendChatMessage = async function(message, attachments) {
   // Resolve the chain key without running any IPC. We use
   // the same selection logic as the body (agentOrder[focusIndex]
   // → first agent → null) but without side effects. If we
@@ -2682,8 +2682,13 @@ window.sendChatMessage = async function(message) {
   // Now the queued body runs. Wrap the original function
   // body in a try/finally so the chain promise always
   // resolves, even on error.
+  // v3.2.55: pass `attachments` through to the impl.
+  // Tobe 2026-08-02 22:35: attachments were silently
+  // dropped here — the wrapper took only `message` and
+  // the impl's `attachments` parameter was always
+  // undefined. Fixed by forwarding the second arg.
   try {
-    await __sendChatMessageImpl(message);
+    await __sendChatMessageImpl(message, attachments);
   } finally {
     resolveCurrent();
     // If we're still the head of the chain, remove ourselves

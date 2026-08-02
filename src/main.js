@@ -948,7 +948,15 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message, attachment
   // The CLI path is kept as a fallback if the gateway's HTTP
   // endpoint is disabled or unreachable.
   const gw = readGatewayConfig();
-  if (gw && gw.httpEnabled && gw.token) {
+  // v3.2.55: log which path we picked. Tobe 2026-08-02
+  // 22:35 test showed the LLM still couldn't see images
+  // even though the renderer reported the dataUri was
+  // built correctly. The POST log for the HTTP path
+  // never fired, which means the handler went to CLI
+  // instead. This log makes that decision visible.
+  const useHttp = !!(gw && gw.httpEnabled && gw.token);
+  console.log(`[chat:send] agent=${agentId} useHttp=${useHttp} gw.httpEnabled=${!!(gw && gw.httpEnabled)} gw.token=${!!(gw && gw.token)} attachments=${Array.isArray(attachments) ? attachments.length : 0}`);
+  if (useHttp) {
     return await sendChatMessageViaHttp(agentId, message, attachments, gw);
   }
   return await sendChatMessageViaCli(agentId, message, attachments);
