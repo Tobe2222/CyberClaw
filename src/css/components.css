@@ -489,9 +489,42 @@
   font-size: 10px;
 }
 
-.msg-text { color: var(--text-primary); user-select: text; cursor: text; }
-#chat-messages { user-select: text; cursor: text; }
-.chat-msg { user-select: text; }
+/* v3.2.47: chat messages must be selectable so the user can
+   copy text out of them. Without the !important, the body's
+   `user-select: none` was inherited through some path on
+   Electron 33 (Chromium 130+) and the override wasn't
+   taking effect — drag-to-select didn't work in the chat
+   area even though the CSS "should" have applied. Tobe
+   2026-08-02 20:27: 'I noticed that i cannot Click the
+   messages, as in mark and copy etc, fix so i can do
+   that.'
+   The fix: explicit !important on the chat elements. Also
+   add the -webkit- prefix for older WebKit renderers
+   (Electron has used WebKit prefixes in user-select for
+   backward compat even in recent versions) and the
+   standard form. */
+.msg-text {
+  color: var(--text-primary);
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+#chat-messages {
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+.chat-msg {
+  cursor: text;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
 
 /* ----- Quest Log ----- */
 /* Quest add button & form */

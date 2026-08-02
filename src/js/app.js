@@ -3147,9 +3147,55 @@ function addChatMsg(type, text, name, emoji) {
       break;
   }
 
+  // v3.2.47: right-click → Copy menu on chat messages. The
+  // CSS user-select: text fix is the primary path for
+  // drag-to-select; this is the bulletproof fallback (and
+  // also lets the user copy without having to drag-select
+  // precisely). Tobe 2026-08-02 20:27: 'I noticed that i
+  // cannot Click the messages, as in mark and copy etc,
+  // fix so i can do that.'
+  //
+  // The handler reads the visible text (no HTML markup),
+  // strips the [prefix] tag, and writes it to the system
+  // clipboard via the Electron clipboard module (exposed
+  // in preload.js). The text-extraction function also lives
+  // below as `getChatMessageText` so other call sites can
+  // reuse it.
+  //
+  // We also store the text on the div via a data attribute
+  // so future right-click menu items (e.g. "Copy as quote",
+  // "Copy with timestamp") can read it without re-parsing
+  // the DOM.
+  const messageText = getChatMessageText(div);
+  div.setAttribute('data-msg-text', messageText);
+  div.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const items = [
+      { label: 'Copy', click: () => {
+        try { require('electron').clipboard.writeText(messageText); } catch (e2) { console.warn('[chat-msg] clipboard write failed:', e2?.message); }
+      } },
+      { label: 'Copy with prefix', click: () => {
+        const prefix = div.querySelector('.msg-prefix')?.textContent || '';
+        const full = (prefix ? prefix + ' ' : '') + messageText;
+        try { require('electron').clipboard.writeText(full); } catch (e2) { console.warn('[chat-msg] clipboard write failed:', e2?.message); }
+      } },
+    ];
+    try { require('electron').Menu.buildFromTemplate(items).popup(); } catch (e2) { console.warn('[chat-msg] context menu popup failed:', e2?.message); }
+  });
+
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
   return id;
+}
+
+// v3.2.47: extract the visible text from a chat message div
+// (without HTML markup). Used by the right-click context menu
+// for the Copy item.
+function getChatMessageText(div) {
+  if (!div) return '';
+  const textEl = div.querySelector('.msg-text');
+  if (!textEl) return div.textContent || '';
+  return textEl.textContent || '';
 }
 
 // Mark a companion's channel tab as having unread messages.
