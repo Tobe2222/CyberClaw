@@ -1242,6 +1242,69 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
     return { ok: false, error: e?.message || String(e) };
   }
 });
+
+// v3.2.41: per-quest instructions-file append. The companion
+// can write its own notes to the active quest's
+// QUEST_QUEST_INSTRUCTIONS.md so future turns (and future
+// sessions) have a memory of what it learned about the
+// project: SSH paths, deploy commands, "don't touch this
+// file", "use British English", etc. Tobe's 2026-08-02
+// 15:45 ask: "as it works within the quests it should
+// leave notes for itself, and update key info in the
+// quest instructions for itself, how to do things etc."
+//
+// The append is timestamped + grouped under a
+// "## Companion notes" section so the user-written
+// instructions stay untouched at the top and the agent's
+// running notes accumulate at the bottom. If the section
+// doesn't exist yet, it's created. If the file doesn't
+// exist, it's created with just the notes section.
+//
+// The renderer is responsible for invalidating its
+// in-memory cache so the next chat send sees the new note.
+ipcMain.handle('quests:append-quest-instructions', (event, questId, text) => {
+  const quests = loadQuests();
+  const quest = quests.find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  if (!text || typeof text !== 'string' || !text.trim()) return { ok: false, error: 'text is empty' };
+  const file = questInstructionsFilePath(quest);
+  try {
+    const parent = path.dirname(file);
+    fs.mkdirSync(parent, { recursive: true });
+    const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
+    const now = new Date();
+    const ts = now.toISOString();
+    // The note line. "+ a leading blank line" so the
+    // append doesn't run into the previous note.
+    const noteBlock = `\n\n## Companion note (${ts})\n\n${text.trim()}\n`;
+    // If the file already has a "## Companion notes"
+    // section, append at its end. Otherwise create the
+    // section. We use the FIRST "## Companion note" /
+    // "## Companion notes" heading as the anchor so
+    // multiple notes accumulate under one section.
+    const sectionHeader = '## Companion notes';
+    const sectionRe = /^## Companion notes\s*$/m;
+    let next;
+    if (sectionRe.test(existing)) {
+      // Append after the section header (and any
+      // existing note blocks). The simplest safe
+      // choice is to append at the end of the file —
+      // earlier notes never get touched, the new note
+      // lands at the bottom, and the user just sees
+      // a timeline.
+      next = existing.replace(/\s*$/, '') + noteBlock;
+    } else {
+      // No section yet. Create one at the bottom of
+      // the file. Keep user-written content above
+      // untouched.
+      next = (existing.replace(/\s*$/, '') + '\n\n' + sectionHeader + noteBlock);
+    }
+    fs.writeFileSync(file, next, 'utf-8');
+    return { ok: true, path: file, bytes: Buffer.byteLength(next, 'utf-8') };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+});
 ipcMain.handle('companion:stats', (event, agentId) => {
   const stats = loadStats();
   return stats[agentId] || { level: 1, xp: 0, xpTotal: 0, skills: {} };

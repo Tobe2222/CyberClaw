@@ -97,6 +97,13 @@ window.cyberclaw = {
     // a reply. Read returns { ok, content, path }.
     readQuestInstructions: (id) => ipcRenderer.invoke('quests:read-quest-instructions', id),
     saveQuestInstructions: (id, content) => ipcRenderer.invoke('quests:save-quest-instructions', id, content),
+    // v3.2.41: companion-side note append. The companion
+    // emits [QUEST_NOTE: text="..."] in its reply and the
+    // desktop appends a timestamped "## Companion notes"
+    // section to the active quest's instructions file.
+    // Future turns + future sessions see the note via
+    // buildActiveQuestContext's instructions injection.
+    appendQuestInstructions: (id, text) => ipcRenderer.invoke('quests:append-quest-instructions', id, text),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

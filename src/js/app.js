@@ -1161,6 +1161,24 @@ window.openDoctor = function() {
 // the quest list is rendered or the IPC bridge returns a fresh
 // active quest.
 let activeQuestId = null;
+// v3.2.41: pre-warm the quest-instructions cache when a
+// quest becomes active. The cache is populated inside
+// buildActiveQuestContext (sync function) by a
+// fire-and-forget read — which means the FIRST chat send
+// after a quest switch has no instructions file in
+// context. Tobe hit this on 2026-08-02: switched to
+// CYBERHIVE_WEBSITE V3, sent "do it", and the companion
+// replied "you didn't unlock shit" because it didn't see
+// the instructions file. The user did see the file (the
+// quest editor showed it), and they had to nudge the
+// companion to look again.
+//
+// The preheat is a module-level map of `questId -> promise`
+// that selectQuest() populates right after setActive
+// succeeds. buildActiveQuestContext awaits the promise
+// if it's still pending, so the cache is always warm by
+// the time the LLM sees the context.
+const questInstructionsPreheat = new Map();
 // Helper: pull the current active quest id from the quest list
 // without going through disk. Falls back to the in-memory cache
 // if the list is empty.
@@ -1191,7 +1209,7 @@ function getActiveQuestId(quests) {
 // about than absolute timestamps, and the absolute timestamp is
 // still available in the quest JSON if the LLM wants to look
 // it up.
-function buildActiveQuestContext(quest) {
+async function buildActiveQuestContext(quest) {
   if (!quest) return '';
   let ctx = `[Active Quest: "${quest.name}"`;
   if (quest.description) ctx += ` — ${quest.description}`;
@@ -1239,7 +1257,7 @@ function buildActiveQuestContext(quest) {
   // CREATE_QUEST tag is now also injected unconditionally in
   // sendChatMessage() via buildQuestToolsHint() so the agent
   // sees it even when there's no active quest.
-  ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
+  ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_NOTE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
   ctx += `] `;
 
   // v3.2.30: per-quest instructions file. The companion reads
@@ -1263,24 +1281,43 @@ function buildActiveQuestContext(quest) {
       ctx += `\n[Quest instructions at ${cached.path}]\n${cached.content}\n[/Quest instructions] `;
     }
   } else {
-    // Async read — we can't await here because
-    // buildActiveQuestContext is sync. Push the read into
-    // a fire-and-forget promise that fills the cache for
-    // the NEXT call. The first chat send after opening a
-    // quest will NOT have the instructions file in context; the
-    // second one will. Tobe's UX is "open quest, type,
-    // send" so the second-send delay is acceptable. If we
-    // need the file on the first send, we can pre-fetch on
-    // quest selection in the renderer's selectQuest handler.
-    cyberclaw.quests.readQuestInstructions(quest.id).then((res) => {
-      if (res && res.ok) {
-        quest._questInstructionsCache[quest.id] = { content: res.content, path: res.path };
-      } else {
-        quest._questInstructionsCache[quest.id] = { content: '', path: null };
+    // v3.2.41: buildActiveQuestContext is now async so we
+    // can await the read. The first send after a quest
+    // switch waits for the file read (microseconds — the
+    // IPC is fast and the file is small). The preheat
+    // promise seeded by selectQuest() resolves to the same
+    // file content, so if the preheat finished first we
+    // skip the second IPC entirely.
+    const preheat = questInstructionsPreheat.get(quest.id);
+    try {
+      // Await the preheat if it's still pending; if it's
+      // already resolved, this is a no-op await. Either
+      // way, the cache is filled before we read it.
+      if (preheat) {
+        await preheat;
+        questInstructionsPreheat.delete(quest.id);
       }
-    }).catch(() => {
+      // Re-check the cache — the preheat may have just
+      // populated it. If not, do the read now.
+      const afterPreheat = quest._questInstructionsCache[quest.id];
+      if (afterPreheat !== undefined) {
+        if (afterPreheat.content) {
+          ctx += `\n[Quest instructions at ${afterPreheat.path}]\n${afterPreheat.content}\n[/Quest instructions] `;
+        }
+      } else {
+        const res = await cyberclaw.quests.readQuestInstructions(quest.id);
+        if (res && res.ok) {
+          quest._questInstructionsCache[quest.id] = { content: res.content, path: res.path };
+          if (res.content) {
+            ctx += `\n[Quest instructions at ${res.path}]\n${res.content}\n[/Quest instructions] `;
+          }
+        } else {
+          quest._questInstructionsCache[quest.id] = { content: '', path: null };
+        }
+      }
+    } catch (e) {
       quest._questInstructionsCache[quest.id] = { content: '', path: null };
-    });
+    }
   }
 
   return ctx;
@@ -1300,11 +1337,11 @@ function buildActiveQuestContext(quest) {
 //
 // Keep this list in sync with the tag parsers in
 // result.reply parsing blocks below (search for
-// "QUEST_SET_ACTIVE" / "QUEST_APPEND_CHANGE" /
+// "QUEST_SET_ACTIVE" / "QUEST_APPEND_CHANGE" / "QUEST_NOTE" /
 // "QUEST_MARK_GOAL" / "CREATE_QUEST"). The hint is one
 // short clause to minimize context-window bloat.
 function buildQuestToolsHint() {
-  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
+  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
 // v3.2.36: strip any quest-tool tags from a reply before
 // showing it in the chat. The tag parsers run on the
@@ -1332,6 +1369,7 @@ function stripQuestTags(reply) {
     // on the unmodified reply.
     .replace(/\[CREATE_QUEST:[^\]]*\]/g, '')
     .replace(/\[QUEST_APPEND_CHANGE:[^\]]*\]/g, '')
+    .replace(/\[QUEST_NOTE:[^\]]*\]/g, '')
     .replace(/\[QUEST_MARK_GOAL:[^\]]*\]/g, '')
     .replace(/\[QUEST_SET_ACTIVE:[^\]]*\]/g, '')
     // The full hint string the LLM occasionally echoes back.
@@ -1423,6 +1461,45 @@ window.selectQuest = async function(el, questId) {
     el.classList.add('quest-selected');
     activeQuestId = questId;
     try { await cyberclaw.quests.setActive(questId); } catch (e) { console.warn('[Quests] setActive failed:', e?.message); }
+    // v3.2.41: pre-warm the quest-instructions cache so the
+    // first chat send after a quest switch sees the file
+    // content. buildActiveQuestContext awaits the preheat
+    // promise if it's still pending. The preheat kicks off
+    // a single readQuestInstructions IPC; the next call
+    // finds the cache already populated and doesn't
+    // double-read. If a preheat from a previous quest
+    // selection is still in-flight, cancel it (delete)
+    // — stale data is worse than no data.
+    const existing = questInstructionsPreheat.get(questId);
+    if (!existing) {
+      const preheat = cyberclaw.quests.readQuestInstructions(questId)
+        .then((res) => {
+          // Stash into the quest's cache. We don't have a
+          // direct handle to the quest object here, but the
+          // list is small and we'll find it in the next
+          // renderQuests(); meanwhile, when the chat send
+          // happens, buildActiveQuestContext looks it up
+          // by quest.id on the quest object passed in.
+          // The cleanest place to store the in-flight result
+          // is the preheat map itself — buildActiveQuestContext
+          // can await the preheat and then re-read the cache.
+          // The store-on-cache happens INSIDE buildActiveQuestContext
+          // after awaiting the preheat.
+          if (res && res.ok) {
+            // We need the quest object to write to its
+            // cache. list() is the canonical source.
+            return cyberclaw.quests.list().then((quests) => {
+              const q = quests.find(qq => qq.id === questId);
+              if (q) {
+                if (!q._questInstructionsCache) q._questInstructionsCache = {};
+                q._questInstructionsCache[questId] = { content: res.content, path: res.path };
+              }
+            });
+          }
+        })
+        .catch(() => { /* swallow — buildActiveQuestContext will retry */ });
+      questInstructionsPreheat.set(questId, preheat);
+    }
   }
   updateQuestIndicator();
   // Re-render to pull the canonical `active` flag from disk
@@ -1533,6 +1610,26 @@ async function renderQuests() {
   // calls because quest is a stable reference from the
   // cached list. So we just set it on every renderQuests.)
   for (const q of quests) q._questInstructionsCache = {};
+
+  // v3.2.41: preheat the active quest's instructions-file
+  // cache on every render. selectQuest() also preheats,
+  // but renderQuests() fires on desktop restart, mobile
+  // sync, and various save events — all of which might
+  // be the first time the user opens the chat after
+  // the active quest was set elsewhere. The preheat
+  // is idempotent (a no-op if it's already pending).
+  const activeQuest = quests.find(q => q.active);
+  if (activeQuest && !questInstructionsPreheat.has(activeQuest.id)) {
+    const preheat = cyberclaw.quests.readQuestInstructions(activeQuest.id)
+      .then((res) => {
+        if (res && res.ok) {
+          if (!activeQuest._questInstructionsCache) activeQuest._questInstructionsCache = {};
+          activeQuest._questInstructionsCache[activeQuest.id] = { content: res.content, path: res.path };
+        }
+      })
+      .catch(() => { /* swallow */ });
+    questInstructionsPreheat.set(activeQuest.id, preheat);
+  }
 
   if (!quests.length) {
     empty.style.display = '';
@@ -2198,7 +2295,7 @@ window.sendChat = async function() {
     const quests = await cyberclaw.quests.list();
     const q = quests.find(q => q.id === activeQuestId);
     if (q) {
-      fullMessage = buildActiveQuestContext(q) + fullMessage;
+      fullMessage = await buildActiveQuestContext(q) + fullMessage;
     }
   }
 
@@ -2361,6 +2458,53 @@ window.sendChat = async function() {
             }
           } else {
             addChatMsg('system', '⚠️ No active quest to log the change against');
+          }
+        }
+        // [QUEST_NOTE: text="..."] — append a timestamped
+        // markdown note to the ACTIVE quest's
+        // QUEST_QUEST_INSTRUCTIONS.md (the same file the
+        // quest editor shows under "Quest instructions").
+        // The companion uses this to leave notes for itself
+        // (SSH paths, deploy commands, "don't touch this
+        // file", etc.) so future turns AND future sessions
+        // have a memory of project-specific knowledge.
+        // Tobe's 2026-08-02 15:45 ask: "as it works within
+        // the quests it should leave notes for itself, and
+        // update key info in the quest instructions for
+        // itself, how to do things etc."
+        //
+        // The IPC handler appends under a "## Companion
+        // notes" section. We invalidate the in-memory
+        // cache here so the next chat send sees the new
+        // note in the context block.
+        const noteMatch = result.reply.match(/\[QUEST_NOTE:\s*text="([^"]+)"\]/i);
+        if (noteMatch) {
+          if (activeQuestId) {
+            try {
+              const res = await cyberclaw.quests.appendQuestInstructions(activeQuestId, noteMatch[1]);
+              if (res && res.ok) {
+                // Invalidate the cache so the next chat
+                // send sees the new note. We do this by
+                // clearing the cache on the quest object
+                // — the next renderQuests() call will
+                // also clear it (it does on every
+                // render). The cache map is keyed by
+                // quest id, so we just delete the entry.
+                const quests = await cyberclaw.quests.list();
+                const q = quests.find(qq => qq.id === activeQuestId);
+                if (q && q._questInstructionsCache) {
+                  delete q._questInstructionsCache[activeQuestId];
+                }
+                const preview = noteMatch[1].length > 80 ? noteMatch[1].slice(0, 77) + '…' : noteMatch[1];
+                addChatMsg('system', `📓 Note saved: ${preview}`);
+              } else {
+                addChatMsg('system', `⚠️ Could not save note: ${res?.error || 'unknown error'}`);
+              }
+            } catch (e) {
+              addChatMsg('system', '⚠️ Failed to save note: ' + (e?.message || e));
+            }
+          } else {
+            addChatMsg('system', '⚠️ No active quest to save the note against');
           }
         }
         // [QUEST_MARK_GOAL: index="N" done="true"] — toggle a
@@ -2561,7 +2705,7 @@ window.sendChatMessage = async function(message) {
         // v3.1.50: same context builder as the regular chat path.
         // Goals + recent changes get injected here too, so voice
         // mode has the same project context as typed chat.
-        fullMessage = buildActiveQuestContext(q) + fullMessage;
+        fullMessage = await buildActiveQuestContext(q) + fullMessage;
       }
     } catch (e) {
       console.warn('[sendChatMessage] quest context fetch failed (continuing without):', e?.message);
