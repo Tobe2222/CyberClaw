@@ -2239,6 +2239,26 @@ function initMainTerminal() {
 // Chat — message companions
 // ---------------------------------------------------------------------------
 let chatBusy = false;
+// v3.2.45: per-agent send queue. chatBusy was a single
+// boolean, which meant if the user sent message A and then
+// message B before A's LLM call finished, the B call would
+// wait for chatBusy to clear, but once cleared B's IPC
+// would run in parallel with A's. Two openclaw-agent
+// processes sharing the same session log = lost replies.
+// Tobe 2026-08-02 18:49: 'I have to ask whether its done
+// or not, then he tells me he has done them and asks if I
+// have not seen hes replies.' The lie was real: the agent
+// HAD done the work in the first call, the second call's
+// LLM saw the prior tool calls in the shared session log
+// and answered "yeah I finished" — but the user never saw
+// the first call's actual reply, only the second call's
+// meta-reply.
+//
+// The fix: per-agent promise chain. Each call awaits the
+// previous call's promise, so calls are strictly
+// serialized per agent. The user sees one reply per
+// message they sent, in order.
+const chatSendChain = new Map(); // agentId -> Promise
 
 function updateChatTarget() {
   // chat-target element was removed — no-op
@@ -2588,8 +2608,56 @@ window.sendChat = async function() {
 /**
  * Send a chat message programmatically (used by mobile sync, voice, etc.)
  * Unlike sendChat() which reads from the DOM input, this takes text directly.
+ *
+ * v3.2.45: serialize per agent via chatSendChain. Without
+ * this, two messages sent in quick succession would each
+ * run their own openclaw-agent process in parallel, sharing
+ * one session log. The first process's final assistant text
+ * was never broadcast — only the second process's reply
+ * (which always lied "yeah I already did that" because it
+ * saw the first's tool calls in the log) was visible. Tobe
+ * 2026-08-02 18:49.
+ *
+ * The wrapper awaits the previous call's chain promise for
+ * this agent before starting its own work. Different agents
+ * can still run in parallel.
  */
 window.sendChatMessage = async function(message) {
+  // Resolve the chain key without running any IPC. We use
+  // the same selection logic as the body (agentOrder[focusIndex]
+  // → first agent → null) but without side effects. If we
+  // pre-pick wrong and the body later picks a different
+  // agent, the worst case is that the wait is wrong by one
+  // turn (the call still runs; just not serialized with
+  // the right prior call). For Tobe's case (one active
+  // agent) this is fine.
+  const chainKey = (agentOrder && agentOrder[focusIndex])
+    || (agentOrder && agentOrder[0])
+    || '_default';
+  const prev = chatSendChain.get(chainKey);
+  let resolveCurrent;
+  const currentPromise = new Promise(r => { resolveCurrent = r; });
+  chatSendChain.set(chainKey, currentPromise);
+  if (prev) {
+    try { await prev; } catch (_) { /* swallow; the prev call surfaced its own error */ }
+  }
+  // Now the queued body runs. Wrap the original function
+  // body in a try/finally so the chain promise always
+  // resolves, even on error.
+  try {
+    await __sendChatMessageImpl(message);
+  } finally {
+    resolveCurrent();
+    // If we're still the head of the chain, remove ourselves
+    // so the map doesn't grow unbounded. If a new call has
+    // already replaced us, leave it.
+    if (chatSendChain.get(chainKey) === currentPromise) {
+      chatSendChain.delete(chainKey);
+    }
+  }
+};
+
+const __sendChatMessageImpl = async function(message) {
   window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}"`, 'info');
   if (!message) return;
   // Wake companion if sleeping
@@ -2628,15 +2696,33 @@ window.sendChatMessage = async function(message) {
     // flight. The reasoning was the same in v3.2.28 (the
     // 2-min cap) — make the wait visible.
     window.addDesktopLog?.('⏳', 'Waiting for previous AI reply', message.substring(0, 60), 'warn');
-    // Wait up to 15s for chatBusy to clear, then force-reset and proceed
-    let waited = 0;
-    while (chatBusy && waited < 15000) {
+    // v3.2.45: bumped 15s → 90s. The previous 15s cap was
+    // a UX safety net for hung requests, but the actual
+    // IPC timeout in main.js is 90s. A complex tool-use
+    // task (like "edit 7 files" — Tobe's 2026-08-02 18:49
+    // "make hive control look cyber" request) can easily
+    // take 30-60s. Cutting it off at 15s and force-resetting
+    // chatBusy let the second user message ("Hello?")
+    // interrupt the first, which fired a SECOND
+    // openclaw-agent process. The first process's reply
+    // (or lack thereof) was effectively lost — the user
+    // only saw the second process's reply, which (because
+    // it shared the same session log) was a lie ("yeah I
+    // finished the cleanup") even though the work WAS
+    // done, just never reported.
+    //
+    // The right cap is the IPC's own 90s. If the first
+    // process doesn't return within 90s, the IPC will
+    // also time out and clean up. We mirror that. The
+    // hard ceiling is 95s to give the IPC a few seconds
+    // to clean up before we declare it stuck.
+    const startWait = Date.now();
+    while (chatBusy && Date.now() - startWait < 95000) {
       await new Promise(r => setTimeout(r, 200));
-      waited += 200;
     }
     if (chatBusy) {
-      console.warn('[sendChatMessage] chatBusy stuck, force-resetting');
-      window.addDesktopLog?.('⚠️', 'AI reply stuck > 15s, force-resetting', message.substring(0, 60), 'warn');
+      console.warn('[sendChatMessage] chatBusy stuck > 95s, force-resetting');
+      window.addDesktopLog?.('⚠️', 'AI reply stuck > 95s, force-resetting', message.substring(0, 60), 'warn');
       chatBusy = false;
     }
   }
