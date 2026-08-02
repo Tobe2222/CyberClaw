@@ -16,6 +16,39 @@ function discordLog(emoji, title, detail = '', level = 'info') {
 }
 
 let mainWindow;
+
+// v3.2.52: attachment batching buffer. The mobile sends
+// each image as a SEPARATE WS `attachment` message (one
+// per file in the user's selection). Without batching, the
+// desktop fires one `mobile-attachment` IPC per image, and
+// each one triggers its own chat:send-message HTTP call
+// to the gateway. A 9-image paste would queue 9 separate
+// LLM calls in the renderer's per-agent chatSendChain,
+// each of which could take 10-30s — easily exceeding the
+// chain timeout. Tobe 2026-08-02 22:13: 'No response
+// from OpenClaw.' (the chain timed out before all calls
+// completed).
+//
+// Batching: hold attachments for 700ms after the LAST
+// one arrives. Then fire ONE mobile-attachment-batch IPC
+// with all attachments in a single payload. The renderer's
+// handler builds ONE multimodal content array, fires ONE
+// chat:send-message call. Same Discord-style flow.
+let pendingAttachments = [];
+let attachmentFlushTimer = null;
+const ATTACHMENT_FLUSH_MS = 700;
+
+function flushAttachmentBatch() {
+  if (pendingAttachments.length === 0) return;
+  const batch = pendingAttachments;
+  pendingAttachments = [];
+  attachmentFlushTimer = null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('mobile-attachment-batch', {
+      attachments: batch,
+    });
+  }
+}
 let ptyProcess = null;
 let chatPty = null;
 let isQuitting = false;
@@ -3137,21 +3170,20 @@ app.whenReady().then(() => {
           // v3.2.51: include the base64-encoded attachment
           // data in the IPC payload. The renderer-side
           // handler passes it through to chat:send-message
-          // as an OpenAI multimodal image_url content block.
-          // This is what makes Discord-style attachments
-          // work: the image bytes reach the model inline
-          // rather than as a path the model can't read.
-          // We read the file we just wrote (it's small
-          // for typical screenshots, but the IPC payload
-          // could grow for big files; that's an
-          // acceptable trade-off for the simpler flow).
+          // v3.2.52: buffer attachments for 700ms before
+          // firing the IPC, so a multi-image paste
+          // results in ONE multimodal chat send instead
+          // of N. The mobile sends each image as a
+          // separate WS message, but the user's
+          // intent is "send all of these together" —
+          // batching preserves that.
           let dataBase64 = null;
           try {
             dataBase64 = fs.readFileSync(savedPath, 'base64');
           } catch (e) {
             console.warn('[Attachment] failed to re-read for IPC payload:', e?.message);
           }
-          mainWindow.webContents.send('mobile-attachment', {
+          pendingAttachments.push({
             path: savedPath,
             mimeType,
             fileName,
@@ -3162,7 +3194,10 @@ app.whenReady().then(() => {
               deviceName: meta?.deviceName || 'Mobile',
               agentId: meta?.agentId || null,
             },
+            receivedAt: Date.now(),
           });
+          if (attachmentFlushTimer) clearTimeout(attachmentFlushTimer);
+          attachmentFlushTimer = setTimeout(flushAttachmentBatch, ATTACHMENT_FLUSH_MS);
         }
         // Ack back to mobile so the chat can update
         // with the attachment preview on the mobile side.

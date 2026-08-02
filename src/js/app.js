@@ -5792,18 +5792,7 @@ try {
   // forwards the attachment info to the LLM silently;
   // the user only sees their original send.
   //
-  // The forward is path-based. OpenClaw's `agent -m`
-  // CLI is text-only — we can't embed the base64
-  // directly. The model is told the file's on-disk
-  // path; if it has tools (see the v3.2.49 agent-config
-  // fix in the parallel conversation), it can read the
-  // file like any other local file. Without tools, the
-  // model acknowledges the attachment but can't view it.
-  // That's the same behavior Discord bots without
-  // vision enabled show — they get the file metadata
-  // and a URL/path, but the bytes don't reach the model.
-  //
-  // v3.2.51: now passes the base64-encoded image data
+  // v3.2.51: passes the base64-encoded image data
   // through to chat:send-message as an OpenAI multimodal
   // image_url content block. The gateway's
   // /v1/chat/completions endpoint accepts data: URIs in
@@ -5812,39 +5801,60 @@ try {
   // bytes reach the model inline rather than as a path
   // the model can't read. Tobe 2026-08-02 21:45: 'Just
   // make it such that it works like it does in discord.'
-  ipcRenderer.on('mobile-attachment', (e, { path: filePath, mimeType, fileName, size, data, meta }) => {
+  //
+  // v3.2.52: switched from per-image `mobile-attachment`
+  // events to a single `mobile-attachment-batch` event.
+  // The mobile sends each image as a SEPARATE WS
+  // attachment message (one per file). Without batching,
+  // each one triggered its own chat:send-message HTTP
+  // call to the gateway. A 9-image paste queued 9
+  // separate LLM calls in the renderer's per-agent
+  // chatSendChain — each call could take 10-30s, easily
+  // exceeding the chain timeout. Tobe 2026-08-02 22:13:
+  // 'No response from OpenClaw.' (chain timed out before
+  // all calls completed). The desktop now buffers
+  // attachments for 700ms after the LAST one arrives,
+  // then fires ONE batch event with all of them. We
+  // build ONE multimodal content array and fire ONE
+  // chat:send-message call. Discord-style: many
+  // attachments, one chat round-trip.
+  ipcRenderer.on('mobile-attachment-batch', (e, { attachments: batch }) => {
     try {
+      if (!Array.isArray(batch) || batch.length === 0) return;
       // Build the attachments array in the format the
       // desktop IPC expects. Each entry has dataUri (or
       // data + mimeType) so the handler can build the
       // multimodal content block.
-      const dataUri = data ? `data:${mimeType || 'image/png'};base64,${data}` : null;
-      if (!dataUri) {
-        console.warn('[mobile-attachment] no base64 data in IPC payload, falling back to text prompt');
+      const attachments = [];
+      for (const a of batch) {
+        const dataUri = a.data ? `data:${a.mimeType || 'image/png'};base64,${a.data}` : null;
+        if (!dataUri) continue;
+        attachments.push({
+          dataUri,
+          mimeType: a.mimeType || 'image/png',
+          fileName: a.fileName || 'image',
+          size: a.size || 0,
+          path: a.path || '',
+        });
       }
-      const attachments = dataUri ? [{
-        dataUri,
-        mimeType: mimeType || 'image/png',
-        fileName: fileName || 'image',
-        size: size || 0,
-        path: filePath,
-      }] : null;
-      // The user prompt is empty — the attachment IS the
-      // message. The model will see the image first and
-      // the (possibly empty) text after.
+      if (attachments.length === 0) {
+        console.warn('[mobile-attachment-batch] no usable attachments in batch');
+        return;
+      }
+      // The user prompt is empty — the attachments ARE the
+      // message. The model will see all images in one
+      // multimodal content array.
       const prompt = '';
-      console.log('[mobile-attachment] forwarding to chat:', fileName, filePath, size, 'attachments:', attachments?.length || 0);
-      window.addDesktopLog?.('📎', 'Attachment → AI', `${fileName} (${size} bytes)`, 'info');
+      const sizeInfo = attachments.length === 1
+        ? `${attachments[0].fileName} (${attachments[0].size} bytes)`
+        : `${attachments.length} images`;
+      console.log('[mobile-attachment-batch] forwarding to chat:', sizeInfo, 'attachments:', attachments.length);
+      window.addDesktopLog?.('📎', 'Attachment batch → AI', sizeInfo, 'info');
       // No user-attribution bubble — the user already
       // sees their own message in the chat. The
       // attachment metadata is a private side-channel
       // to the LLM.
       if (typeof window.sendChatMessage === 'function') {
-        // v3.2.51: pass attachments as the third arg.
-        // sendChatMessageImpl passes them through to
-        // cyberclaw.chat.sendMessage which sends them
-        // to main.js's chat:send-message IPC, which
-        // builds the multimodal content array.
         window.sendChatMessage(prompt, attachments);
       } else {
         setTimeout(() => {
@@ -5852,8 +5862,8 @@ try {
         }, 2000);
       }
     } catch (err) {
-      console.warn('[mobile-attachment] handler failed:', err?.message);
-      window.addDesktopLog?.('❌', 'Attachment forward failed', err?.message, 'error');
+      console.warn('[mobile-attachment-batch] handler failed:', err?.message);
+      window.addDesktopLog?.('❌', 'Attachment batch forward failed', err?.message, 'error');
     }
   });
 
