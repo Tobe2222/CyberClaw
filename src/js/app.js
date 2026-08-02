@@ -5762,32 +5762,35 @@ try {
   // them after they were sent, or looks to be sent
   // from the user perspective.'
   //
-  // We forward the file path to the active companion
-  // as a chat message so the LLM can use its tools
-  // (read/grep on the file) to actually look at the
-  // image. Without tools enabled on the agent (see the
-  // v3.2.49 openclaw.json tools fix), the LLM would
-  // still be unable to read it — the chat-side fix
-  // surfaces the path; the config-side fix gives the
-  // tools to act on it.
+  // v3.2.50: removed the user-attribution bubble that
+  // v3.2.49 added (`📎 [attached: ...]`). Tobe 2026-08-02
+  // 21:36: 'it says that i sent attachment extra in the
+  // chat now ... We dont want that extra message
+  // either.' The user already sees their own bubble
+  // (the original send with the image) — the extra
+  // chat bubble was redundant noise. Now the renderer
+  // forwards the attachment info to the LLM silently;
+  // the user only sees their original send.
   //
-  // Format:
-  //   [Image from mobile — <fileName>, saved at <path>,
-  //    <size> bytes. You can read this file with your
-  //    read tool to see it. Please respond to the user
-  //    about it.]
-  //
-  // We don't try to embed the base64 in the prompt
-  // (too large for some models, and OpenClaw's
-  // text-only -m flag wouldn't accept it anyway). The
-  // path-based approach is the standard pattern: the
-  // model reads the file like any other local file.
+  // The forward is path-based. OpenClaw's `agent -m`
+  // CLI is text-only — we can't embed the base64
+  // directly. The model is told the file's on-disk
+  // path; if it has tools (see the v3.2.49 agent-config
+  // fix in the parallel conversation), it can read the
+  // file like any other local file. Without tools, the
+  // model acknowledges the attachment but can't view it.
+  // That's the same behavior Discord bots without
+  // vision enabled show — they get the file metadata
+  // and a URL/path, but the bytes don't reach the model.
   ipcRenderer.on('mobile-attachment', (e, { path: filePath, mimeType, fileName, size, meta }) => {
     try {
-      const prompt = `[Image from mobile — ${fileName || 'attachment'} (${mimeType || 'image/jpeg'}, ${size || '?'} bytes). Saved at: ${filePath}\n\nPlease look at this image with your read tool and tell me what you see.`;
+      const prompt = `[The user sent an image attachment: "${fileName || 'image'}" (${mimeType || 'image/jpeg'}, ${size || '?'} bytes). The file is saved at: ${filePath}\n\nRespond as if the user just sent this image in chat. If you have a way to view images (vision capability or a read tool that handles images), look at the file and tell the user what you see. Otherwise, acknowledge the attachment and ask what they'd like you to do with it.]`;
       console.log('[mobile-attachment] forwarding to chat:', fileName, filePath, size);
       window.addDesktopLog?.('📎', 'Attachment → AI', `${fileName} (${size} bytes)`, 'info');
-      addChatMsg('user', `📎 [attached: ${fileName || 'image'}]`);
+      // No user-attribution bubble — the user already
+      // sees their own message in the chat. The
+      // attachment metadata is a private side-channel
+      // to the LLM.
       if (typeof window.sendChatMessage === 'function') {
         window.sendChatMessage(prompt);
       } else {
