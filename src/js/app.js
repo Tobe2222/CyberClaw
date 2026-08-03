@@ -2914,13 +2914,27 @@ const __sendChatMessageImpl = async function(message, attachments) {
   // broadcast to the mobile (v3.2.46 broadcast fix), but
   // 180s gives complex multi-step tasks a fair shot at
   // completing without being killed mid-edit.
-  const AGENT_TIMEOUT_MS = 180000; // 180s
+  // v3.2.58: bumped from 180s to 600s (10 min). The 180s
+  // cap was firing too often on long-running tasks like
+  // multi-tool code refactors (Tobe 2026-08-03 11:18 saw
+  // "Error: agent call timed out (90s+ legacy string; actual
+  // cap is AGENT_TIMEOUT_MS=180000ms)" mid-task). The
+  // underlying LLM call keeps running on the gateway — the
+  // 180s was just a UI-side Promise.race that surfaced an
+  // error to the user while the LLM continued in the
+  // background. The openclaw gateway's default
+  // timeoutSeconds is 172800 (48h), so 600s is well below
+  // that and matches Discord's effective timeout (Discord
+  // channel adapter doesn't enforce a per-message cap; the
+  // 180s was a desktop-only choice). 600s gives complex
+  // tasks room without making the user wait forever.
+  const AGENT_TIMEOUT_MS = 600000; // 600s
   const typingFailsafe = setTimeout(() => {
-    console.warn('[sendChatMessage] typing bubble > 110s, force-clearing');
-    window.addDesktopLog?.('⚠️', 'AI still thinking after 110s — clearing indicator', message.substring(0, 60), 'warn');
+    console.warn('[sendChatMessage] typing bubble > 300s, force-clearing');
+    window.addDesktopLog?.('⚠️', 'AI still thinking after 300s — clearing indicator', message.substring(0, 60), 'warn');
     try { removeChatMsg(typingId); } catch {}
     try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
-  }, 110000);
+  }, 300000);
 
   try {
     let result;
@@ -2929,19 +2943,27 @@ const __sendChatMessageImpl = async function(message, attachments) {
         // v3.2.51: pass attachments (multimodal content).
         cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         new Promise((_, reject) =>
-          // v3.2.46: AGENT_TIMEOUT_MS is 180s (180000).
-          // The 90s in the error message is the legacy
-          // string; keeping it for now to avoid masking
-          // what the user actually saw. The actual cap
-          // is AGENT_TIMEOUT_MS.
-          setTimeout(() => reject(new Error('agent call timed out (90s+ legacy string; actual cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms)')), AGENT_TIMEOUT_MS)
+          // v3.2.58: AGENT_TIMEOUT_MS is 600s (600000). The
+          // 90s in the error string is historical; the
+          // actual cap is AGENT_TIMEOUT_MS. If the LLM call
+          // exceeds this, the chat bubble shows the error
+          // but the underlying LLM call continues on the
+          // gateway (this is a UI-side Promise.race, not an
+          // abort signal). The reply, when it eventually
+          // arrives, gets picked up via the OpenClaw tail
+          // session-log watcher and broadcast back to the
+          // mobile. So the user doesn't lose the reply —
+          // just sees a confusing error message in the
+          // interim. Tobe 2026-08-03 11:18 hit this
+          // repeatedly on multi-tool code refactors.
+          setTimeout(() => reject(new Error('agent call timed out (current cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms=' + (AGENT_TIMEOUT_MS/1000) + 's) — the LLM call may still complete in the background')), AGENT_TIMEOUT_MS)
         ),
       ]);
     } catch (timeoutErr) {
       // Surface the timeout as an error message in the chat
       // and let the user retry. Without this the user just
       // sees the typing bubble forever.
-      window.addDesktopLog?.('⏱️', 'Agent call > 90s, aborted', message.substring(0, 60), 'warn');
+      window.addDesktopLog?.('⏱️', 'Agent call exceeded UI cap', message.substring(0, 60), 'warn');
       throw timeoutErr;
     }
     removeChatMsg(typingId);
@@ -6260,21 +6282,16 @@ window.sendChat = async function() {
     chatBusy = true;
     document.getElementById('chat-send').disabled = true;
     const typingId = addChatMsg('typing', agent.name + ' is thinking...');
-    // v3.2.37: same cleanup-hardening as sendChatMessage.
-    // The image-attach path here has the same hung-bubble
-    // and stuck-chatBusy problems if the agent call hangs.
-    // The 110s typingFailsafe is the belt; the
-    // Promise.race timeout (AGENT_TIMEOUT_MS=90s) is the
-    // suspenders. Without these, a wedged openclaw call
-    // would leave the image-attach path frozen with
-    // "thinking..." showing indefinitely and chatBusy=true
-    // blocking the next message for 15s on each retry.
-    const AGENT_TIMEOUT_MS = 90000;
+    // v3.2.58: same 600s cap as the main sendChatMessage
+    // path. Was 90s; bumped to match the main path so the
+    // user sees consistent timeout behavior across both
+    // paths. The 110s typingFailsafe became 300s.
+    const AGENT_TIMEOUT_MS = 600000;
     const typingFailsafe = setTimeout(() => {
-      console.warn('[sendChat:img] typing bubble > 110s, force-clearing');
-      window.addDesktopLog?.('⚠️', 'AI still thinking after 110s (image path)', message.substring(0, 60), 'warn');
+      console.warn('[sendChat:img] typing bubble > 300s, force-clearing');
+      window.addDesktopLog?.('⚠️', 'AI still thinking after 300s (image path)', message.substring(0, 60), 'warn');
       try { removeChatMsg(typingId); } catch {}
-    }, 110000);
+    }, 300000);
 
     try {
       let result;
@@ -6282,11 +6299,11 @@ window.sendChat = async function() {
         result = await Promise.race([
           cyberclaw.chat.sendMessage(mainAgentId, fullMessage, { image: imgData.dataUrl }),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('agent call timed out after 90s')), AGENT_TIMEOUT_MS)
+            setTimeout(() => reject(new Error('agent call timed out after 600s (image path)')), AGENT_TIMEOUT_MS)
           ),
         ]);
       } catch (timeoutErr) {
-        window.addDesktopLog?.('⏱️', 'Agent call > 90s (image path), aborted', message.substring(0, 60), 'warn');
+        window.addDesktopLog?.('⏱️', 'Agent call exceeded UI cap (image path)', message.substring(0, 60), 'warn');
         throw timeoutErr;
       }
       removeChatMsg(typingId);
