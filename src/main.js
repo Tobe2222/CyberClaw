@@ -37,6 +37,19 @@ let mainWindow;
 let pendingAttachments = [];
 let attachmentFlushTimer = null;
 const ATTACHMENT_FLUSH_MS = 700;
+// v3.2.56: buffer the inbound mobile chat text so an
+// attachment batch can merge with it before the LLM call
+// is fired. The mobile sends text and attachments as
+// separate WS messages; the text arrives immediately,
+// the attachment bytes take 50-200ms to upload. Without
+// buffering, the renderer fires a text-only LLM call
+// (the user sees "I can't see image" in the chat bubble)
+// and then a separate image-only LLM call 700ms later
+// (TTS'd, never shown as a chat bubble). Buffering here
+// in main.js lets us know about both text AND the
+// pendingAttachments array at the same time.
+let pendingMobileChatText = null; // { text, agentId, meta, timer }
+const MOBILE_CHAT_HOLD_MS = 1500;
 
 function flushAttachmentBatch() {
   if (pendingAttachments.length === 0) return;
@@ -52,6 +65,37 @@ function flushAttachmentBatch() {
   for (const a of batch) {
     const dataLen = a.data ? a.data.length : 0;
     console.log(`[mobile-attachment-batch] flushing ${a.fileName} (${a.size} bytes on disk, data=${dataLen} chars of base64, hasData=${!!a.data})`);
+  }
+  // v3.2.56: if a mobile chat is buffered, merge the text
+  // with the attachments. The mobile sends text and
+  // attachments as separate WS messages; without merging
+  // the LLM sees a text-only turn followed by an image-only
+  // turn (split-turn bug — Tobe 2026-08-03 09:23 confirmed
+  // the split was still happening with the v3.2.56
+  // 600ms renderer hold). The fix lives here in main.js
+  // because this is the only layer that has visibility
+  // into both pendingAttachments and the buffered text.
+  if (pendingMobileChatText) {
+    if (pendingMobileChatText.timer) clearTimeout(pendingMobileChatText.timer);
+    const text = pendingMobileChatText.text;
+    const agentId = pendingMobileChatText.agentId;
+    const capturedMeta = pendingMobileChatText.meta;
+    pendingMobileChatText = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const { ws: _ws, ...serializableMeta } = capturedMeta || {};
+      console.log(`[mobile-attachment-batch] merging text from pending mobile chat: ${text.substring(0, 60)}`);
+      // Send a single combined IPC. The renderer's
+      // mobile-chat handler will see the attachments
+      // array and route to sendChatMessage(text, attachments)
+      // instead of a text-only send.
+      mainWindow.webContents.send('mobile-chat-with-attachments', {
+        text,
+        agentId,
+        meta: serializableMeta,
+        attachments: batch,
+      });
+      return;
+    }
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('mobile-attachment-batch', {
@@ -2634,9 +2678,42 @@ app.whenReady().then(() => {
       // Mark this ws for TTS reply — same as audio_input flow
       if (meta.ws && syncServer) syncServer._voiceReplyWs = meta.ws;
       discordLog('💬', 'Mobile chat received', `"${text.substring(0, 60)}"`, 'voice');
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        const { ws: _ws, ...serializableMeta } = meta || {};
-        mainWindow.webContents.send('mobile-chat', { text, agentId, meta: serializableMeta });
+      // v3.2.56: hold the text for MOBILE_CHAT_HOLD_MS to
+      // allow a follow-up attachment batch to merge. If
+      // an attachment arrives in the window, send a single
+      // combined IPC; otherwise fall through to the
+      // existing text-only send after the timer.
+      if (pendingMobileChatText && pendingMobileChatText.timer) {
+        clearTimeout(pendingMobileChatText.timer);
+      }
+      const capturedMeta = meta;
+      const flush = () => {
+        if (!pendingMobileChatText || pendingMobileChatText.text !== text) return;
+        pendingMobileChatText = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const { ws: _ws, ...serializableMeta } = capturedMeta || {};
+          console.log(`[mobile-chat] hold elapsed, sending text-only: ${text.substring(0, 60)}`);
+          mainWindow.webContents.send('mobile-chat', { text, agentId, meta: serializableMeta });
+        }
+      };
+      pendingMobileChatText = {
+        text,
+        agentId,
+        meta: capturedMeta,
+        timer: setTimeout(flush, MOBILE_CHAT_HOLD_MS),
+      };
+      // If an attachment has ALREADY been saved (text
+      // arrived after the attachment batch was queued),
+      // flush immediately so the renderer can merge.
+      if (pendingAttachments.length > 0) {
+        console.log(`[mobile-chat] ${pendingAttachments.length} attachment(s) already pending, flushing immediately`);
+        if (attachmentFlushTimer) {
+          clearTimeout(attachmentFlushTimer);
+          attachmentFlushTimer = null;
+        }
+        // The flush will see pendingMobileChatText and
+        // forward text + attachments in one batch.
+        flushAttachmentBatch();
       }
     },
     onVoiceTranscript: (transcript, context, meta) => {

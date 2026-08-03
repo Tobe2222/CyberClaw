@@ -8,23 +8,16 @@ const path = require('path');
 // Pixel arena instance (shared 2D scene)
 let pixelArena = null;
 let currentCompanionId = 'boar'; // Track current companion globally
-// v3.2.55: pending mobile chat. The mobile sends text and
-// attachments as SEPARATE WS messages (text first, then
-// attachment bytes), and the desktop's flushAttachmentBatch
-// timer fires 700ms after the LAST attachment. If we send the
-// text immediately on `mobile-chat` and the attachments
-// separately on `mobile-attachment-batch`, the LLM sees TWO
-// turns: a text-only turn that ends with "I can't see image",
-// then an image-only turn that describes the image. Tobe's
-// complaint (2026-08-03 07:50): the first reply lands in the
-// chat bubble and looks like the AI can't see images, even
-// though the second turn's audio reply describes them.
-//
-// Fix: hold the text for ~600ms. If an attachment batch
-// arrives in that window, merge them into ONE multimodal
-// send. Otherwise fire the text-only send.
-let pendingMobileChat = null; // { text, agentId, timer }
-const PENDING_CHAT_HOLD_MS = 600;
+// v3.2.56 (renderer): the merge logic now lives in main.js
+// (it has access to pendingAttachments + the buffered text).
+// The renderer just receives either `mobile-chat` (text-only,
+// main.js already decided no attachments are queued) or
+// `mobile-chat-with-attachments` (combined, sent atomically).
+// The renderer-side 600ms hold from v3.2.55 wasn't enough
+// because the desktop's 700ms attachment-flush timer fires
+// AFTER the renderer's hold expired (Tobe 2026-08-03 09:23
+// confirmed the split-turn still happened). Main.js is the
+// only layer that can see both halves of the merge.
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
@@ -5622,17 +5615,14 @@ try {
     // transcripts prefixed too, see HomeScreen.tsx ~line
     // 2533 for the matching mobile-side prefix).
     const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
-    // v3.2.55: hold the text for PENDING_CHAT_HOLD_MS to give
-    // the attachment batch a chance to merge with it. The
-    // mobile sends text first, then each attachment as a
-    // separate WS message; without buffering, the LLM sees
-    // a text-only turn followed by an image-only turn. With
-    // buffering, the attachment batch handler below can
-    // combine them into a single multimodal send.
-    const flush = () => {
-      if (!pendingMobileChat || pendingMobileChat.text !== llmText) return;
-      pendingMobileChat = null;
-      console.log('[mobile-chat] hold elapsed, sending text-only:', llmText.substring(0, 60));
+    // v3.2.56: the merge logic now lives in main.js (it has
+    // access to pendingAttachments + the buffered text).
+    // If attachments arrived in the same mobile send, the
+    // desktop will send a `mobile-chat-with-attachments`
+    // IPC instead of plain `mobile-chat`. By the time we
+    // get here, main.js has decided this is text-only —
+    // so send it.
+    const doSend = () => {
       if (typeof window.sendChatMessage === 'function') {
         window.sendChatMessage(llmText);
       } else {
@@ -5641,14 +5631,54 @@ try {
         }, 2000);
       }
     };
-    // Cancel any prior pending chat (e.g. rapid double-send)
-    // and replace with the latest text.
-    if (pendingMobileChat && pendingMobileChat.timer) clearTimeout(pendingMobileChat.timer);
-    pendingMobileChat = {
-      text: llmText,
-      agentId,
-      timer: setTimeout(flush, PENDING_CHAT_HOLD_MS),
+    doSend();
+  });
+
+  // v3.2.56: combined text + image IPC. main.js sends this
+  // when the mobile sends text and attachments close
+  // together — instead of two separate LLM calls (text-only
+  // then image-only), the renderer gets one combined IPC and
+  // fires one multimodal LLM call. Tobe's 2026-08-03 09:23
+  // test confirmed the v3.2.55 renderer-side merge didn't
+  // catch the batch reliably because the desktop's 700ms
+  // attachment-flush timer fires AFTER the renderer's 600ms
+  // hold expired. Buffering in main.js (which has visibility
+  // into both pendingAttachments and the buffered text) is
+  // the only layer that can merge deterministically.
+  ipcRenderer.on('mobile-chat-with-attachments', (e, { text, agentId, meta, attachments }) => {
+    console.log('[mobile-chat-with-attachments] received:', text?.substring(0, 60), 'agentId:', agentId, 'attachments:', attachments?.length);
+    window.addDesktopLog?.('💬📎', 'Mobile chat + images → AI', `${text?.substring(0, 30) || '(no text)'} + ${attachments?.length || 0} image(s)`, 'info');
+    if (agentId && agents[agentId] && agentId !== activeChatAgentId) {
+      try {
+        switchActiveChat(agentId);
+        focusIndex = agentOrder.indexOf(agentId);
+        updateCarousel();
+        console.log('[mobile-chat-with-attachments] switched active chat to', agentId);
+      } catch (e) {
+        console.warn('[mobile-chat-with-attachments] switchActiveChat failed:', e?.message);
+      }
+    }
+    addChatMsg('user', text, null);
+    const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
+    // Convert main.js attachment shape to renderer's
+    // expected shape (dataUri instead of data + mimeType).
+    const rendererAttachments = (attachments || []).map((a) => ({
+      dataUri: a.data ? `data:${a.mimeType || 'image/png'};base64,${a.data}` : null,
+      mimeType: a.mimeType || 'image/png',
+      fileName: a.fileName || 'image',
+      size: a.size || 0,
+      path: a.path || '',
+    })).filter((a) => a.dataUri);
+    const doSend = () => {
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage(llmText, rendererAttachments);
+      } else {
+        setTimeout(() => {
+          if (typeof window.sendChatMessage === 'function') window.sendChatMessage(llmText, rendererAttachments);
+        }, 2000);
+      }
     };
+    doSend();
   });
 
   // v3.10.3: mobile-requested companion wake. The mobile
