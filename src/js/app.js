@@ -8,6 +8,23 @@ const path = require('path');
 // Pixel arena instance (shared 2D scene)
 let pixelArena = null;
 let currentCompanionId = 'boar'; // Track current companion globally
+// v3.2.55: pending mobile chat. The mobile sends text and
+// attachments as SEPARATE WS messages (text first, then
+// attachment bytes), and the desktop's flushAttachmentBatch
+// timer fires 700ms after the LAST attachment. If we send the
+// text immediately on `mobile-chat` and the attachments
+// separately on `mobile-attachment-batch`, the LLM sees TWO
+// turns: a text-only turn that ends with "I can't see image",
+// then an image-only turn that describes the image. Tobe's
+// complaint (2026-08-03 07:50): the first reply lands in the
+// chat bubble and looks like the AI can't see images, even
+// though the second turn's audio reply describes them.
+//
+// Fix: hold the text for ~600ms. If an attachment batch
+// arrives in that window, merge them into ONE multimodal
+// send. Otherwise fire the text-only send.
+let pendingMobileChat = null; // { text, agentId, timer }
+const PENDING_CHAT_HOLD_MS = 600;
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
 
@@ -5605,15 +5622,33 @@ try {
     // transcripts prefixed too, see HomeScreen.tsx ~line
     // 2533 for the matching mobile-side prefix).
     const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
-    if (typeof window.sendChatMessage === 'function') {
-      window.sendChatMessage(llmText);
-    } else {
-      // Fallback: retry after 2s if not ready yet
-      setTimeout(() => {
-        console.log('[mobile-chat] retry sendChatMessage, defined:', typeof window.sendChatMessage);
-        if (typeof window.sendChatMessage === 'function') window.sendChatMessage(llmText);
-      }, 2000);
-    }
+    // v3.2.55: hold the text for PENDING_CHAT_HOLD_MS to give
+    // the attachment batch a chance to merge with it. The
+    // mobile sends text first, then each attachment as a
+    // separate WS message; without buffering, the LLM sees
+    // a text-only turn followed by an image-only turn. With
+    // buffering, the attachment batch handler below can
+    // combine them into a single multimodal send.
+    const flush = () => {
+      if (!pendingMobileChat || pendingMobileChat.text !== llmText) return;
+      pendingMobileChat = null;
+      console.log('[mobile-chat] hold elapsed, sending text-only:', llmText.substring(0, 60));
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage(llmText);
+      } else {
+        setTimeout(() => {
+          if (typeof window.sendChatMessage === 'function') window.sendChatMessage(llmText);
+        }, 2000);
+      }
+    };
+    // Cancel any prior pending chat (e.g. rapid double-send)
+    // and replace with the latest text.
+    if (pendingMobileChat && pendingMobileChat.timer) clearTimeout(pendingMobileChat.timer);
+    pendingMobileChat = {
+      text: llmText,
+      agentId,
+      timer: setTimeout(flush, PENDING_CHAT_HOLD_MS),
+    };
   });
 
   // v3.10.3: mobile-requested companion wake. The mobile
@@ -5856,14 +5891,24 @@ try {
         return;
       }
       console.log(`[mobile-attachment-batch] built ${attachments.length} attachment(s); dataUri total length=${attachments.reduce((s, a) => s + a.dataUri.length, 0)}`);
-      // The user prompt is empty — the attachments ARE the
-      // message. The model will see all images in one
-      // multimodal content array.
-      const prompt = '';
+      // v3.2.55: if a mobile-chat text message arrived in
+      // the last ~600ms (PENDING_CHAT_HOLD_MS) and is still
+      // pending, merge them. The user typed "can you see
+      // this image" and attached an image — they want the
+      // LLM to see both in ONE turn, not text-only-then-
+      // image-only across two turns (which produces the
+      // "I can't see image" misreport).
+      let prompt = '';
+      if (pendingMobileChat) {
+        prompt = pendingMobileChat.text || '';
+        if (pendingMobileChat.timer) clearTimeout(pendingMobileChat.timer);
+        pendingMobileChat = null;
+        console.log('[mobile-attachment-batch] merging with pending mobile chat:', prompt.substring(0, 60));
+      }
       const sizeInfo = attachments.length === 1
         ? `${attachments[0].fileName} (${attachments[0].size} bytes)`
         : `${attachments.length} images`;
-      console.log('[mobile-attachment-batch] forwarding to chat:', sizeInfo, 'attachments:', attachments.length);
+      console.log('[mobile-attachment-batch] forwarding to chat:', sizeInfo, 'attachments:', attachments.length, 'prompt:', prompt.substring(0, 60));
       window.addDesktopLog?.('📎', 'Attachment batch → AI', sizeInfo, 'info');
       // No user-attribution bubble — the user already
       // sees their own message in the chat. The
