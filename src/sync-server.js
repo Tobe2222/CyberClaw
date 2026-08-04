@@ -100,6 +100,17 @@ class SyncServer extends EventEmitter {
     this.onReadCompanionMemory = options.onReadCompanionMemory || null;
     this.onClearCompanionMemory = options.onClearCompanionMemory || null;
 
+    // v3.2.61: per-quest conversation log access from mobile.
+    // Mirrors the renderer-side IPCs (quests:get-conversation-log,
+    // quests:get-conversation-file, quests:clear-conversation-log)
+    // via WS messages so the mobile UI can show "View past
+    // conversations" on the QuestsScreen in a future release.
+    // For now only the SyncClient methods are wired; the
+    // mobile UI doesn't actually call them yet.
+    this.onGetQuestConversationLog = options.onGetQuestConversationLog || null;
+    this.onGetQuestConversationFile = options.onGetQuestConversationFile || null;
+    this.onClearQuestConversationLog = options.onClearQuestConversationLog || null;
+
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
     // reconnected) can pick up where the bar should be. Without
@@ -271,7 +282,7 @@ class SyncServer extends EventEmitter {
   /**
    * Handle incoming messages from mobile clients
    */
-  _handleMessage(ws, msg) {
+  async _handleMessage(ws, msg) {
     const client = this.clients.get(ws);
     if (!client) return;
 
@@ -692,6 +703,107 @@ class SyncServer extends EventEmitter {
           }
         } catch (e) {
           this._send(ws, { type: 'quest_instructions_saved', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.61: mobile requests the per-quest conversation
+      // log (the JSON array, used by buildActiveQuestContext
+      // for LLM context). The desktop routes to the same
+      // `quests:get-conversation-log` IPC handler so the
+      // behaviour is identical to a renderer-side call.
+      case 'request_quest_conversation_log': {
+        if (!client.authenticated) return;
+        const questId = msg.questId;
+        if (!questId) {
+          this._send(ws, { type: 'quest_conversation_log', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onGetQuestConversationLog) {
+          this._send(ws, {
+            type: 'quest_conversation_log', questId, ok: false,
+            error: 'Desktop does not support quest conversation log yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const res = await this.onGetQuestConversationLog(questId);
+          this._send(ws, {
+            type: 'quest_conversation_log',
+            questId,
+            ok: !!(res && res.ok),
+            log: res?.log || [],
+            filePath: res?.filePath || null,
+            questName: res?.questName || '',
+            error: res?.ok ? undefined : (res?.error || 'unknown error'),
+            ts: Date.now(),
+          });
+        } catch (e) {
+          this._send(ws, { type: 'quest_conversation_log', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.61: mobile requests the raw per-quest conversation
+      // file content (the canonical markdown store at
+      // <quest.directory>/CONVERSATION.md). Same shape as
+      // the renderer-side IPC, just round-tripped through WS.
+      case 'request_quest_conversation_file': {
+        if (!client.authenticated) return;
+        const questId = msg.questId;
+        if (!questId) {
+          this._send(ws, { type: 'quest_conversation_file', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onGetQuestConversationFile) {
+          this._send(ws, {
+            type: 'quest_conversation_file', questId, ok: false,
+            error: 'Desktop does not support quest conversation file yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          const res = await this.onGetQuestConversationFile(questId);
+          this._send(ws, {
+            type: 'quest_conversation_file',
+            questId,
+            ok: !!(res && res.ok),
+            content: res?.content || '',
+            path: res?.path || null,
+            error: res?.ok ? undefined : (res?.error || 'unknown error'),
+            ts: Date.now(),
+          });
+        } catch (e) {
+          this._send(ws, { type: 'quest_conversation_file', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+
+      // v3.2.61: mobile asks the desktop to clear the
+      // conversation log (JSON + file). Renderer-side
+      // equivalent: cyberclaw.quests.clearConversationLog().
+      case 'clear_quest_conversation_log': {
+        if (!client.authenticated) return;
+        const questId = msg.questId;
+        if (!questId) {
+          this._send(ws, { type: 'quest_conversation_log_cleared', questId: null, ok: false, error: 'questId required', ts: Date.now() });
+          return;
+        }
+        if (!this.onClearQuestConversationLog) {
+          this._send(ws, {
+            type: 'quest_conversation_log_cleared', questId, ok: false,
+            error: 'Desktop does not support quest conversation log clear yet',
+            ts: Date.now(),
+          });
+          return;
+        }
+        try {
+          await this.onClearQuestConversationLog(questId);
+          this._send(ws, { type: 'quest_conversation_log_cleared', questId, ok: true, ts: Date.now() });
+        } catch (e) {
+          this._send(ws, { type: 'quest_conversation_log_cleared', questId, ok: false, error: e?.message || String(e), ts: Date.now() });
         }
         break;
       }

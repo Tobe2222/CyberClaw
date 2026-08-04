@@ -1436,6 +1436,28 @@ ipcMain.handle('quests:create', (event, quest) => {
   // v3.2.59: same defaults for the per-quest conversation log.
   quest.conversationLog = [];
   quests.unshift(quest);
+  // v3.2.61: scaffold the quest directory if one was
+  // supplied. mkdir + write INSTRUCTIONS.md + write
+  // CONVERSATION.md (only if absent — never overwrites
+  // user content). Tobe 2026-08-04 16:45: "when creating
+  // quests it should default to that unless specified,
+  // it should then create that folder, with all the
+  // files that a quest needs, including conversation log,
+  // quest instructions etc."
+  //
+  // A failed scaffold does NOT fail the create —
+  // the quest still exists; only the file-co-location
+  // is missing. The quest.conversationLog JSON array
+  // still works as a fallback for any code that expects
+  // the conversation state there.
+  if (quest.directory) {
+    const scaffold = scaffoldQuestDirectory(quest);
+    if (!scaffold.ok) {
+      console.warn(`[quests:create] scaffold failed for ${quest.id}: ${scaffold.error}`);
+    } else {
+      console.log(`[quests:create] scaffolded ${quest.directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+    }
+  }
   saveQuests(quests);
   return quest;
 });
@@ -1468,11 +1490,124 @@ function questInstructionsFilePath(quest) {
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'QUEST_QUEST_INSTRUCTIONS.md');
 }
 
+// v3.2.61: per-quest directory files. Tobe's three-layer
+// mental model (2026-08-04 16:45):
+//   1. CYBERCLAW.md              — openclaw's standard behaviour (read by companion-prompts.js, NOT this file)
+//   2. companions/<id>/soul.md  — companion character
+//   3. <quest.directory>/       — task-specific behaviour + history
+//        ├── INSTRUCTIONS.md    — quest-specific instructions
+//        └── CONVERSATION.md    — conversation transcript (file form)
+// Until this release, the conversation log lived in the
+// `quest.conversationLog` JSON array inside quests.json.
+// v3.2.61 promotes it to a per-quest markdown file at
+// <quest.directory>/CONVERSATION.md so:
+//   - the file is co-located with the project it's about
+//     (Tobe's mental model: "all the files that a quest
+//     needs")
+//   - the user can `cat` / version-control / grep / share
+//     the conversation
+//   - the LLM has a clear single-source-of-truth for "what
+//     we talked about on this quest"
+// The JSON array stays as a fast-read mirror for the LLM
+// context injector (buildActiveQuestContext) but the file
+// is canonical. Both writers update both stores.
+function questInstructionsFilePathV2(quest) {
+  if (!quest) return null;
+  if (quest.directory) {
+    return path.join(quest.directory, 'INSTRUCTIONS.md');
+  }
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'INSTRUCTIONS.md');
+}
+function questConversationFilePath(quest) {
+  if (!quest) return null;
+  if (quest.directory) {
+    return path.join(quest.directory, 'CONVERSATION.md');
+  }
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'CONVERSATION.md');
+}
+
+// Prefer the new filename; fall back to the v3.2.30-era
+// `QUEST_QUEST_INSTRUCTIONS.md` so users on the old name
+// don't see their work vanish. Returns the path that
+// exists, or null if neither does.
+function resolveExistingInstructionsPath(quest) {
+  const v2 = questInstructionsFilePathV2(quest);
+  const v1 = questInstructionsFilePath(quest);
+  try { if (v2 && fs.existsSync(v2)) return v2; } catch {}
+  try { if (v1 && fs.existsSync(v1)) return v1; } catch {}
+  return null;
+}
+// v3.2.61: scaffold a newly-created quest's directory with
+// the markdown files that future turns will write to. Idempotent:
+// running on an already-scaffolded dir is a no-op (writeFileSync
+// of the same content to the same path leaves the file
+// unchanged). Writes:
+//   - INSTRUCTIONS.md (with `# Project instructions` heading)
+//   - CONVERSATION.md (empty, with a comment header)
+//
+// Returns { ok, instructionsPath, conversationPath, mkdirOk }
+// on success, or { ok: false, error } if the directory could
+// not be created (e.g. invalid path / no write permission).
+// The desktop's quest-create flow continues regardless of
+// the scaffold failing — a quest without scaffolded files
+// is still a valid quest, the writes just bounce through
+// the JSON-array fallback instead.
+function scaffoldQuestDirectory(quest) {
+  if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
+  try {
+    fs.mkdirSync(quest.directory, { recursive: true });
+    const instructions = questInstructionsFilePathV2(quest);
+    const conversation = questConversationFilePath(quest);
+    // Don't overwrite the user's existing INSTRUCTIONS.md
+    // content — only write the placeholder if the file is
+    // absent. Same for CONVERSATION.md.
+    if (!fs.existsSync(instructions)) {
+      fs.writeFileSync(
+        instructions,
+        [
+          `# Project instructions — ${quest.name || 'Untitled'}`,
+          ``,
+          `Task-specific behaviour rules for the companion on this quest.`,
+          `The companion reads this file on every chat send and treats it as`,
+          `authoritative for project context (paths, deploy commands, things`,
+          `NOT to touch, language preferences, etc.). Edit freely — there's no`,
+          `auto-write from the companion here. (For companion-authored notes,`,
+          `see CONVERSATION.md and use the [QUEST_NOTE] tag in your reply.)`,
+          ``,
+        ].join('\n'),
+        'utf-8',
+      );
+    }
+    if (!fs.existsSync(conversation)) {
+      fs.writeFileSync(
+        conversation,
+        [
+          `# Conversation log — ${quest.name || 'Untitled'}`,
+          ``,
+          `Auto-written by CyberClaw on every chat exchange while this quest`,
+          `is active. Each entry is appended below this header.`,
+          ``,
+        ].join('\n'),
+        'utf-8',
+      );
+    }
+    return { ok: true, instructionsPath: instructions, conversationPath: conversation, mkdirOk: true };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
 ipcMain.handle('quests:read-quest-instructions', (event, questId) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questInstructionsFilePath(quest);
+  // v3.2.61: prefer the new INSTRUCTIONS.md; fall back to
+  // the v3.2.30-era QUEST_QUEST_INSTRUCTIONS.md for users
+  // on the old name. If neither exists yet, return the
+  // v2 path so the renderer's "create on first save"
+  // writes land in the right place.
+  const existing = resolveExistingInstructionsPath(quest);
+  const file = existing || questInstructionsFilePathV2(quest);
   try {
     if (!fs.existsSync(file)) return { ok: true, content: '', path: file };
     const content = fs.readFileSync(file, 'utf-8');
@@ -1486,15 +1621,46 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  const file = questInstructionsFilePath(quest);
+  // v3.2.61: write to the v2 path (INSTRUCTIONS.md). If
+  // the user is still on the v3.2.30 name, also keep it
+  // happy by writing both files — but only the first time
+  // we migrate, and only if the legacy file already has
+  // content we don't want to lose.
+  const newFile = questInstructionsFilePathV2(quest);
+  const legacyFile = questInstructionsFilePath(quest);
   try {
-    // Ensure parent dir exists. If the quest has a
-    // directory we write into it directly; if not we
-    // create ~/.openclaw/cyberclaw/quests/<id>/.
-    const parent = path.dirname(file);
+    const parent = path.dirname(newFile);
     fs.mkdirSync(parent, { recursive: true });
-    fs.writeFileSync(file, content || '', 'utf-8');
-    return { ok: true, path: file, bytes: Buffer.byteLength(content || '', 'utf-8') };
+    fs.writeFileSync(newFile, content || '', 'utf-8');
+    // v3.2.61 legacy migration: if the legacy file
+    // exists AND has different content, copy its content
+    // into the new file ONCE (preserves any user edits
+    // that landed in the old filename before they noticed
+    // the rename). After this pass, new edits land in
+    // INSTRUCTIONS.md and the legacy file is left in
+    // place until manually deleted (so a user who reverts
+    // to the old flow can find their old content).
+    try {
+      if (fs.existsSync(legacyFile) && !fs.existsSync(newFile)) {
+        // newFile was JUST created by writeFileSync above
+        // — this branch is unreachable in practice. Kept
+        // as belt-and-braces for race conditions where a
+        // concurrent read sees the new file as missing.
+        fs.writeFileSync(newFile, fs.readFileSync(legacyFile, 'utf-8'));
+      } else if (fs.existsSync(legacyFile) && fs.existsSync(newFile)) {
+        // Both files exist. If they have the same content
+        // (no edits since the migration), silently delete
+        // the legacy file to converge on the new name.
+        // If they differ, leave both in place — the user
+        // can manually reconcile.
+        const legacyContent = fs.readFileSync(legacyFile, 'utf-8');
+        const newContent = fs.readFileSync(newFile, 'utf-8');
+        if (legacyContent === newContent) {
+          try { fs.unlinkSync(legacyFile); } catch (_) {}
+        }
+      }
+    } catch (_) { /* migration is best-effort */ }
+    return { ok: true, path: newFile, bytes: Buffer.byteLength(content || '', 'utf-8') };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }
@@ -1524,7 +1690,23 @@ ipcMain.handle('quests:append-quest-instructions', (event, questId, text) => {
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
   if (!text || typeof text !== 'string' || !text.trim()) return { ok: false, error: 'text is empty' };
-  const file = questInstructionsFilePath(quest);
+  // v3.2.61: write notes to the v2 filename (INSTRUCTIONS.md).
+  // If the legacy file exists AND the v2 doesn't yet, port
+  // the legacy content into the v2 file first so the new
+  // notes land alongside the user's existing notes (instead
+  // of leaving them stranded in the old filename).
+  const v2File = questInstructionsFilePathV2(quest);
+  const legacyFile = questInstructionsFilePath(quest);
+  // Legacy port: best-effort, must happen BEFORE the main
+  // try so the read of `file` sees the ported content if
+  // needed.
+  try {
+    if (fs.existsSync(legacyFile) && !fs.existsSync(v2File)) {
+      const legacyContent = fs.readFileSync(legacyFile, 'utf-8');
+      fs.writeFileSync(v2File, legacyContent);
+    }
+  } catch (_) { /* legacy port is best-effort */ }
+  const file = v2File;
   try {
     const parent = path.dirname(file);
     fs.mkdirSync(parent, { recursive: true });
@@ -2256,6 +2438,64 @@ function appendConversationLog(q, role, text, agentId, agentName) {
   if (q.conversationLog.length > CONVERSATION_LOG_MAX_ENTRIES) {
     q.conversationLog = q.conversationLog.slice(-CONVERSATION_LOG_MAX_ENTRIES);
   }
+  // v3.2.61: also persist to the per-quest markdown file
+  // (<quest.directory>/CONVERSATION.md). The file is the
+  // canonical long-term store per Tobe's mental model
+  // ("all the files that a quest needs, including
+  // conversation log, quest instructions etc."). The
+  // JSON array stays as the fast-read mirror for
+  // buildActiveQuestContext's LLM-context injection.
+  //
+  // File format: one entry per line, prefixed with
+  // `[ts] role:`. Reads back via the existing
+  // buildActiveQuestContext path (which still reads the
+  // JSON array as the primary source — the file is
+  // advisory; we don't re-parse it for LLM context. That
+  // would double-write and double-parse.) The file IS
+  // what the user sees / cats / version-controls; the
+  // JSON is what the LLM sees.
+  try {
+    const convFile = questConversationFilePath(q);
+    if (convFile) {
+      const parentDir = path.dirname(convFile);
+      fs.mkdirSync(parentDir, { recursive: true });
+      // If the file doesn't exist (e.g. the quest was
+      // created before v3.2.61's scaffold, or the
+      // scaffold failed for some reason), create a
+      // minimal header so the next reader knows what
+      // they're looking at.
+      if (!fs.existsSync(convFile)) {
+        fs.writeFileSync(
+          convFile,
+          [
+            `# Conversation log — ${q.name || 'Untitled'}`,
+            ``,
+            `Auto-written by CyberClaw on every chat exchange while this quest`,
+            `is active. Each entry below has the format:`,
+            ``,
+            `    [ISO timestamp] role(agentId|agentName): message`,
+            ``,
+            ``,
+          ].join('\n'),
+          'utf-8',
+        );
+      }
+      const line = `[${entry.ts}] ${entry.role}${entry.agentName ? `(${entry.agentName})` : entry.agentId ? `(${entry.agentId})` : ''}: ${entry.text}\n`;
+      // We open with 'a' flag so the file is appended in
+      // place — keep the OS-level guarantee that the file
+      // is always consistent at rest for readers that
+      // tail -f. (Using writeFileSync over the whole
+      // file would atomically replace it every chat turn,
+      // which is wasted IO for a transcript that's only
+      // ever appended.)
+      fs.appendFileSync(convFile, line, 'utf-8');
+    }
+  } catch (e) {
+    // Best-effort. A failed append to the file doesn't
+    // fail the JSON-array append (which is the load-
+    // bearing store for context injection).
+    console.warn(`[ConversationLog] file append failed for quest ${q.id}: ${e?.message}`);
+  }
   return entry;
 }
 
@@ -2275,7 +2515,18 @@ ipcMain.handle('quests:get-conversation-log', (event, questId) => {
   const quests = loadQuests();
   const q = quests.find(x => x.id === questId);
   if (!q) return { ok: false, error: 'quest not found' };
-  return { ok: true, log: Array.isArray(q.conversationLog) ? q.conversationLog : [], questName: q.name || '' };
+  // v3.2.61: also return the file path so the caller
+  // (e.g. mobile UI) can navigate to the canonical
+  // long-term store. The JSON `log` is still what
+  // buildActiveQuestContext injects into the LLM
+  // context, but the file is what the user can
+  // version-control.
+  return {
+    ok: true,
+    log: Array.isArray(q.conversationLog) ? q.conversationLog : [],
+    questName: q.name || '',
+    filePath: questConversationFilePath(q),
+  };
 });
 
 ipcMain.handle('quests:clear-conversation-log', (event, questId) => {
@@ -2285,7 +2536,35 @@ ipcMain.handle('quests:clear-conversation-log', (event, questId) => {
   if (!q) return { ok: false, error: 'quest not found' };
   q.conversationLog = [];
   saveQuests(quests);
+  // v3.2.61: clear the markdown file too. Best-effort;
+  // a missing file (or read failure) is silently ignored.
+  try {
+    const f = questConversationFilePath(q);
+    if (f && fs.existsSync(f)) fs.unlinkSync(f);
+  } catch (_) {}
   return { ok: true };
+});
+
+// v3.2.61: read the raw per-quest conversation file.
+// Returns the file content as a string, plus the path
+// so the caller can show "edit in your editor" or use
+// a future "open in file viewer" UI on the mobile.
+// If the file doesn't exist yet (brand new quest), returns
+// { ok: true, content: '', path } so the caller can
+// render an empty editor or show "(no messages yet)".
+ipcMain.handle('quests:get-conversation-file', (event, questId) => {
+  if (!questId) return { ok: false, error: 'no questId' };
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === questId);
+  if (!q) return { ok: false, error: 'quest not found' };
+  const f = questConversationFilePath(q);
+  if (!f) return { ok: false, error: 'no file path for this quest' };
+  try {
+    if (!fs.existsSync(f)) return { ok: true, content: '', path: f };
+    return { ok: true, content: fs.readFileSync(f, 'utf-8'), path: f };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
 });
 // v3.1.50: toggle a goal's completed flag by index. The agent
 // uses this when it finishes a step on the active quest. Returns
@@ -3158,6 +3437,10 @@ app.whenReady().then(() => {
       // needs the Android SAF picker which lands in v3.8.1);
       // for now, the user can leave directory undefined or
       // paste a path string.
+      //
+      // v3.2.61: conversationLog default for parity with the
+      // IPC handler (the renderer routes here for create_quest
+      // WS messages from the mobile).
       const quests = loadQuests();
       const newQuest = {
         name: quest.name || 'Untitled quest',
@@ -3167,12 +3450,69 @@ app.whenReady().then(() => {
         status: 'active',
         active: false,
         latestChanges: [],
+        conversationLog: [],
       };
       newQuest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       newQuest.created = new Date().toISOString();
+      // v3.2.61: scaffold the quest directory if a path was
+      // supplied. Same logic as the IPC handler — best-effort,
+      // does not fail the create if the path is unwritable.
+      if (newQuest.directory) {
+        const scaffold = scaffoldQuestDirectory(newQuest);
+        if (!scaffold.ok) {
+          console.warn(`[onCreateQuest] scaffold failed for ${newQuest.id}: ${scaffold.error}`);
+        } else {
+          console.log(`[onCreateQuest] scaffolded ${newQuest.directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+        }
+      }
       quests.unshift(newQuest);
       saveQuests(quests);
       return newQuest;
+    },
+    // v3.2.61: WS-side wiring for the per-quest conversation
+    // log IPCs. The mobile sends a `request_quest_conversation_log`
+    // WS message; the SyncServer routes it here; we return
+    // the same shape as the renderer-side IPC. The SyncServer
+    // also has its own shapes for file-path / clear, so we
+    // expose three callbacks.
+    onGetQuestConversationLog: async (questId) => {
+      if (!questId) return { ok: false, error: 'no questId' };
+      const quests = loadQuests();
+      const q = quests.find(x => x.id === questId);
+      if (!q) return { ok: false, error: 'quest not found' };
+      return {
+        ok: true,
+        log: Array.isArray(q.conversationLog) ? q.conversationLog : [],
+        questName: q.name || '',
+        filePath: questConversationFilePath(q),
+      };
+    },
+    onGetQuestConversationFile: async (questId) => {
+      if (!questId) return { ok: false, error: 'no questId' };
+      const quests = loadQuests();
+      const q = quests.find(x => x.id === questId);
+      if (!q) return { ok: false, error: 'quest not found' };
+      const f = questConversationFilePath(q);
+      if (!f) return { ok: false, error: 'no file path for this quest' };
+      try {
+        if (!fs.existsSync(f)) return { ok: true, content: '', path: f };
+        return { ok: true, content: fs.readFileSync(f, 'utf-8'), path: f };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    },
+    onClearQuestConversationLog: async (questId) => {
+      if (!questId) return { ok: false, error: 'no questId' };
+      const quests = loadQuests();
+      const q = quests.find(x => x.id === questId);
+      if (!q) return { ok: false, error: 'quest not found' };
+      q.conversationLog = [];
+      saveQuests(quests);
+      try {
+        const f = questConversationFilePath(q);
+        if (f && fs.existsSync(f)) fs.unlinkSync(f);
+      } catch (_) {}
+      return { ok: true };
     },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
