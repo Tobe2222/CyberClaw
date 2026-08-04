@@ -1268,6 +1268,19 @@ async function buildActiveQuestContext(quest) {
   // sendChatMessage() via buildQuestToolsHint() so the agent
   // sees it even when there's no active quest.
   ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_NOTE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
+  // v3.2.63 (Tobe 2026-08-04 21:16): ALWAYS pair tool tags with
+  // a chat-visible reply. Tags alone are stripped from the
+  // chat bubble before reaching the user, which means a
+  // bare-tag reply leaves the chat silent. The LLM should
+  // either emit NO tags and write a normal reply, or emit
+  // tags PLUS a normal reply sentence / paragraph. The
+  // user sees the reply, not the tag. Tobe: "He does not
+  // need to say in text, the quest append, it can be silent
+  // in the background, it should just respond normaly mostly
+  // in the chat." The exception: short acknowledgement
+  // replies like "logged." are fine if the action was the
+  // main point of the message.
+  ctx += ` | IMPORTANT: tags alone are silent in the user's chat — always pair a tag with a normal chat-visible reply (or a short "logged." ack).`;
   ctx += `] `;
 
   // v3.2.30: per-quest instructions file. The companion reads
@@ -1448,6 +1461,11 @@ function stripQuestTags(reply) {
     .replace(/\[QUEST_NOTE:[^\]]*\]/g, '')
     .replace(/\[QUEST_MARK_GOAL:[^\]]*\]/g, '')
     .replace(/\[QUEST_SET_ACTIVE:[^\]]*\]/g, '')
+    // v3.2.64: [REMEMBER: text="..."] is the silent-log
+    // structured output (see promptCompanionSilent below).
+    // Strip it from the chat-visible reply but let the
+    // parser (extractRememberTags) act on it first.
+    .replace(/\[REMEMBER:[^\]]*\]/g, '')
     // The full hint string the LLM occasionally echoes back.
     .replace(/\[Quest tools available[^\]]*\]/g, '')
     // Collapse leftover blank lines so a tag-alone line
@@ -1462,6 +1480,24 @@ function getActiveQuestId(quests) {
   const found = quests?.find(q => q.active);
   if (found) activeQuestId = found.id;
   return activeQuestId;
+}
+
+// v3.2.64: pull all [REMEMBER: text="..."] tags from an LLM
+// reply and return them as a list of strings (without the
+// tag wrappers). Used by promptCompanionSilent to route
+// silent-log facts to memory.md without exposing the
+// structured-output tag in the chat. Matches the same
+// bracket-close logic as stripQuestTags.
+function extractRememberTags(reply) {
+  if (!reply) return [];
+  const out = [];
+  const re = /\[REMEMBER:\s*text="([^"]*)"\]/gi;
+  let m;
+  while ((m = re.exec(reply)) !== null) {
+    const t = (m[1] || '').trim();
+    if (t) out.push(t);
+  }
+  return out;
 }
 
 window.pickQuestDir = async function() {
@@ -5520,9 +5556,22 @@ try {
   });
 
   ipcRenderer.on('mobile-request-chat-history', () => {
-    // Send current chat history to mobile
-    console.log('[App] Mobile requesting chat history, sending', chatHistory.length, 'messages');
-    ipcRenderer.invoke('sync-send-chat-history', { messages: chatHistory.slice(-50) })
+    // Send current chat history to mobile. v3.2.63
+    // (Tobe 2026-08-04 21:16): strip quest tags on the
+    // way out. Pre-v3.2.36 entries in chatHistory
+    // persisted with the raw tag text because the
+    // stripper didn't exist back then; we clean them
+    // here on read so the mobile doesn't show a
+    // [QUEST_APPEND_CHANGE: ...] bubble for historical
+    // messages. Stripping is idempotent (already-stripped
+    // text stays clean) so we don't need a one-shot
+    // migration of the localStorage data.
+    const recentMessages = chatHistory.slice(-50).map(m => ({
+      ...m,
+      text: typeof m.text === 'string' ? stripQuestTags(m.text) : m.text,
+    }));
+    console.log('[App] Mobile requesting chat history, sending', recentMessages.length, 'messages');
+    ipcRenderer.invoke('sync-send-chat-history', { messages: recentMessages })
       .then(() => console.log('[App] Chat history sent successfully'))
       .catch(err => console.log('[App] Error sending chat history:', err));
   });
@@ -5564,8 +5613,15 @@ try {
     // 'Lamasuu' there); if missing, falls back to the
     // requested agentId.
     const raw = (chatHistoryByAgent[agentId] || []).slice(-50);
+    // v3.2.63 (Tobe 2026-08-04 21:16): strip quest tags
+    // before sending. Same rationale as the chat_history
+    // path — historical entries from pre-v3.2.36 still
+    // have raw tag text in localStorage, and we want
+    // the mobile to show clean bubbles regardless of
+    // when each message was created. Idempotent on
+    // already-stripped text.
     const hist = raw.map((m) => ({
-      text: m.text,
+      text: typeof m.text === 'string' ? stripQuestTags(m.text) : m.text,
       isUser: m.type === 'user',
       agentId: m.name || agentId,
       agentName: m.name || null,
@@ -6639,6 +6695,20 @@ var TREAT_NAMES = {
   apple: 'an apple', hamburger: 'a hamburger', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
   ball: 'a ball', 'tennis-ball': 'a tennis ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
+// v3.2.64: treat category mapping for snack logging. Tobe
+// 2026-08-04 21:16: 'we should log snacks by the way,
+// and type of snack so he can talk about them.' Each
+// treat type maps to a category string that's included
+// in the memory.md entry so the companion can talk
+// about snack types later ("I had some food today",
+// "we played with toys", etc.). Categories here are
+// coarse (food/toy); finer sub-types (sweet/savory,
+// ball/stick) can be added as future keys without
+// breaking the log schema.
+var TREAT_CATEGORIES = {
+  apple: 'food', hamburger: 'food', meat: 'food', fish: 'food', cake: 'food', cookie: 'food', berry: 'food',
+  ball: 'toy', 'tennis-ball': 'toy', yarn: 'toy', stick: 'toy', frisbee: 'toy', bell: 'toy', feather: 'toy'
+};
 var selectedTreat = null; // { type, emoji }
 
 window.toggleFeedMenu = function() {
@@ -6754,13 +6824,45 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
   var a = window.pixelArena;
   if (!a) return;
   a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
+  // v3.2.64: silent snack log. Tobe 2026-08-04 21:16:
+  // "We should log snacks by the way, and type of
+  // snack so he can talk about them." The food event
+  // fires a silent log to memory.md (so the
+  // companion remembers the snack category in future
+  // sessions) AND a quiet LLM round-trip that lets
+  // the companion optionally enrich the entry with
+  // context (e.g. "this is the third hamburger
+  // tonight"). The chat stays clean — no visible
+  // reply from the food event itself.
+  const agentId = activeChatAgentId || (agentOrder[0] || null);
+  if (agentId) {
+    const category = TREAT_CATEGORIES[treatType] || 'item';
+    const itemName = TREAT_NAMES[treatType] || treatType;
+    const fact = `Tobe gave me ${itemName} (${category})`;
+    promptCompanionSilent(agentId, fact, 'happy; grateful for the food');
+  }
+  // Keep the existing chat-visible reaction (separate
+  // concern). The companion gets BOTH the silent log
+  // to memory.md AND the chance to chat-react if it
+  // wants to. Most of the time the chat reaction is
+  // short ("yum" / "thanks"); for the foodobsessed
+  // goblin it'll be longer and personality-flavored.
   promptCompanionReaction('I just gave you ' + TREAT_NAMES[treatType] + '. What do you think?');
   if (window.adjustHappiness) window.adjustHappiness(10);
 }
 
 // Companion reacts when eating a treat (called from pixel-arena.js)
 window.promptCompanionEat = function(treatType) {
-  var name = TREAT_NAMES[treatType] || 'a treat';
+  // v3.2.64: silent log for the eat event too, so the
+  // companion remembers what it ate (per type) for
+  // future chats ("we had cake earlier today"). Same
+  // silent-prompt path as placeTreatOnArena.
+  const name = TREAT_NAMES[treatType] || 'a treat';
+  const category = TREAT_CATEGORIES[treatType] || 'item';
+  const agentId = activeChatAgentId || (agentOrder[0] || null);
+  if (agentId) {
+    promptCompanionSilent(agentId, `I ate ${name} (${category})`, 'content; full');
+  }
   promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
 };
 
@@ -6852,6 +6954,82 @@ function promptCompanionReaction(promptText) {
   }).catch(function() {
     reactionBusy = false;
   });
+}
+
+// v3.2.64: silent prompt to the LLM. Fires the chat pipeline
+// but does NOT broadcast to mobile, does NOT add to the
+// desktop's chat history, and does NOT show an arena
+// bubble. The reply is parsed for [REMEMBER: text="..."]
+// tags which are routed to memory.md via
+// cyberclaw.companions.rememberMemory. Any text the LLM
+// emits around the tags is silently discarded.
+//
+// Tobe 2026-08-04 21:16: "We should log snacks by the
+// way, and type of snack so he can talk about them.
+// Perhaps we send a message to him each time we give
+// food, 'user gave you hamburger, lighten up a little,
+// no need to respond, just add to memory.' would that
+// work?"
+//
+// Yes — with the caveat that we ALSO directly append
+// the deterministic fact to memory.md before firing
+// the LLM. Why: the LLM is asked to use a
+// [REMEMBER: text="..."] tag, but the LLM may not emit
+// it consistently (or at all), and a missed
+// snack-log is worse than a slightly-redundant one.
+// Direct append guarantees the fact lands; the LLM
+// round-trip is for the "lighten up a little" mood
+// hint and any context the companion wants to add
+// to the entry.
+//
+// Build the prompt with a tight directive: the LLM
+// should emit ONLY the [REMEMBER] tag (or nothing),
+// NOT a chat-style reply. We give it the
+// already-formed fact as a starting point so it can
+// extend it if it wants (e.g. "Tobe gave me a
+// hamburger again — I think he's trying to cheer me
+// up").
+function promptCompanionSilent(agentId, fact, mood) {
+  if (!agentId) return;
+  const agent = agents[agentId];
+  if (!agent) return;
+  if (agent.sleepState === 'sleeping') return;
+
+  const traitCtx = getTraitContext();
+  const userCtx = getUserContext();
+  const systemPrompt = '[SILENT LOG MODE. You are a CyberClaw companion. The user just did something you should remember. Use the [REMEMBER: text="..."] structured-output tag to log this fact to your memory.md. Do NOT write a chat-style reply. Do NOT address the user. The tag is the entire output.] ' +
+    (traitCtx ? traitCtx + ' ' : '') +
+    (userCtx ? userCtx + ' ' : '') +
+    `FACT: ${fact}` +
+    (mood ? ` | MOOD HINT: ${mood}` : '');
+
+  // Direct append first (deterministic), then fire the
+  // LLM round-trip to enrich.
+  if (cyberclaw && cyberclaw.companions && cyberclaw.companions.rememberMemory) {
+    cyberclaw.companions.rememberMemory(agentId, fact).catch(function(e) {
+      console.warn('[promptCompanionSilent] direct memory append failed:', e?.message);
+    });
+  }
+
+  // We bypass the normal chat pipeline entirely (no
+  // broadcast, no chatHistory push, no bubble, no typing
+  // indicator, no TTS). The sendSilentMessage preload
+  // method fires the chat:send-message IPC with
+  // attachments=null and silent=true; the IPC returns the
+  // LLM reply to the caller without firing any of the
+  // pipeline side-effects. The renderer's
+  // sendChatMessage wrapper would normally fire
+  // addChatMsg + TTS; we skip the wrapper entirely.
+  cyberclaw.chat.sendSilentMessage(agentId, systemPrompt).then(function(result) {
+    if (!result || !result.ok || !result.reply) return;
+    const tags = extractRememberTags(result.reply);
+    if (!tags.length) return;
+    for (const t of tags) {
+      cyberclaw.companions.rememberMemory(agentId, t).catch(function(e) {
+        console.warn('[promptCompanionSilent] LLM-emitted REMEMBER append failed:', e?.message);
+      });
+    }
+  }).catch(function() { /* silent path: no surface */ });
 }
 
 // ═══════════════════════════════════════════════════════════

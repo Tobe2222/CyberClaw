@@ -34,6 +34,18 @@ window.cyberclaw = {
     // endpoint is enabled. Without attachments, behaves
     // the same as before (plain text message).
     sendMessage: (agentId, message, attachments) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments }),
+    // v3.2.64: silent variant of sendMessage. Same IPC
+    // path, but `silent: true` is forwarded through the
+    // payload so the chat pipeline can suppress the
+    // addChatMsg broadcast on success. Used by the
+    // snack-logging flow (promptCompanionSilent) where
+    // the LLM's job is to write a [REMEMBER] tag to
+    // memory.md, not to chat with the user. The
+    // renderer-side wrapper that calls this expects to
+    // find remember-tags in the reply (via
+    // extractRememberTags) and route them to memory.md
+    // without showing the agent bubble.
+    sendSilentMessage: (agentId, message) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments: null, silent: true }),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

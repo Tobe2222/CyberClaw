@@ -992,7 +992,7 @@ function extractFirstJsonObject(buf) {
   return null;
 }
 
-ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments }) => {
+ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments, silent }) => {
   // v3.2.51: prefer the OpenAI-compatible HTTP API on the
   // gateway over the `openclaw agent -m` CLI. The HTTP path
   // supports multimodal content (text + image_url), which is
@@ -1010,7 +1010,7 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message, attachment
   // never fired, which means the handler went to CLI
   // instead. This log makes that decision visible.
   const useHttp = !!(gw && gw.httpEnabled && gw.token);
-  console.log(`[chat:send] agent=${agentId} useHttp=${useHttp} gw.httpEnabled=${!!(gw && gw.httpEnabled)} gw.token=${!!(gw && gw.token)} attachments=${Array.isArray(attachments) ? attachments.length : 0}`);
+  console.log(`[chat:send] agent=${agentId} useHttp=${useHttp} gw.httpEnabled=${!!(gw && gw.httpEnabled)} gw.token=${!!(gw && gw.token)} attachments=${Array.isArray(attachments) ? attachments.length : 0} silent=${!!silent}`);
   if (useHttp) {
     return await sendChatMessageViaHttp(agentId, message, attachments, gw);
   }
