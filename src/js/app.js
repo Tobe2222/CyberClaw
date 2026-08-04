@@ -1330,6 +1330,51 @@ async function buildActiveQuestContext(quest) {
     }
   }
 
+  // v3.2.59: per-quest conversation log. Every user +
+  // agent chat exchange while this quest was active is
+  // appended to quest.conversationLog automatically by
+  // addChatMsg (fire-and-forget IPC). We inject the
+  // most-recent N exchanges so the companion has
+  // cross-session memory of what was said.
+  //
+  // Tobe 2026-08-04 11:55: 'we need to make the
+  // companion create a log for each project with a
+  // appropriate max size for the companions which they
+  // should read for each reply? Such that it can always
+  // keep the conversation in mind for a specific
+  // project? Such that it does not forget like this.'
+  //
+  // Size limits:
+  //   - CONVERSATION_LOG_CONTEXT_INJECT = 8 exchanges
+  //     (16 messages). This is a hard cap to keep
+  //     the prompt bounded; if the conversationLog has
+  //     more, we drop the oldest.
+  //   - Each line is trimmed to CONVERSATION_LOG_LINE_CHARS
+  //     (300) so a long agent reply doesn't blow the
+  //     context budget.
+  // The empty case (no log yet on a fresh quest) is
+  // silent — we don't say "no prior conversation" because
+  // that's a meta-comment that doesn't help the model.
+  const CONVERSATION_LOG_CONTEXT_INJECT = 8;
+  const CONVERSATION_LOG_LINE_CHARS = 300;
+  if (Array.isArray(quest.conversationLog) && quest.conversationLog.length > 0) {
+    const recent = quest.conversationLog
+      .filter(e => e && typeof e.text === 'string' && e.role)
+      .slice(-CONVERSATION_LOG_CONTEXT_INJECT);
+    if (recent.length > 0) {
+      ctx += '\n[Recent conversation on this quest]\n';
+      for (const entry of recent) {
+        const label = entry.role === 'user' ? 'You' : (entry.agentName || 'Companion');
+        let line = entry.text;
+        if (line.length > CONVERSATION_LOG_LINE_CHARS) {
+          line = line.slice(0, CONVERSATION_LOG_LINE_CHARS - 1) + '…';
+        }
+        ctx += `  ${label}: ${line}\n`;
+      }
+      ctx += '[/Recent conversation on this quest] ';
+    }
+  }
+
   return ctx;
 }
 
@@ -3178,6 +3223,43 @@ function addChatMsg(type, text, name, emoji) {
     // source of truth for the tab-switch UX. Debounced to
     // avoid hammering storage on every keystroke.
     schedulePersistChatHistory();
+
+    // v3.2.59: per-quest conversation log. When there's an
+    // active quest, every chat exchange is automatically
+    // stamped with the quest id and persisted to that quest's
+    // `conversationLog` array (capped at 200 entries, FIFO;
+    // text capped at 1000 chars). buildActiveQuestContext reads
+    // the most-recent N entries on every reply and injects
+    // them into the LLM prompt, so the companion has
+    // cross-session memory of what was said on this project.
+    // Tobe 2026-08-04 11:55: 'we need to make the companion
+    // create a log for each project with a appropriate max
+    // size for the companions which they should read for
+    // each reply? Such that it can always keep the
+    // conversation in mind for a specific project? Such
+    // that it does not forget like this.'
+    //
+    // Fire-and-forget: the IPC is async but the chat render
+    // must not block on it. If the IPC fails (e.g. quest
+    // deleted mid-write, transient disk error), we just
+    // skip — the user-visible chat already updated; only
+    // the project memory misses this turn.
+    if (activeQuestId) {
+      try {
+        cyberclaw.quests.appendConversationLog(
+          activeQuestId,
+          type, // 'user' or 'agent' or 'error'
+          text,
+          agentId,
+          name || null,
+        ).catch((err) => {
+          // Quiet failure: the per-quest log isn't
+          // critical to the chat UX; just log so we can
+          // diagnose if it happens often.
+          console.warn('[ConversationLog] append failed:', err?.message);
+        });
+      } catch (_) { /* IPC not ready yet — skip silently */ }
+    }
   }
 
   // Broadcast to mobile companion app
@@ -5395,6 +5477,26 @@ try {
             chatHistoryByAgent[bucketedAgentId].slice(-200);
         }
         schedulePersistChatHistory();
+
+        // v3.2.59: also stamp this Discord-routed message
+        // onto the active quest's conversation log so the
+        // companion has cross-session memory of Discord
+        // conversations too. Fire-and-forget, same as the
+        // addChatMsg path; a failed IPC just means this
+        // one exchange won't show up in future context.
+        if (activeQuestId) {
+          try {
+            cyberclaw.quests.appendConversationLog(
+              activeQuestId,
+              isUser ? 'user' : 'agent',
+              text,
+              bucketedAgentId,
+              agentName || null,
+            ).catch((err) => {
+              console.warn('[ConversationLog] Discord tail append failed:', err?.message);
+            });
+          } catch (_) { /* IPC not ready — skip */ }
+        }
       }
       window.addDesktopLog?.('💬', 'OpenClaw tail', text.substring(0, 60));
     } catch (err) {

@@ -111,6 +111,20 @@ window.cyberclaw = {
     // Future turns + future sessions see the note via
     // buildActiveQuestContext's instructions injection.
     appendQuestInstructions: (id, text) => ipcRenderer.invoke('quests:append-quest-instructions', id, text),
+    // v3.2.59: per-quest conversation log IPCs. Every user
+    // + agent chat message exchanged while a quest is active
+    // is automatically appended to that quest's
+    // `conversationLog` (capped 200 entries, text capped 1000
+    // chars; FIFO-trim). getConversationLog returns the
+    // full array so the mobile / desktop can render a
+    // "view past chats" panel; clearConversationLog wipes
+    // it (used by a future UI button — for now it's just
+    // available for tooling). appendConversationLog is the
+    // primary write path, fired from addChatMsg on the
+    // renderer whenever there's an active quest.
+    appendConversationLog: (id, role, text, agentId, agentName) => ipcRenderer.invoke('quests:append-conversation-log', id, role, text, agentId, agentName),
+    getConversationLog: (id) => ipcRenderer.invoke('quests:get-conversation-log', id),
+    clearConversationLog: (id) => ipcRenderer.invoke('quests:clear-conversation-log', id),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

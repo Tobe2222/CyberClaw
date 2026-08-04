@@ -273,6 +273,17 @@ function loadQuests() {
   for (const q of raw) {
     if (typeof q.active !== 'boolean') { q.active = false; mutated = true; }
     if (!Array.isArray(q.latestChanges)) { q.latestChanges = []; mutated = true; }
+    // v3.2.59: per-quest conversation log — automatic running
+    // transcript of every user + agent message exchanged while
+    // this quest was active. Each entry is {ts, role, text,
+    // agentId, agentName} with text capped at 1000 chars.
+    // Capped at 200 entries (oldest shifted out); the most
+    // recent 20 are injected into the LLM context by
+    // buildActiveQuestContext so the companion has
+    // cross-session memory of what was discussed on this quest.
+    // Existing pre-v3.2.59 quests get an empty array; the
+    // next session on that quest starts populating it.
+    if (!Array.isArray(q.conversationLog)) { q.conversationLog = []; mutated = true; }
   }
   // v3.1.50: enforce the invariant that at most one quest is
   // `active: true`. If a migration left multiple active (shouldn't
@@ -1422,6 +1433,8 @@ ipcMain.handle('quests:create', (event, quest) => {
   // the same process boot.
   quest.active = false;
   quest.latestChanges = [];
+  // v3.2.59: same defaults for the per-quest conversation log.
+  quest.conversationLog = [];
   quests.unshift(quest);
   saveQuests(quests);
   return quest;
@@ -2197,6 +2210,82 @@ ipcMain.handle('quests:append-change', (event, id, text) => {
   }
   saveQuests(quests);
   return entry;
+});
+// v3.2.59: per-quest conversation log IPCs. Every chat
+// exchange (user + agent) when there's an active quest gets
+// stamped with the quest id and appended to that quest's
+// `conversationLog`. The companion reads the most-recent N
+// entries on every reply via buildActiveQuestContext so
+// project context carries across sessions / restarts / LLM
+// restarts.
+//
+// Field shape:
+//   { ts: ISO timestamp, role: 'user'|'agent'|'system',
+//     text: string (capped at 1000 chars),
+//     agentId: agent id of the speaker (or null for user),
+//     agentName: display name of the speaker (or null) }
+//
+// Storage:
+//   - Up to 200 entries per quest, FIFO-trimmed.
+//   - Each text capped at 1000 chars (long agent replies
+//     get the first 1000 chars + '…' to keep the JSON
+//     small; the full text is still in the desktop's
+//     chatHistoryByAgent for the UI).
+//   - Persisted to the same quests.json via saveQuests().
+//
+// Read IPC: quests:get-conversation-log (returns the array)
+// Clear IPC: quests:clear-conversation-log (resets the array)
+const CONVERSATION_LOG_MAX_ENTRIES = 200;
+const CONVERSATION_LOG_MAX_TEXT_CHARS = 1000;
+function appendConversationLog(q, role, text, agentId, agentName) {
+  if (!q) return null;
+  if (!Array.isArray(q.conversationLog)) q.conversationLog = [];
+  const trimmedText = typeof text === 'string'
+    ? (text.length > CONVERSATION_LOG_MAX_TEXT_CHARS
+        ? text.slice(0, CONVERSATION_LOG_MAX_TEXT_CHARS - 1) + '…'
+        : text)
+    : '';
+  const entry = {
+    ts: new Date().toISOString(),
+    role: role === 'user' ? 'user' : (role === 'agent' ? 'agent' : 'system'),
+    text: trimmedText,
+    agentId: agentId || null,
+    agentName: agentName || null,
+  };
+  q.conversationLog.push(entry);
+  if (q.conversationLog.length > CONVERSATION_LOG_MAX_ENTRIES) {
+    q.conversationLog = q.conversationLog.slice(-CONVERSATION_LOG_MAX_ENTRIES);
+  }
+  return entry;
+}
+
+ipcMain.handle('quests:append-conversation-log', (event, questId, role, text, agentId, agentName) => {
+  if (!questId) return { ok: false, error: 'no questId' };
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === questId);
+  if (!q) return { ok: false, error: 'quest not found' };
+  const entry = appendConversationLog(q, role, text, agentId, agentName);
+  if (!entry) return { ok: false, error: 'append failed' };
+  saveQuests(quests);
+  return { ok: true, entry };
+});
+
+ipcMain.handle('quests:get-conversation-log', (event, questId) => {
+  if (!questId) return { ok: false, error: 'no questId' };
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === questId);
+  if (!q) return { ok: false, error: 'quest not found' };
+  return { ok: true, log: Array.isArray(q.conversationLog) ? q.conversationLog : [], questName: q.name || '' };
+});
+
+ipcMain.handle('quests:clear-conversation-log', (event, questId) => {
+  if (!questId) return { ok: false, error: 'no questId' };
+  const quests = loadQuests();
+  const q = quests.find(x => x.id === questId);
+  if (!q) return { ok: false, error: 'quest not found' };
+  q.conversationLog = [];
+  saveQuests(quests);
+  return { ok: true };
 });
 // v3.1.50: toggle a goal's completed flag by index. The agent
 // uses this when it finishes a step on the active quest. Returns
