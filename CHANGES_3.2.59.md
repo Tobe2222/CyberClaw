@@ -1,5 +1,12 @@
 # v3.2.59 — Per-quest conversation log (cross-session memory)
 
+> **Update 2026-08-04 12:37:** Tobe confirmed Discord should NOT
+> feed the quest log. v3.2.60 (no version bump yet) unwinds
+> the Discord-tail IPC write path. The chat-pipeline write
+> (`addChatMsg` path) remains. See addendum below; the
+> addendum applies to both the released code and the
+> shipped CHANGES text in the next push.
+
 ## The bug
 
 Tobe 2026-08-04 11:55 in #cyber-dev (screenshot attached):

@@ -5478,25 +5478,22 @@ try {
         }
         schedulePersistChatHistory();
 
-        // v3.2.59: also stamp this Discord-routed message
-        // onto the active quest's conversation log so the
-        // companion has cross-session memory of Discord
-        // conversations too. Fire-and-forget, same as the
-        // addChatMsg path; a failed IPC just means this
-        // one exchange won't show up in future context.
-        if (activeQuestId) {
-          try {
-            cyberclaw.quests.appendConversationLog(
-              activeQuestId,
-              isUser ? 'user' : 'agent',
-              text,
-              bucketedAgentId,
-              agentName || null,
-            ).catch((err) => {
-              console.warn('[ConversationLog] Discord tail append failed:', err?.message);
-            });
-          } catch (_) { /* IPC not ready — skip */ }
-        }
+        // v3.2.59: intentionally does NOT stamp this
+        // Discord-routed message onto the active quest's
+        // conversation log. Discord is a separate channel
+        // — if the user happens to have a quest active on
+        // the desktop at the moment a Discord message
+        // arrives, the Discord conversation has no
+        // project meaning to that quest. Auto-stamping
+        // would silently corrupt cross-project context
+        // (Tobe's 2026-08-04 12:37 directive: "No need
+        // for discord to update quest logs, it does not
+        // necessarily know which quest we are working
+        // with."). The chat panel still mirrors Discord
+        // messages via chatHistoryByAgent / mobile
+        // broadcast, but they stay OUT of
+        // quest.conversationLog. The chat pipeline
+        // (addChatMsg path) is the only writer.
       }
       window.addDesktopLog?.('💬', 'OpenClaw tail', text.substring(0, 60));
     } catch (err) {
