@@ -111,6 +111,21 @@ class SyncServer extends EventEmitter {
     this.onGetQuestConversationFile = options.onGetQuestConversationFile || null;
     this.onClearQuestConversationLog = options.onClearQuestConversationLog || null;
 
+    // v3.2.62: CYBERCLAW.md (overarching system prompt)
+    // access from mobile. Three operations:
+    //   - get:    read the current content + the
+    //             hardcoded DEFAULT content (for a
+    //             "Reset to default" button) + the
+    //             disk path.
+    //   - save:   write user-edited content.
+    //   - reset:  drop the user's file so the next
+    //             read returns DEFAULT_SYSTEM_PROMPT.
+    // The desktop's main.js is the source of truth
+    // (it owns the file IO); the SyncServer just routes.
+    this.onGetCyberclawSystem = options.onGetCyberclawSystem || null;
+    this.onSaveCyberclawSystem = options.onSaveCyberclawSystem || null;
+    this.onResetCyberclawSystem = options.onResetCyberclawSystem || null;
+
     // v3.1.46: track the most recent wake_training_progress per
     // agent so a phone that lost its WebSocket mid-training (and
     // reconnected) can pick up where the bar should be. Without
@@ -807,6 +822,108 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.2.62: mobile asks for the CYBERCLAW.md
+        // content (the overarching system prompt).
+        // Returns content + default content + path,
+        // same shape as the desktop's
+        // `system:get-cyberclaw` IPC handler.
+        case 'request_cyberclaw_system': {
+          if (!client.authenticated) return;
+          if (!this.onGetCyberclawSystem) {
+            this._send(ws, {
+              type: 'cyberclaw_system', ok: false,
+              error: 'Desktop does not support CYBERCLAW.md yet',
+              ts: Date.now(),
+            });
+            return;
+          }
+          try {
+            const res = await this.onGetCyberclawSystem();
+            this._send(ws, {
+              type: 'cyberclaw_system',
+              ok: !!(res && res.ok),
+              content: res?.content || '',
+              defaultContent: res?.defaultContent || '',
+              path: res?.path || null,
+              error: res?.ok ? undefined : (res?.error || 'unknown error'),
+              ts: Date.now(),
+            });
+          } catch (e) {
+            this._send(ws, { type: 'cyberclaw_system', ok: false, error: e?.message || String(e), ts: Date.now() });
+          }
+          break;
+        }
+
+        // v3.2.62: mobile writes a new CYBERCLAW.md
+        // content. We forward to main.js's
+        // `system:save-cyberclaw` IPC equivalent.
+        case 'save_cyberclaw_system': {
+          if (!client.authenticated) return;
+          const content = typeof msg.content === 'string' ? msg.content : '';
+          if (!this.onSaveCyberclawSystem) {
+            this._send(ws, {
+              type: 'cyberclaw_system_saved', ok: false,
+              error: 'Desktop does not support CYBERCLAW.md save yet',
+              ts: Date.now(),
+            });
+            return;
+          }
+          try {
+            const res = await this.onSaveCyberclawSystem(content);
+            if (res && typeof res.then === 'function') {
+              await res;
+            } else if (res && res.ok === false) {
+              this._send(ws, {
+                type: 'cyberclaw_system_saved',
+                ok: false,
+                error: res?.error || 'unknown error',
+                ts: Date.now(),
+              });
+              return;
+            }
+            this._send(ws, { type: 'cyberclaw_system_saved', ok: true, ts: Date.now() });
+          } catch (e) {
+            this._send(ws, { type: 'cyberclaw_system_saved', ok: false, error: e?.message || String(e), ts: Date.now() });
+          }
+          break;
+        }
+
+        // v3.2.62: mobile resets CYBERCLAW.md to the
+        // default. After reset, the desktop replies with
+        // both `cyberclaw_system_reset` AND a fresh
+        // `cyberclaw_system` event so the mobile UI can
+        // update its content textbox automatically.
+        case 'reset_cyberclaw_system': {
+          if (!client.authenticated) return;
+          if (!this.onResetCyberclawSystem) {
+            this._send(ws, {
+              type: 'cyberclaw_system_reset', ok: false,
+              error: 'Desktop does not support CYBERCLAW.md reset yet',
+              ts: Date.now(),
+            });
+            return;
+          }
+          try {
+            const res = await this.onResetCyberclawSystem();
+            if (res && typeof res.then === 'function') await res;
+            this._send(ws, { type: 'cyberclaw_system_reset', ok: true, ts: Date.now() });
+            // Push the post-reset content so the mobile
+            // updates its textbox without an extra round-trip.
+            const after = await this.onGetCyberclawSystem();
+            this._send(ws, {
+              type: 'cyberclaw_system',
+              ok: !!(after && after.ok),
+              content: after?.content || '',
+              defaultContent: after?.defaultContent || '',
+              path: after?.path || null,
+              ts: Date.now(),
+            });
+          } catch (e) {
+            this._send(ws, { type: 'cyberclaw_system_reset', ok: false, error: e?.message || String(e), ts: Date.now() });
+          }
+          break;
+        }
 
       // v3.2.35: mobile requests a companion's soul.md. Read-only
       // — the desktop's Companion Forge is the editor. The

@@ -1464,8 +1464,63 @@ ipcMain.handle('quests:create', (event, quest) => {
 ipcMain.handle('quests:update', (event, id, updates) => {
   const quests = loadQuests();
   const idx = quests.findIndex(q => q.id === id);
-  if (idx >= 0) { Object.assign(quests[idx], updates); saveQuests(quests); }
-  return quests[idx] || null;
+  if (idx < 0) return null;
+  const oldQuest = quests[idx];
+  // v3.2.62: detect a directory CHANGE and re-scaffold
+  // the new directory. Tobe 2026-08-04 17:31: 'Tried to
+  // edit a quest, its directory is not shown and should
+  // be editable. Here we potentially need to move and/or
+  // create new directories for the user.'
+  //
+  // The migration is file-system only — we do NOT copy
+  // the old files into the new directory. The quest's
+  // files (INSTRUCTIONS.md / CONVERSATION.md) are tied
+  // to the project they describe, not the storage path;
+  // moving the directory without the files is the
+  // expected behaviour for "this quest is now about a
+  // different folder". If the user wants to physically
+  // move files too, they can do it on the desktop with a
+  // regular `mv` and then re-set the directory here.
+  //
+  // We DO scaffold (mkdir + write placeholder files)
+  // because the next chat send will need to write to
+  // <quest.directory>/CONVERSATION.md and the file
+  // should exist for `tail -f`-ers.
+  //
+  // Three cases:
+  //   1. updates.directory is the SAME string as
+  //      oldQuest.directory — no-op (don't re-scaffold).
+  //   2. updates.directory is a NEW non-empty string —
+  //      assign it and re-scaffold (mkdir + write
+  //      placeholders).
+  //   3. updates.directory was UNDEFINED in `updates`
+  //      (key not present) — leave the old directory
+  //      alone. We never blanket-clear the directory.
+  //   4. updates.directory is an EMPTY string — treat as
+  //      'clear directory', falls back to the v3.2.30
+  //      <id>-based path on the next read. The desktop
+  //      also re-scaffolds the id-based dir so the next
+  //      write lands somewhere valid.
+  let directoryChanged = false;
+  if (Object.prototype.hasOwnProperty.call(updates, 'directory')) {
+    const newDir = typeof updates.directory === 'string' ? updates.directory.trim() : '';
+    const oldDir = (oldQuest.directory || '').trim();
+    if (newDir !== oldDir) {
+      directoryChanged = true;
+      updates.directory = newDir || undefined;
+    }
+  }
+  Object.assign(quests[idx], updates);
+  saveQuests(quests);
+  if (directoryChanged) {
+    const scaffold = scaffoldQuestDirectory(quests[idx]);
+    if (!scaffold.ok) {
+      console.warn(`[quests:update] scaffold failed for ${id}: ${scaffold.error}`);
+    } else {
+      console.log(`[quests:update] re-scaffolded ${quests[idx].directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+    }
+  }
+  return quests[idx];
 });
 
 // v3.2.30: per-quest project instructions file. Each quest can have a
@@ -3513,6 +3568,41 @@ app.whenReady().then(() => {
         if (f && fs.existsSync(f)) fs.unlinkSync(f);
       } catch (_) {}
       return { ok: true };
+    },
+    // v3.2.62: CYBERCLAW.md (overarching system prompt)
+    // round-trip. The desktop's `system:get-cyberclaw` /
+    // `system:save-cyberclaw` / `system:reset-cyberclaw`
+    // IPC handlers wrap the file IO; the SyncServer
+    // callbacks here wrap those for the mobile. The
+    // same companion-prompts module is the source of
+    // truth for both Desktop's renderer AND the
+    // mobile's Settings screen, so edits from either
+    // side land in the same physical file.
+    onGetCyberclawSystem: async () => {
+      try {
+        return {
+          ok: true,
+          content: companionPrompts.readSystemPrompt(),
+          defaultContent: companionPrompts.DEFAULT_SYSTEM_PROMPT,
+          path: companionPrompts.SYSTEM_PROMPT_FILE,
+        };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    },
+    onSaveCyberclawSystem: async (content) => {
+      try {
+        return { ok: true, ...companionPrompts.writeSystemPrompt(content || '') };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    },
+    onResetCyberclawSystem: async () => {
+      try {
+        return { ok: true, ...companionPrompts.resetSystemPrompt() };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
     },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
