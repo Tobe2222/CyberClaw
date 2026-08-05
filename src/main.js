@@ -1070,6 +1070,16 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     user: `cyberclaw:${agentId}`,
   };
   const url = `${gw.baseUrl}/v1/chat/completions`;
+  // v3.2.67: hoist httpTimeoutMs to the FUNCTION scope (above
+  // the outer try at line 1073). v3.2.66 moved it out of the
+  // inner fetch try, but it was still inside the OUTER try
+  // that wraps the whole HTTP path — same ReferenceError when
+  // any non-fetch error threw (e.g. a JSON parse error in
+  // `await res.json()`). The catch at the bottom of the
+  // function still references it. Lesson: any var the catch
+  // needs must be at function scope, NOT inside any try
+  // block — including nested ones.
+  const httpTimeoutMs = 60000;
   try {
     // v3.2.53: log the request shape we're sending so we
     // can debug what the model actually receives. Tobe
@@ -1092,13 +1102,6 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     // HTTP fetch hung for 5+ min → fallback never kicked
     // in → user saw nothing. Aborting at 60s falls through
     // to the CLI path fast instead.
-    // v3.2.66: hoist httpTimeoutMs to the function scope so
-    // the catch block below can reference it. Tobe
-    // 2026-08-05 08:56: 'httpTimeoutMs is not defined' —
-    // ReferenceError because the original declaration was
-    // `const` inside the try block and `const` is block-
-    // scoped, not visible to the surrounding catch.
-    const httpTimeoutMs = 60000;
     const ctrl = new AbortController();
     const httpTimer = setTimeout(() => ctrl.abort(), httpTimeoutMs);
     let res;
