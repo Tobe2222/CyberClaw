@@ -1080,14 +1080,35 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     const bodySize = Buffer.byteLength(JSON.stringify(body), 'utf8');
     const attachmentsCount = Array.isArray(attachments) ? attachments.length : 0;
     console.log(`[chat:send/http] POST ${url} (body=${bodySize}b, attachments=${attachmentsCount})`);
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${gw.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    // v3.2.65: 60s timeout on the HTTP fetch. Without it, a
+    // wedged gateway lane (e.g. a session that won't release
+    // a previous in-flight run) can make fetch() hang
+    // indefinitely. The renderer-side typing-bubble watcher
+    // force-clears at 300s, but the await never resolves —
+    // every subsequent mobile message queues behind the
+    // stuck call and the user sees no reply. Tobe
+    // 2026-08-05 06:04: 'any idea why hes not answers?'
+    // root cause: clawsuu mobile session lane wedged →
+    // HTTP fetch hung for 5+ min → fallback never kicked
+    // in → user saw nothing. Aborting at 60s falls through
+    // to the CLI path fast instead.
+    const ctrl = new AbortController();
+    const httpTimeoutMs = 60000;
+    const httpTimer = setTimeout(() => ctrl.abort(), httpTimeoutMs);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${gw.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(httpTimer);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       console.warn('[chat:send/http] non-2xx:', res.status, text?.slice(0, 200));
@@ -1121,8 +1142,10 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     }
     return { ok: false, error: 'No reply in HTTP response', output: JSON.stringify(json).slice(0, 300) };
   } catch (e) {
-    console.warn('[chat:send/http] fetch failed:', e?.message);
-    return await sendChatMessageViaCli(agentId, message, attachments, `HTTP fetch failed: ${e?.message}`);
+    const isAbort = e?.name === 'AbortError' || /aborted/i.test(e?.message || '');
+    const reason = isAbort ? `aborted after ${httpTimeoutMs}ms` : (e?.message || 'unknown');
+    console.warn(`[chat:send/http] fetch failed (${reason}):`, e?.message);
+    return await sendChatMessageViaCli(agentId, message, attachments, `HTTP fetch failed: ${reason}`);
   }
 }
 
@@ -1155,45 +1178,84 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   }
 
   try {
+    // v3.2.65: switch from execCb (which runs through
+    // `/bin/sh -c "<giant string>"`) to spawn() with the
+    // message as a real argv entry. The previous code did
+    // `"` → `\"` shell escaping but left literal newlines,
+    // backticks, and dollar signs in finalMessage (it can
+    // be 30KB+ of multi-line system prompt + tags). /bin/sh
+    // tried to parse the whole blob as a shell script and
+    // barfed `cannot open agentId: No such file /
+    // INSTRUCTIONS.md: not found / remember_fact: not found
+    // / CREATE_QUEST: not found` etc. — and the renderer's
+    // Error bubble displayed the entire err.message
+    // verbatim. Tobe 2026-08-05 06:12: 'he spewed alot of
+    // crap. He should not'. spawn() takes argv as an array
+    // so there's no shell interpretation at all — newlines
+    // and special chars go straight to the child as one
+    // argv entry.
     const result = await new Promise((resolve) => {
-      execCb(
-        `"${bin}" agent -m "${finalMessage.replace(/"/g, '\\"')}" --agent "${agentId}" --json`,
-        { timeout: 180000, maxBuffer: 1024 * 512, env: { ...process.env } },
-        (err, stdout, stderr) => {
-          if (err && (!stdout || !stdout.trim())) {
-            resolve({ ok: false, error: err.message, output: stderr || err.message });
-            return;
-          }
-          const parsed = extractFirstJsonObject(stdout);
-          if (parsed) {
-            let reply = null;
-            if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
-              const parts = [];
-              for (const p of parsed.result.payloads) {
-                if (p && typeof p.text === 'string' && p.text.trim()) {
-                  parts.push(p.text);
-                }
+      let stdout = '';
+      let stderr = '';
+      const child = spawn(bin, ['agent', '-m', finalMessage, '--agent', agentId, '--json'], {
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const killTimer = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch {}
+      }, 180000);
+      child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      child.on('error', (err) => {
+        clearTimeout(killTimer);
+        resolve({ ok: false, error: err.message, output: stderr || err.message });
+      });
+      child.on('close', (code, signal) => {
+        clearTimeout(killTimer);
+        if (code !== 0 && (!stdout || !stdout.trim())) {
+          // v3.2.65: don't surface raw stderr/err.message to
+          // the renderer as the user-visible reply — that was
+          // how we ended up dumping 30KB of system prompt
+          // into the chat bubble. Instead, return a short
+          // friendly error and put the verbose output in a
+          // separate log-only field the desktop logger can
+          // surface.
+          const friendly = signal === 'SIGKILL'
+            ? 'agent CLI timed out after 180s'
+            : `agent CLI exited with code ${code}`;
+          console.warn('[chat:send/cli] child failed:', friendly, '\n--- stderr ---\n', stderr.slice(0, 400));
+          resolve({ ok: false, error: friendly, output: stderr.slice(0, 200), cliStderr: stderr });
+          return;
+        }
+        const parsed = extractFirstJsonObject(stdout);
+        if (parsed) {
+          let reply = null;
+          if (parsed.result && parsed.result.payloads && parsed.result.payloads.length > 0) {
+            const parts = [];
+            for (const p of parsed.result.payloads) {
+              if (p && typeof p.text === 'string' && p.text.trim()) {
+                parts.push(p.text);
               }
-              if (parts.length > 0) reply = parts.join('\n\n');
             }
-            if (!reply) reply = parsed.reply || parsed.message || parsed.text;
-            if (!reply && typeof parsed === 'string') reply = parsed;
-            if (reply && reply.trim()) {
-              resolve({ ok: true, reply: reply });
-            } else {
-              resolve({ ok: false, error: parsed.error || 'No reply in agent response', output: stderr || '' });
-            }
+            if (parts.length > 0) reply = parts.join('\n\n');
+          }
+          if (!reply) reply = parsed.reply || parsed.message || parsed.text;
+          if (!reply && typeof parsed === 'string') reply = parsed;
+          if (reply && reply.trim()) {
+            resolve({ ok: true, reply: reply });
           } else {
-            const trimmed = (stdout || '').trim();
-            const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
-            if (trimmed && !looksLikeJson) {
-              resolve({ ok: true, reply: trimmed });
-            } else {
-              resolve({ ok: false, error: 'Could not parse agent response', output: stderr || trimmed });
-            }
+            resolve({ ok: false, error: parsed.error || 'No reply in agent response', output: stderr || '' });
+          }
+        } else {
+          const trimmed = (stdout || '').trim();
+          const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+          if (trimmed && !looksLikeJson) {
+            resolve({ ok: true, reply: trimmed });
+          } else {
+            resolve({ ok: false, error: 'Could not parse agent response', output: stderr || trimmed });
           }
         }
-      );
+      });
     });
     if (result.ok) {
       result.taskSkill = classifyTask(message);
