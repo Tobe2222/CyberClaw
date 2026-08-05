@@ -5998,45 +5998,65 @@ try {
   // arena. Mirror the desktop's placeTreatOnArena() in
   // src/js/app.js:4905.
   //
-  // v3.10.74: Tobe asked that the food/play reactions
-  // NOT appear in chat ("The comments the companion
-  // makes when given food or played with does not need
-  // to appear in the chat"). The visual reaction (😋
-  // emoji overlay) is enough. We no longer call
-  // promptCompanionReaction — that triggers an LLM
-  // round-trip and adds the reply to chat, which is
-  // noise for trivial actions like eating a treat.
-  // We still log to the desktop log panel for debugging.
+  // v3.2.71: Tobe 2026-08-05 11:59 reversed the
+  // v3.10.74 "no chat reaction" decision. The
+  // silent/no-reaction flow caused the companion to
+  // forget the food it was just fed — the LLM had no
+  // running context for the snack, so follow-up
+  // questions ("Did you like that meat?", "What about
+  // that hamburger?") returned hallucinated replies
+  // ("Tastes like dust and broken dreams", "I never
+  // got the fucking hamburger"). The visible chat
+  // reaction is what puts the snack in the LLM's
+  // running context. We now mirror the desktop-side
+  // placeTreatOnArena behavior: deterministic memory
+  // append + visible promptCompanionReaction (the
+  // busy-guard was dropped in v3.2.70 so the reaction
+  // always fires).
   ipcRenderer.on('mobile-arena-treat-placed', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
       const name = TREAT_NAMES[t] || t;
+      const category = TREAT_CATEGORIES[t] || 'item';
       console.log('[mobile-treat] placed:', t);
-      // v3.10.74: log to the desktop log panel for
-      // debugging only — NOT to chat, NOT to events.
-      // Tobe wants feeding to be a non-verbal action:
-      // visual emoji overlay on the mobile arena is
-      // the only feedback the user gets. addChatMsg /
-      // addEventMsg would put it in chat/events which
-      // is the chat-noise Tobe reported.
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
+      // Memory append (deterministic, cross-session).
+      const agentId = activeChatAgentId || (agentOrder[0] || null);
+      if (agentId && cyberclaw?.companions?.rememberMemory) {
+        cyberclaw.companions.rememberMemory(
+          agentId,
+          `Tobe gave me ${name} (${category})`
+        ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
+      }
+      // Visible chat reaction so the snack lands in
+      // the LLM's running context. Same path the
+      // desktop-side placeTreatOnArena uses now.
+      promptCompanionReaction('I just gave you ' + name + '. What do you think?');
     } catch (err) {
       console.warn('[mobile-treat] placed failed:', err?.message);
     }
   });
 
   // v3.10.72: companion ate a treat (from the mobile
-  // arena's seek-and-eat logic). v3.10.74: same
-  // reasoning as placed — keep chat clean, no LLM
-  // round-trip for trivial eat actions. The 😋+❤️
-  // emoji overlay on the mobile arena provides the
-  // visual feedback.
+  // arena's seek-and-eat logic). v3.2.71: same as the
+  // placed handler above — memory append + visible
+  // reaction. Reversing v3.10.74's "no reaction"
+  // decision for the same reason.
   ipcRenderer.on('mobile-arena-treat-eaten', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
       const name = TREAT_NAMES[t] || t;
+      const category = TREAT_CATEGORIES[t] || 'item';
       console.log('[mobile-treat] eaten:', t);
       window.addDesktopLog?.('😋', 'Companion ate', t, 'info');
+      const agentId = activeChatAgentId || (agentOrder[0] || null);
+      if (agentId && cyberclaw?.companions?.rememberMemory) {
+        cyberclaw.companions.rememberMemory(
+          agentId,
+          `I ate ${name} (${category})`
+        ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
+      }
+      promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
     } catch (err) {
       console.warn('[mobile-treat] eaten failed:', err?.message);
     }
