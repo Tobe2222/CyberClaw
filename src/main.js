@@ -3278,6 +3278,15 @@ app.whenReady().then(() => {
       // the AI text reply matches the visual reaction.
       // Mirrors the desktop's placeTreatOnArena() in
       // src/js/app.js:4905.
+      // v3.2.73: diagnostic log so we can confirm the
+      // sync-server-to-main-process handoff fires (the
+      // sync-server log in v3.2.72 didn't fire at all,
+      // suggesting the message never made it from the
+      // mobile to the sync-server — but if it does
+      // start arriving, this log helps confirm the
+      // next leg). Tobe 2026-08-05 12:25 still saw
+      // 'no chat reaction' after the v3.2.71 fix.
+      console.log(`[Main] arena_treat_placed dispatched to renderer: treat=${treat}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-arena-treat-placed', {
           treat, meta,
@@ -3289,6 +3298,8 @@ app.whenReady().then(() => {
       // mobile arena's seek-and-eat logic). Forward to
       // the renderer for the same reaction as the
       // desktop's promptCompanionEat() callback.
+      // v3.2.73: diagnostic log (see onArenaTreatPlaced).
+      console.log(`[Main] arena_treat_eaten dispatched to renderer: treat=${treat}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-arena-treat-eaten', {
           treat, meta,
