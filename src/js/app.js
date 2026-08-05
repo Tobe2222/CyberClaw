@@ -6897,47 +6897,78 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
   var a = window.pixelArena;
   if (!a) return;
   a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
-  // v3.2.64: silent snack log. Tobe 2026-08-04 21:16:
-  // "We should log snacks by the way, and type of
-  // snack so he can talk about them." The food event
-  // fires a silent log to memory.md (so the
-  // companion remembers the snack category in future
-  // sessions) AND a quiet LLM round-trip that lets
-  // the companion optionally enrich the entry with
-  // context (e.g. "this is the third hamburger
-  // tonight"). The chat stays clean — no visible
-  // reply from the food event itself.
+  // v3.2.70: always-visible snack comment. Tobe
+  // 2026-08-05 11:59: "I tried to give him some food
+  // but he does not seem to remember, perhaps we
+  // should make him comment it each time so he sees
+  // it in the log atleast, instead of in memory and
+  // not needing to comment it like we tried." The
+  // v3.2.64 silent-log approach was theoretically
+  // elegant (memory.md gets the fact, LLM is asked
+  // to enrich), but in practice the silent path
+  // writes to a file the current session's LLM
+  // doesn't re-read mid-flight, so the companion
+  // effectively forgets the food it just received.
+  //
+  // New approach: ALWAYS emit a chat-visible comment
+  // (queued behind any in-flight user message via the
+  // existing chatSendChain), so the snack is part of
+  // the LLM's running conversation context. Memory.md
+  // is still updated directly as a fallback for next
+  // session (long-term history), but the immediate
+  // goal is "the chat log shows the snack" so the
+  // user's follow-up question ('Was that food
+  // satisfying?') gets a context-aware answer.
   const agentId = activeChatAgentId || (agentOrder[0] || null);
-  if (agentId) {
-    const category = TREAT_CATEGORIES[treatType] || 'item';
-    const itemName = TREAT_NAMES[treatType] || treatType;
-    const fact = `Tobe gave me ${itemName} (${category})`;
-    promptCompanionSilent(agentId, fact, 'happy; grateful for the food');
+  const itemName = TREAT_NAMES[treatType] || treatType;
+  const category = TREAT_CATEGORIES[treatType] || 'item';
+
+  // Memory.md direct append (deterministic, independent
+  // of chat state). Survives session resets; for any
+  // future conversation that reads memory.md.
+  if (agentId && cyberclaw?.companions?.rememberMemory) {
+    cyberclaw.companions.rememberMemory(
+      agentId,
+      `Tobe gave me ${itemName} (${category})`
+    ).catch(e => console.warn('[placeTreatOnArena] memory append failed:', e?.message));
   }
-  // Keep the existing chat-visible reaction (separate
-  // concern). The companion gets BOTH the silent log
-  // to memory.md AND the chance to chat-react if it
-  // wants to. Most of the time the chat reaction is
-  // short ("yum" / "thanks"); for the foodobsessed
-  // goblin it'll be longer and personality-flavored.
-  promptCompanionReaction('I just gave you ' + TREAT_NAMES[treatType] + '. What do you think?');
+
+  // Visible chat reaction. Drop the old busy-guard
+  // (the OpenClaw lane serializes calls anyway).
+  // Always fire so the snack lands in the chat log
+  // and the LLM's running context — Tobe 2026-08-05
+  // 11:59: "make him comment it each time so he sees
+  // it in the log atleast".
+  promptCompanionReaction('I just gave you ' + itemName + '. What do you think?');
+
   if (window.adjustHappiness) window.adjustHappiness(10);
 }
 
 // Companion reacts when eating a treat (called from pixel-arena.js)
 window.promptCompanionEat = function(treatType) {
-  // v3.2.64: silent log for the eat event too, so the
-  // companion remembers what it ate (per type) for
-  // future chats ("we had cake earlier today"). Same
-  // silent-prompt path as placeTreatOnArena.
+  // v3.2.70: same shape as placeTreatOnArena. Memory
+  // append + queued visible reaction so the eat is in
+  // the LLM's running context.
   const name = TREAT_NAMES[treatType] || 'a treat';
   const category = TREAT_CATEGORIES[treatType] || 'item';
   const agentId = activeChatAgentId || (agentOrder[0] || null);
-  if (agentId) {
-    promptCompanionSilent(agentId, `I ate ${name} (${category})`, 'content; full');
+  if (agentId && cyberclaw?.companions?.rememberMemory) {
+    cyberclaw.companions.rememberMemory(
+      agentId,
+      `I ate ${name} (${category})`
+    ).catch(e => console.warn('[promptCompanionEat] memory append failed:', e?.message));
   }
   promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
 };
+
+// v3.2.70: reaction-queue removed. The OpenClaw lane
+// for the active agent serializes concurrent calls
+// server-side; the v3.2.64 busy-guard was redundant
+// and caused drops ("snack eaten, no reaction logged"
+// case Tobe flagged on 2026-08-05 11:59).
+// The memory append in placeTreatOnArena /
+// promptCompanionEat already runs before this; we
+// just always call promptCompanionReaction here.
 
 // ── Drop zone: attach to the CONTAINER div (survives arena rebuilds) ──
 // The container div never gets destroyed — only the canvas inside it is replaced.
@@ -6998,8 +7029,18 @@ function promptCompanionReaction(promptText) {
   const target = agents[targetId];
   if (!target) return;
   if (target.sleepState === 'sleeping') return;
-  // Don't fire if main chat or another reaction is already running
-  if (chatBusy || reactionBusy) return;
+  // v3.2.70: removed `if (chatBusy || reactionBusy) return;`.
+  // The OpenClaw lane serializes concurrent calls for
+  // the same agent server-side, so two rapid reactions
+  // (e.g. dropping two snacks in quick succession, or a
+  // snack drop while a user message is in flight) will
+  // queue at the gateway and reply in submission order.
+  // The old busy-guard silently dropped reactions which
+  // left the user confused ("he doesn't seem to remember
+  // the food", Tobe 2026-08-05 11:59). The reactionBusy
+  // flag is still used internally to avoid parallel
+  // click-spam within this function — but we no longer
+  // bail if chatBusy is set (that was user-driven).
   var agentId = targetId;
   var agent = target;
 
