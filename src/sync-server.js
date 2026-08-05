@@ -250,6 +250,18 @@ class SyncServer extends EventEmitter {
       ws.on('message', (data) => {
         try {
           const msg = JSON.parse(data.toString());
+          // v3.2.76: per-message log (ping excluded). After
+          // the v3.10.137 fix shipped, Tobe tested v3.10.137
+          // APK and the food reaction still didn't fire. The
+          // bundle has the fix (verified: 0 occurrences of
+          // .send(JSON.stringify in the JS bundle). So either
+          // (a) the mobile is still running an older bundle
+          // despite the v3.10.137 header, or (b) something
+          // else is wrong. This log tells us what types
+          // actually arrive.
+          if (msg && msg.type && msg.type !== 'ping') {
+            console.log(`[SyncServer] msg type=${msg.type} from ${clientInfo.name}`);
+          }
           this._handleMessage(ws, msg);
         } catch (e) {
           console.error('[SyncServer] Bad message:', e.message);
