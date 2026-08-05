@@ -1070,16 +1070,25 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     user: `cyberclaw:${agentId}`,
   };
   const url = `${gw.baseUrl}/v1/chat/completions`;
-  // v3.2.67: hoist httpTimeoutMs to the FUNCTION scope (above
-  // the outer try at line 1073). v3.2.66 moved it out of the
-  // inner fetch try, but it was still inside the OUTER try
-  // that wraps the whole HTTP path — same ReferenceError when
-  // any non-fetch error threw (e.g. a JSON parse error in
-  // `await res.json()`). The catch at the bottom of the
-  // function still references it. Lesson: any var the catch
-  // needs must be at function scope, NOT inside any try
-  // block — including nested ones.
-  const httpTimeoutMs = 60000;
+  // v3.2.68: bumped httpTimeoutMs from 60s to 600s and
+  // changed the abort path to NOT fall through to the CLI
+  // fallback. v3.2.65's 60s was too aggressive — legitimate
+  // long LLM calls (multi-tool code refactors, BOS+ protobuf
+  // reasoning, etc.) routinely exceed 60s, and aborting
+  // them just to fall through to `sendChatMessageViaCli`
+  // created a worse bug: the CLI path spawns a NEW isolated
+  // `openclaw agent` session, so the user got TWO replies
+  // for one message (the late HTTP reply + the immediate
+  // CLI reply). Tobe 2026-08-05 11:00 saw exactly this:
+  // 'now it timed out again. Cant it just run longer if hes
+  // working?' The 600s now matches the renderer's UI cap
+  // (Promise.race AGENT_TIMEOUT_MS = 600000, see app.js).
+  // On abort we return the timeout error directly so the
+  // renderer shows a clean retry-able message instead of
+  // spawning a duplicate CLI session. The renderer-side
+  // cap (600s) handles the 'wedged lane forever' case
+  // already.
+  const httpTimeoutMs = 600000; // 600s, matches renderer UI cap
   try {
     // v3.2.53: log the request shape we're sending so we
     // can debug what the model actually receives. Tobe
@@ -1090,18 +1099,9 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     const bodySize = Buffer.byteLength(JSON.stringify(body), 'utf8');
     const attachmentsCount = Array.isArray(attachments) ? attachments.length : 0;
     console.log(`[chat:send/http] POST ${url} (body=${bodySize}b, attachments=${attachmentsCount})`);
-    // v3.2.65: 60s timeout on the HTTP fetch. Without it, a
-    // wedged gateway lane (e.g. a session that won't release
-    // a previous in-flight run) can make fetch() hang
-    // indefinitely. The renderer-side typing-bubble watcher
-    // force-clears at 300s, but the await never resolves —
-    // every subsequent mobile message queues behind the
-    // stuck call and the user sees no reply. Tobe
-    // 2026-08-05 06:04: 'any idea why hes not answers?'
-    // root cause: clawsuu mobile session lane wedged →
-    // HTTP fetch hung for 5+ min → fallback never kicked
-    // in → user saw nothing. Aborting at 60s falls through
-    // to the CLI path fast instead.
+    // v3.2.68: AbortController timeout matches renderer UI
+    // cap. On abort we just return the error to the
+    // renderer (no CLI fallback, no duplicate session).
     const ctrl = new AbortController();
     const httpTimer = setTimeout(() => ctrl.abort(), httpTimeoutMs);
     let res;
@@ -1154,6 +1154,24 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     const isAbort = e?.name === 'AbortError' || /aborted/i.test(e?.message || '');
     const reason = isAbort ? `aborted after ${httpTimeoutMs}ms` : (e?.message || 'unknown');
     console.warn(`[chat:send/http] fetch failed (${reason}):`, e?.message);
+    if (isAbort) {
+      // v3.2.68: on HTTP timeout, return a clean error
+      // directly instead of falling through to the CLI
+      // path. The CLI fallback spawns a NEW isolated
+      // session, which caused duplicate replies when a
+      // legitimate long LLM call eventually returned to
+      // the original HTTP path. The user can retry; the
+      // renderer shows the timeout error.
+      return {
+        ok: false,
+        error: `HTTP request timed out after ${Math.round(httpTimeoutMs / 1000)}s. The model may still be working on the gateway — try again if you don't see a reply.`,
+        output: `timeout after ${httpTimeoutMs}ms`,
+        timedOut: true,
+      };
+    }
+    // Non-abort failures (network unreachable, malformed
+    // token, gateway crash) still benefit from the CLI
+    // fallback — better a duplicate reply than no reply.
     return await sendChatMessageViaCli(agentId, message, attachments, `HTTP fetch failed: ${reason}`);
   }
 }
