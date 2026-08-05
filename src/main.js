@@ -1092,8 +1092,14 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     // HTTP fetch hung for 5+ min → fallback never kicked
     // in → user saw nothing. Aborting at 60s falls through
     // to the CLI path fast instead.
-    const ctrl = new AbortController();
+    // v3.2.66: hoist httpTimeoutMs to the function scope so
+    // the catch block below can reference it. Tobe
+    // 2026-08-05 08:56: 'httpTimeoutMs is not defined' —
+    // ReferenceError because the original declaration was
+    // `const` inside the try block and `const` is block-
+    // scoped, not visible to the surrounding catch.
     const httpTimeoutMs = 60000;
+    const ctrl = new AbortController();
     const httpTimer = setTimeout(() => ctrl.abort(), httpTimeoutMs);
     let res;
     try {
