@@ -1473,6 +1473,55 @@ function stripQuestTags(reply) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+// v3.2.69: strip tool-call warning lines from agent reply text.
+// Some tool failures (edit, read, exec, etc.) emit verbose
+// output that the LLM echoes verbatim into its user-visible
+// reply. The result is bubbles like:
+//
+//   ⚠️ 📝 Edit: '/path/to/file.html' failed
+//
+// which look like errors to the user but are just OpenClaw
+// structured tool output. Tobe 2026-08-05 11:38: 'this edit
+// fail warning shows up sometimes, even here in discord,
+// and we have talked about it earlier but it was no issue,
+// if it really is no issue, lets hide it.' Verified — the
+// edit/read/exec are still happening correctly, and the agent
+// is chatting around the warning. The warning is cosmetic.
+//
+// We strip:
+// - Lines matching the OpenClaw sanitize pattern for
+//   tool-call output header rows
+//   (📊|🛠️|📖|📝|🔍|🔎|⚙️) Session Status|Exec|Read|Edit|...
+// - Lines matching the OpenClaw "failed" pattern (⚠️ 🛠️ ...
+//   failed)
+//
+// Apply line-by-line so multi-line replies with embedded
+// tool artifacts clean up correctly. Then collapse any
+// resulting 3+ blank lines.
+function stripToolWarnings(reply) {
+  if (!reply) return reply;
+  // Mirror OpenClaw's own sanitize regexes (see
+  // ~/.npm-global/lib/node_modules/openclaw/dist/
+  // sanitize-user-facing-text-*.js for kc and Ac).
+  const toolHeaderLine = /^\s*(?:>\s*)?(?:⚠️\s*)?(?:📊|🛠️|📖|📝|🔍|🔎|⚙️)\s*(?:Session Status|Exec|Read|Edit|Write|Patch|Search|Open|Click|Find|Screenshot|Update Plan|Tool Call|Tool Result|Function Call|Shell|Command)\s*:.*$/i;
+  const toolFailedLine = /^\s*(?:>\s*)?(?:⚠️\s*)?(?:🛠️|📝|📖|🔍|🔎|⚙️)\s+\S[\s\S]*\s+\(agent\)`{0,2}\s+failed(?:\s*:.*)?\s*$/i;
+  return reply
+    .split('\n')
+    .filter((line) => !toolHeaderLine.test(line) && !toolFailedLine.test(line))
+    .join('\n')
+    // Collapse leftover blank lines from the strip
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// v3.2.69: combined stripper — quest tags + tool warnings.
+// Most call sites want both, so wrap them together to keep
+// call sites small and avoid forgetting either stripper.
+function stripAgentReplyDecorations(reply) {
+  return stripToolWarnings(stripQuestTags(reply));
+}
+
 // Helper: pull the current active quest id from the quest list
 // without going through disk. Falls back to the in-memory cache
 // if the list is empty.
@@ -2552,7 +2601,7 @@ window.sendChat = async function() {
       // v3.1.96: strip the desktop's 🤖 default so the mobile's
       // chat history doesn't get a stray robot next to every
       // message from agents without an explicit emoji.
-      addChatMsg('agent', stripQuestTags(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
 
       // Check for quest commands in the reply. v3.1.50: the agent
 // can read + edit quests via structured-output tags. Three new
@@ -3054,10 +3103,10 @@ const __sendChatMessageImpl = async function(message, attachments) {
       const leader = agents[mainAgentId];
       // v3.1.96: see sibling site — strip the desktop's 🤖
       // default before sending.
-      addChatMsg('agent', stripQuestTags(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
-      window.addDesktopLog?.('💬', 'AI responded', stripQuestTags(result.reply).substring(0, 60), 'success');
+      addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      window.addDesktopLog?.('💬', 'AI responded', stripAgentReplyDecorations(result.reply).substring(0, 60), 'success');
       // Notify main process for mobile TTS response
-      try { ipcRenderer.send('mobile-tts-response', { text: stripQuestTags(result.reply) }); } catch {}
+      try { ipcRenderer.send('mobile-tts-response', { text: stripAgentReplyDecorations(result.reply) }); } catch {}
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
@@ -3199,6 +3248,16 @@ function restoreChatHistory() {
             m.emoji = fallbackIcon || null;
             migrated++;
           }
+          // v3.2.69: one-shot strip — clean any legacy
+          // tool-warning lines from old chat history. New
+          // messages are stripped at addChatMsg entry, so
+          // only old persisted entries need cleanup here.
+          if (m && m.type === 'agent' && typeof m.text === 'string') {
+            const cleaned = stripAgentReplyDecorations(m.text);
+            if (cleaned !== m.text) {
+              m.text = cleaned;
+            }
+          }
         }
       }
       if (migrated > 0) {
@@ -3225,6 +3284,20 @@ function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
+  }
+
+  // v3.2.69: strip quest tags and tool-warning lines from
+  // agent replies before persisting or broadcasting. The
+  // pipeline call sites already strip before calling us,
+  // but tail-routed messages (Discord, OpenClaw tail
+  // broadcaster) don't go through the same code path —
+  // strip here so persisted history and the mobile
+  // broadcast also get cleaned. Tobe 2026-08-05 11:38:
+  // 'this edit fail warning shows up sometimes, even
+  // here in discord'. User replies and tool errors are
+  // passed through unchanged.
+  if (type === 'agent') {
+    text = stripAgentReplyDecorations(text || '');
   }
 
   // Resolve the agent id for per-companion bucketing
@@ -5568,7 +5641,7 @@ try {
     // migration of the localStorage data.
     const recentMessages = chatHistory.slice(-50).map(m => ({
       ...m,
-      text: typeof m.text === 'string' ? stripQuestTags(m.text) : m.text,
+      text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
     }));
     console.log('[App] Mobile requesting chat history, sending', recentMessages.length, 'messages');
     ipcRenderer.invoke('sync-send-chat-history', { messages: recentMessages })
@@ -5621,7 +5694,7 @@ try {
     // when each message was created. Idempotent on
     // already-stripped text.
     const hist = raw.map((m) => ({
-      text: typeof m.text === 'string' ? stripQuestTags(m.text) : m.text,
+      text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
       isUser: m.type === 'user',
       agentId: m.name || agentId,
       agentName: m.name || null,
@@ -6465,7 +6538,7 @@ window.sendChat = async function() {
       if (result.ok) {
         const leader = agents[mainAgentId];
         // v3.1.96: strip the desktop's 🤖 default before sending.
-        addChatMsg('agent', stripQuestTags(result.reply), leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
+        addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
         // Check for quest creation command
         if (result.reply) {
           var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
