@@ -478,13 +478,6 @@ class SyncServer extends EventEmitter {
         // placeTreatOnArena() in src/js/app.js:4905, which
         // calls promptCompanionReaction('I just gave you X.
         // What do you think?') right after dropping the treat.
-        // v3.2.72: diagnostic log so we can confirm the
-        // mobile-to-desktop treat handoff actually arrives.
-        // Tobe 2026-08-05 12:18 saw another dropped
-        // hamburger with no chat reaction — adding this to
-        // figure out whether the message reached the
-        // desktop at all.
-        console.log(`[SyncServer] arena_treat_placed from ${client.name}: treat=${msg.treat}`);
         if (!client.authenticated) return;
         if (this.onArenaTreatPlaced) {
           this.onArenaTreatPlaced(msg.treat || 'apple', {
@@ -500,8 +493,6 @@ class SyncServer extends EventEmitter {
         // promptCompanionEat() callback for local eats; this
         // path is the mobile mirror so the chat log shows the
         // same reaction when the mobile arena's companion eats.
-        // v3.2.72: diagnostic log (see arena_treat_placed).
-        console.log(`[SyncServer] arena_treat_eaten from ${client.name}: treat=${msg.treat}`);
         if (!client.authenticated) return;
         if (this.onArenaTreatEaten) {
           this.onArenaTreatEaten(msg.treat || 'apple', {
