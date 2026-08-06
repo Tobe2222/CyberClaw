@@ -6019,7 +6019,6 @@ try {
       const name = TREAT_NAMES[t] || t;
       const category = TREAT_CATEGORIES[t] || 'item';
       console.log('[mobile-treat] placed:', t, meta?.companionId ? `(near ${meta.companionId})` : '');
-      console.log('[mobile-treat] placed raw payload: treat=' + treat + ' meta=' + JSON.stringify(meta));
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
       // Memory append (deterministic, cross-session).
       // v3.2.79: if the arena told us which companion
@@ -6028,21 +6027,37 @@ try {
       const memoryAgentId = (meta && meta.companionId && agents[meta.companionId])
         ? meta.companionId
         : (activeChatAgentId || (agentOrder[0] || null));
-      if (memoryAgentId && cyberclaw?.companions?.rememberMemory) {
-        cyberclaw.companions.rememberMemory(
+      // whether memoryAgentId is being computed
+      // correctly and whether rememberMemory exists.
+      if (memoryAgentId && cyberclaw?.agents?.rememberMemory) {
+        cyberclaw.agents.rememberMemory(
           memoryAgentId,
           `Tobe gave me ${name} (${category})`
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
       }
-      // Visible chat reaction so the snack lands in
-      // the LLM's running context. v3.2.79: pass
-      // meta.companionId so the right companion
-      // responds (the one the food was dropped near),
-      // not the activeChatAgentId fallback.
-      promptCompanionReaction(
-        'I just gave you ' + name + '. What do you think?',
-        meta?.companionId,
-      );
+      // v3.2.82: skip the placed chat reaction. The
+      // placed+eat pair was producing two consecutive
+      // companion messages per drop, which Tobe
+      // flagged on 2026-08-06 13:19 as "hes commenting
+      // twice now, we dont want that". The eaten
+      // reaction ("I just ate X") is the natural
+      // companion voice and always fires when a
+      // companion actually consumes the food; dropping
+      // the placed one keeps a single, more natural
+      // message per treat. Memory.md still gets the
+      // "Tobe gave me X" fact above for cross-session
+      // recall — that's the deterministic half, which
+      // doesn't depend on the LLM producing a chat
+      // bubble.
+      //
+      // Edge case: a treat dropped out of range of any
+      // companion gets NO chat reaction now. Acceptable
+      // tradeoff — it was previously producing a
+      // user-prompt-flavored comment that felt weird
+      // ("I just gave you X, what do you think?" is
+      // a question to the companion, not a reaction).
+      // If the user drops food and no companion eats,
+      // the silence is honest.
     } catch (err) {
       console.warn('[mobile-treat] placed failed:', err?.message);
     }
@@ -6066,8 +6081,8 @@ try {
       const memoryAgentId = (meta && meta.companionId && agents[meta.companionId])
         ? meta.companionId
         : (activeChatAgentId || (agentOrder[0] || null));
-      if (memoryAgentId && cyberclaw?.companions?.rememberMemory) {
-        cyberclaw.companions.rememberMemory(
+      if (memoryAgentId && cyberclaw?.agents?.rememberMemory) {
+        cyberclaw.agents.rememberMemory(
           memoryAgentId,
           `I ate ${name} (${category})`
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
@@ -6965,8 +6980,8 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
   // Memory.md direct append (deterministic, independent
   // of chat state). Survives session resets; for any
   // future conversation that reads memory.md.
-  if (agentId && cyberclaw?.companions?.rememberMemory) {
-    cyberclaw.companions.rememberMemory(
+  if (agentId && cyberclaw?.agents?.rememberMemory) {
+    cyberclaw.agents.rememberMemory(
       agentId,
       `Tobe gave me ${itemName} (${category})`
     ).catch(e => console.warn('[placeTreatOnArena] memory append failed:', e?.message));
@@ -6991,8 +7006,8 @@ window.promptCompanionEat = function(treatType) {
   const name = TREAT_NAMES[treatType] || 'a treat';
   const category = TREAT_CATEGORIES[treatType] || 'item';
   const agentId = activeChatAgentId || (agentOrder[0] || null);
-  if (agentId && cyberclaw?.companions?.rememberMemory) {
-    cyberclaw.companions.rememberMemory(
+  if (agentId && cyberclaw?.agents?.rememberMemory) {
+    cyberclaw.agents.rememberMemory(
       agentId,
       `I ate ${name} (${category})`
     ).catch(e => console.warn('[promptCompanionEat] memory append failed:', e?.message));
@@ -7089,17 +7104,15 @@ function promptCompanionReaction(promptText, targetAgentId) {
     || activeChatAgentId
     || (agentOrder.find(id => !hiddenCompanions.has(id)))
     || agentOrder[0];
-  // v3.2.79-dx: diagnostic log for the mobile-treat
-  // path. Tobe 2026-08-06 11:21: "He did not chat
-  // anything. But he does do the emojis in the arena
-  // when he eats, so it is tracked, its just that the
-  // companion seems unaware."
-  console.log('[promptCompanionReaction] targetId=', targetId,
-    'hasAgent=', !!(targetId && agents[targetId]),
-    'sleepState=', targetId && agents[targetId] ? agents[targetId].sleepState : 'n/a',
-    'chat=', !!(cyberclaw && cyberclaw.chat && cyberclaw.chat.sendMessage),
-    'targetAgentId=', targetAgentId,
-    'activeChatAgentId=', activeChatAgentId);
+  // (Diagnostic log removed in v3.2.82 — verified
+  // working as of v3.2.80. Kept here as a one-liner
+  // for any future regressions: uncomment to re-enable.)
+  // console.log('[promptCompanionReaction] targetId=', targetId,
+  //   'hasAgent=', !!(targetId && agents[targetId]),
+  //   'sleepState=', targetId && agents[targetId] ? agents[targetId].sleepState : 'n/a',
+  //   'chat=', !!(cyberclaw && cyberclaw.chat && cyberclaw.chat.sendMessage),
+  //   'targetAgentId=', targetAgentId,
+  //   'activeChatAgentId=', activeChatAgentId);
   if (!targetId) return;
   const target = agents[targetId];
   if (!target) return;
@@ -7150,7 +7163,7 @@ function promptCompanionReaction(promptText, targetAgentId) {
 // desktop's chat history, and does NOT show an arena
 // bubble. The reply is parsed for [REMEMBER: text="..."]
 // tags which are routed to memory.md via
-// cyberclaw.companions.rememberMemory. Any text the LLM
+// cyberclaw.agents.rememberMemory. Any text the LLM
 // emits around the tags is silently discarded.
 //
 // Tobe 2026-08-04 21:16: "We should log snacks by the
@@ -7194,8 +7207,8 @@ function promptCompanionSilent(agentId, fact, mood) {
 
   // Direct append first (deterministic), then fire the
   // LLM round-trip to enrich.
-  if (cyberclaw && cyberclaw.companions && cyberclaw.companions.rememberMemory) {
-    cyberclaw.companions.rememberMemory(agentId, fact).catch(function(e) {
+  if (cyberclaw && cyberclaw.agents && cyberclaw.agents.rememberMemory) {
+    cyberclaw.agents.rememberMemory(agentId, fact).catch(function(e) {
       console.warn('[promptCompanionSilent] direct memory append failed:', e?.message);
     });
   }
@@ -7214,7 +7227,7 @@ function promptCompanionSilent(agentId, fact, mood) {
     const tags = extractRememberTags(result.reply);
     if (!tags.length) return;
     for (const t of tags) {
-      cyberclaw.companions.rememberMemory(agentId, t).catch(function(e) {
+      cyberclaw.agents.rememberMemory(agentId, t).catch(function(e) {
         console.warn('[promptCompanionSilent] LLM-emitted REMEMBER append failed:', e?.message);
       });
     }
