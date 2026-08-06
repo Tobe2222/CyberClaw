@@ -6019,6 +6019,7 @@ try {
       const name = TREAT_NAMES[t] || t;
       const category = TREAT_CATEGORIES[t] || 'item';
       console.log('[mobile-treat] placed:', t, meta?.companionId ? `(near ${meta.companionId})` : '');
+      console.log('[mobile-treat] placed raw payload: treat=' + treat + ' meta=' + JSON.stringify(meta));
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
       // Memory append (deterministic, cross-session).
       // v3.2.79: if the arena told us which companion
@@ -7070,10 +7071,35 @@ var reactionBusy = false;
 function promptCompanionReaction(promptText, targetAgentId) {
   // Prefer the explicit target (mobile-arena-eaten), then
   // the active chat tab, then the first visible agent.
-  const targetId = (targetAgentId && agents[targetAgentId])
+  //
+  // v3.2.80: MUST yield the agent ID string, not the
+  // agent object. The v3.2.79 code was:
+  //   const targetId = (targetAgentId && agents[targetAgentId]) || ...
+  // which returned the agent OBJECT when the lookup
+  // matched, then later `agents[targetId]` became
+  // `agents[<object>]` = `agents["[object Object]"]` =
+  // undefined, and the function bailed with
+  // `if (!target) return;`. Tobe 2026-08-06 11:34
+  // hit this: every treat event triggered the
+  // [promptCompanionReaction] diagnostic with
+  // `targetId= [object Object] hasAgent= false` and
+  // no chat reaction fired. Fix: re-yield the id
+  // string after the truthy check passes.
+  const targetId = (targetAgentId && agents[targetAgentId] ? targetAgentId : null)
     || activeChatAgentId
     || (agentOrder.find(id => !hiddenCompanions.has(id)))
     || agentOrder[0];
+  // v3.2.79-dx: diagnostic log for the mobile-treat
+  // path. Tobe 2026-08-06 11:21: "He did not chat
+  // anything. But he does do the emojis in the arena
+  // when he eats, so it is tracked, its just that the
+  // companion seems unaware."
+  console.log('[promptCompanionReaction] targetId=', targetId,
+    'hasAgent=', !!(targetId && agents[targetId]),
+    'sleepState=', targetId && agents[targetId] ? agents[targetId].sleepState : 'n/a',
+    'chat=', !!(cyberclaw && cyberclaw.chat && cyberclaw.chat.sendMessage),
+    'targetAgentId=', targetAgentId,
+    'activeChatAgentId=', activeChatAgentId);
   if (!targetId) return;
   const target = agents[targetId];
   if (!target) return;
