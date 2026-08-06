@@ -3229,8 +3229,18 @@ app.whenReady().then(() => {
       }
     },
     onVoiceTranscript: (transcript, context, meta) => {
+      // v3.2.78: strip the non-serializable `ws` from
+      // meta before IPC. Same fix as the arena_treat
+      // handlers below — Electron's structured-clone
+      // can't serialize a WebSocket instance. Defensive
+      // here even though we haven't seen this path
+      // fail yet, because it would be silent and the
+      // mobile-voice handler is just as critical.
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mobile-voice', { transcript, context, meta });
+        const { ws: _ws, ...serializableMeta } = meta || {};
+        mainWindow.webContents.send('mobile-voice', {
+          transcript, context, meta: serializableMeta,
+        });
       }
     },
     onMobileWakeAgent: (agentId, meta) => {
@@ -3278,9 +3288,26 @@ app.whenReady().then(() => {
       // the AI text reply matches the visual reaction.
       // Mirrors the desktop's placeTreatOnArena() in
       // src/js/app.js:4905.
+      // v3.2.78: strip the non-serializable `ws`
+      // WebSocket from meta before crossing the IPC
+      // boundary. Same pattern as the mobile-chat
+      // handler (line ~3206) — destructures
+      // `const { ws: _ws, ...serializableMeta }`.
+      // Without this, mainWindow.webContents.send
+      // throws "Error: Failed to serialize arguments"
+      // (Electron's structured-clone can't serialize
+      // a ws.WebSocket instance), the IPC silently
+      // fails to reach the renderer, and
+      // promptCompanionReaction never runs. Tobe
+      // 2026-08-06 hit this immediately after the
+      // v3.2.77 fix landed (which finally wired the
+      // callbacks) — every treat_placed/treat_eaten
+      // was logged arriving at sync-server, every
+      // IPC send failed, no companion reacted.
       if (mainWindow && !mainWindow.isDestroyed()) {
+        const { ws: _ws, ...serializableMeta } = meta || {};
         mainWindow.webContents.send('mobile-arena-treat-placed', {
-          treat, meta,
+          treat, meta: serializableMeta,
         });
       }
     },
@@ -3289,9 +3316,12 @@ app.whenReady().then(() => {
       // mobile arena's seek-and-eat logic). Forward to
       // the renderer for the same reaction as the
       // desktop's promptCompanionEat() callback.
+      // v3.2.78: strip the non-serializable `ws` from
+      // meta — same fix as onArenaTreatPlaced above.
       if (mainWindow && !mainWindow.isDestroyed()) {
+        const { ws: _ws, ...serializableMeta } = meta || {};
         mainWindow.webContents.send('mobile-arena-treat-eaten', {
-          treat, meta,
+          treat, meta: serializableMeta,
         });
       }
     },

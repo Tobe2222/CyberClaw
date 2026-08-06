@@ -51,6 +51,36 @@ class SyncServer extends EventEmitter {
     // them because this option wasn't initialized.
     this.onAttachment = options.onAttachment || null;
 
+    // v3.2.77: wire the four missing mobile-side callbacks
+    // (onMobileWakeAgent, onMobileActivityPing,
+    // onArenaTreatPlaced, onArenaTreatEaten) onto `this`.
+    // They were added to the case-dispatch in _handleMessage
+    // (v3.2.12, v3.2.15, v3.2.24) but the constructor
+    // never copied them from options — the `if (this.onX)`
+    // guards at the dispatch site were therefore always
+    // false, so the callbacks silently no-op'd.
+    //
+    // Symptom: Tobe 2026-08-06: "clawsuu still cant
+    // recognize that he has been feeded. It does appear in
+    // the log tho." The sync-server logs the inbound
+    // arena_treat_placed message (v3.2.76 per-message
+    // log) but the renderer's mobile-arena-treat-placed
+    // IPC handler never fires because main.js's
+    // onArenaTreatPlaced is never called. Same root
+    // cause for mobile_wake_agent and mobile_activity_ping
+    // — those handlers also never reached the renderer.
+    //
+    // Lesson (same class as v3.10.79): whenever you add
+    // a `this.onXyz` reference in _handleMessage, also
+    // add `this.onXyz = options.onXyz || null;` in the
+    // constructor. The `if (this.onXyz)` guard silently
+    // masks the missing wiring — there's no error, no
+    // log, just a no-op.
+    this.onMobileWakeAgent = options.onMobileWakeAgent || null;
+    this.onMobileActivityPing = options.onMobileActivityPing || null;
+    this.onArenaTreatPlaced = options.onArenaTreatPlaced || null;
+    this.onArenaTreatEaten = options.onArenaTreatEaten || null;
+
     // v3.10.79: quest-related callbacks. v3.1.51 added
     // 5 inbound WebSocket message types (update_quest,
     // delete_quest, create_quest, set_quest_active,
@@ -490,11 +520,20 @@ class SyncServer extends EventEmitter {
         // placeTreatOnArena() in src/js/app.js:4905, which
         // calls promptCompanionReaction('I just gave you X.
         // What do you think?') right after dropping the treat.
+        // v3.2.79: forward `companionId` (which sprite the
+        // food was dropped near) so the renderer can route
+        // the chat reaction to that specific companion, not
+        // the activeChatAgentId fallback. Tobe 2026-08-06:
+        // "track which companion that actually eats the food
+        // and make it comment it". Mobile v3.10.138 added
+        // the companionId to the treat_placed/treat_eaten
+        // arena events.
         if (!client.authenticated) return;
         if (this.onArenaTreatPlaced) {
           this.onArenaTreatPlaced(msg.treat || 'apple', {
             ws,
             deviceName: client.name,
+            ...(msg.companionId ? { companionId: msg.companionId } : {}),
           });
         }
         break;
@@ -505,11 +544,14 @@ class SyncServer extends EventEmitter {
         // promptCompanionEat() callback for local eats; this
         // path is the mobile mirror so the chat log shows the
         // same reaction when the mobile arena's companion eats.
+        // v3.2.79: forward `companionId` (the eater's id)
+        // same as arena_treat_placed above.
         if (!client.authenticated) return;
         if (this.onArenaTreatEaten) {
           this.onArenaTreatEaten(msg.treat || 'apple', {
             ws,
             deviceName: client.name,
+            ...(msg.companionId ? { companionId: msg.companionId } : {}),
           });
         }
         break;

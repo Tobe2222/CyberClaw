@@ -6018,20 +6018,30 @@ try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
       const name = TREAT_NAMES[t] || t;
       const category = TREAT_CATEGORIES[t] || 'item';
-      console.log('[mobile-treat] placed:', t);
+      console.log('[mobile-treat] placed:', t, meta?.companionId ? `(near ${meta.companionId})` : '');
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
       // Memory append (deterministic, cross-session).
-      const agentId = activeChatAgentId || (agentOrder[0] || null);
-      if (agentId && cyberclaw?.companions?.rememberMemory) {
+      // v3.2.79: if the arena told us which companion
+      // the food was dropped near, attribute the memory
+      // to THAT companion (matches the chat reaction).
+      const memoryAgentId = (meta && meta.companionId && agents[meta.companionId])
+        ? meta.companionId
+        : (activeChatAgentId || (agentOrder[0] || null));
+      if (memoryAgentId && cyberclaw?.companions?.rememberMemory) {
         cyberclaw.companions.rememberMemory(
-          agentId,
+          memoryAgentId,
           `Tobe gave me ${name} (${category})`
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
       }
       // Visible chat reaction so the snack lands in
-      // the LLM's running context. Same path the
-      // desktop-side placeTreatOnArena uses now.
-      promptCompanionReaction('I just gave you ' + name + '. What do you think?');
+      // the LLM's running context. v3.2.79: pass
+      // meta.companionId so the right companion
+      // responds (the one the food was dropped near),
+      // not the activeChatAgentId fallback.
+      promptCompanionReaction(
+        'I just gave you ' + name + '. What do you think?',
+        meta?.companionId,
+      );
     } catch (err) {
       console.warn('[mobile-treat] placed failed:', err?.message);
     }
@@ -6042,21 +6052,29 @@ try {
   // placed handler above — memory append + visible
   // reaction. Reversing v3.10.74's "no reaction"
   // decision for the same reason.
+  // v3.2.79: pass meta.companionId (the eater's id) to
+  // promptCompanionReaction + the memory append, so the
+  // reaction lands in the correct companion's chat.
   ipcRenderer.on('mobile-arena-treat-eaten', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
       const name = TREAT_NAMES[t] || t;
       const category = TREAT_CATEGORIES[t] || 'item';
-      console.log('[mobile-treat] eaten:', t);
+      console.log('[mobile-treat] eaten:', t, meta?.companionId ? `(by ${meta.companionId})` : '');
       window.addDesktopLog?.('😋', 'Companion ate', t, 'info');
-      const agentId = activeChatAgentId || (agentOrder[0] || null);
-      if (agentId && cyberclaw?.companions?.rememberMemory) {
+      const memoryAgentId = (meta && meta.companionId && agents[meta.companionId])
+        ? meta.companionId
+        : (activeChatAgentId || (agentOrder[0] || null));
+      if (memoryAgentId && cyberclaw?.companions?.rememberMemory) {
         cyberclaw.companions.rememberMemory(
-          agentId,
+          memoryAgentId,
           `I ate ${name} (${category})`
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
       }
-      promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
+      promptCompanionReaction(
+        'I just ate ' + name + '. Give a short happy reaction about how it tasted.',
+        meta?.companionId,
+      );
     } catch (err) {
       console.warn('[mobile-treat] eaten failed:', err?.message);
     }
@@ -7040,9 +7058,20 @@ setTimeout(setupArenaDrop, 3000);
 
 // Prompt the companion and show response in both chat + bubble
 var reactionBusy = false;
-function promptCompanionReaction(promptText) {
-  // Skip if the active companion is sleeping (manual sleep toggle)
-  const targetId = activeChatAgentId
+// v3.2.79: optional `targetAgentId` argument. When set,
+// routes the reaction to that specific companion (e.g.
+// the one that ate the snack) instead of falling back to
+// the activeChatAgentId default. Falls back gracefully if
+// the target is hidden / sleeping / unknown. Tobe
+// 2026-08-06: "track which companion that actually eats
+// the food and make it comment it" — the previous
+// behavior always replied as whichever chat tab was
+// active, regardless of which sprite actually ate.
+function promptCompanionReaction(promptText, targetAgentId) {
+  // Prefer the explicit target (mobile-arena-eaten), then
+  // the active chat tab, then the first visible agent.
+  const targetId = (targetAgentId && agents[targetAgentId])
+    || activeChatAgentId
     || (agentOrder.find(id => !hiddenCompanions.has(id)))
     || agentOrder[0];
   if (!targetId) return;
