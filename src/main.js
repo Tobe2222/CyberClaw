@@ -211,7 +211,35 @@ const LLM_ENDPOINTS_FILE = path.join(CYBERCLAW_DIR, 'llm-endpoints.json');
 
 // Companion stats persistence (skills, XP, levels)
 function loadStats() {
-  try { return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return {}; }
+  let stats;
+  try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return {}; }
+  // v3.2.84: migrate legacy skill names. v3.2.84 renamed
+  // "Coding" → "Building" (and dropped a few overly-broad
+  // keywords). Existing saved stats from earlier versions
+  // still have entries under the old name; without this
+  // migration the renderer would show them at "level 1,
+  // 0 XP" forever (since it now looks up the new name).
+  //
+  // Map is small and stable. If we add more renames later,
+  // append here. Removal of a name (no migration target)
+  // just drops the entry — its XP is forfeit. Not great
+  // but acceptable; alternative is to keep the old names
+  // in the renderer too, which is worse for clarity.
+  const SKILL_RENAMES = { Coding: 'Building' };
+  let mutated = false;
+  for (const agentId of Object.keys(stats)) {
+    const agent = stats[agentId];
+    if (!agent || !agent.skills) continue;
+    for (const [oldName, newName] of Object.entries(SKILL_RENAMES)) {
+      if (agent.skills[oldName] && !agent.skills[newName]) {
+        agent.skills[newName] = agent.skills[oldName];
+        delete agent.skills[oldName];
+        mutated = true;
+      }
+    }
+  }
+  if (mutated) saveStats(stats);
+  return stats;
 }
 function saveStats(stats) {
   fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
@@ -1146,7 +1174,9 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     }
     if (reply && reply.trim()) {
       const result = { ok: true, reply: reply.trim() };
-      result.taskSkill = classifyTask(message);
+      // v3.2.84: pass reply through so classifyTask can compare user
+      // message vs. assistant reply and pick the more specific match.
+      result.taskSkill = classifyTask(message, reply.trim());
       return result;
     }
     return { ok: false, error: 'No reply in HTTP response', output: JSON.stringify(json).slice(0, 300) };
@@ -1285,7 +1315,9 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
       });
     });
     if (result.ok) {
-      result.taskSkill = classifyTask(message);
+      // v3.2.84: pass reply through so classifyTask can compare user
+      // message vs. assistant reply and pick the more specific match.
+      result.taskSkill = classifyTask(message, result.reply);
     }
     return result;
   } catch (err) {
@@ -1293,17 +1325,133 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   }
 }
 
-function classifyTask(message) {
-  const m = message.toLowerCase();
-  if (/\b(code|bug|fix|function|class|api|build|compile|deploy|git|commit|test|refactor|debug)\b/.test(m)) return 'Coding';
-  if (/\b(write|draft|edit|essay|article|blog|copy|summarize|rewrite|document)\b/.test(m)) return 'Writing';
-  if (/\b(design|css|layout|ui|ux|style|color|font|image|icon|logo)\b/.test(m)) return 'Design';
-  if (/\b(analyze|data|chart|graph|numbers|calculate|statistics|math)\b/.test(m)) return 'Analysis';
-  if (/\b(plan|strategy|project|manage|organize|schedule|prioritize|roadmap)\b/.test(m)) return 'Strategy';
-  if (/\b(search|find|research|look up|what is|how to|explain|learn)\b/.test(m)) return 'Research';
-  if (/\b(chat|talk|tell me|hello|hey|thanks|help|advice)\b/.test(m)) return 'Communication';
+// ---------------------------------------------------------------------------
+// Skill taxonomy (single source of truth — shared with renderer + mobile)
+// ---------------------------------------------------------------------------
+// v3.2.84: widened keyword lists + added "Building" rename for Coding,
+// added "Game" coverage of arena/quest/feed work. Order matters — the
+// FIRST match wins, so put more specific categories first.
+//
+// The renderer reads the same defs via a shared helper in app.js
+// (loadSkillDefs). Keep these in sync if you change them here.
+const SKILL_DEFS = [
+  { name: 'Building',     icon: '🔧', keywords: /\b(code|bug|fix|function|class|api|build|compile|deploy|git|commit|push|pull|merge|rebase|branch|test|refactor|debug|install|run|start|stop|restart|exec|shell|bash|terminal|cmd|command|npm|pnpm|yarn|pip|apt|brew|ssh|scp|rsync|server|host|port|docker|kube|cron|service|process|script|bin|lib|package|module|import|export|require|include|config|env|var|path|app|launch|rebuild|update|upgrade|setup|provision|configure|provision|init|initialize)\b/i },
+  { name: 'Writing',      icon: '✍️',  keywords: /\b(write|draft|essay|article|blog|post|story|copy|summarize|rewrite|document|readme|changelog|notes|message|email|letter|caption|headline|title|subject|paragraph|chapter|markdown|md|txt|text|script|dialogue|narration)\b/i },
+  { name: 'Design',       icon: '🎨', keywords: /\b(design|css|layout|ui|ux|style|color|colour|font|image|icon|logo|theme|skin|palette|pixel|sprite|art|draw|paint|render|visual|graphic|animation|gif|emoji|avatar|redesign|stylesheet)\b/i },
+  { name: 'Analysis',     icon: '📊', keywords: /\b(analy[sz]e|data|chart|graph|number|stat|metric|count|measure|calculat|math|equation|formula|log|trace|debug|dump|inspect|profile)\b/i },
+  { name: 'Strategy',     icon: '🗺️',  keywords: /\b(plan|strategy|project|manage|organi[sz]e|schedule|prioriti[sz]e|prioriti[sz]ed|roadmap|goal|milestone|setup|workflow|pipeline|process|backlog|sprint|todo|task)\b/i },
+  { name: 'Research',     icon: '🔍', keywords: /\b(search|find|research|look up|lookup|what is|what are|how to|how do|how does|why|when|where|who|which|explain|learn|read|check|fetch|lookup|discover|explore|browse|scan|review|version|latest|size|temperature|weather|forecast|price|stock|crypto|btc|eth)\b/i },
+  { name: 'Communication', icon: '💬', keywords: /\b(chat|talk|tell me|say|speak|hello|hey|hi|thanks|thank|please|sorry|help|advice|suggest|recommend|ask|ping|status|update|notify|alert|remind)\b/i },
+  { name: 'Game',         icon: '🎮', keywords: /\b(game|pixel|arena|sprite|quest|level|stats|skill|hp|mp|xp|treat|feed|play|move|attack|defend|spawn|battle|fight|win|lose|score|reward)\b/i },
+  // 'General' is the fallback, no keywords needed
+];
+
+function classifyText(text) {
+  if (!text) return 'General';
+  for (const def of SKILL_DEFS) {
+    if (def.keywords && def.keywords.test(text)) return def.name;
+  }
   return 'General';
 }
+
+// v3.2.84: dual-classify — match BOTH the user's message AND the
+// assistant's reply, pick whichever match is more specific (earlier in
+// SKILL_DEFS = more specific). Returns just the skill name; the XP
+// amount is decided in the renderer.
+function classifyTask(userMessage, assistantReply) {
+  const userSkill = classifyText(userMessage);
+  const replySkill = assistantReply ? classifyText(assistantReply) : 'General';
+  // Same match on both sides → return it.
+  if (userSkill === replySkill) return userSkill;
+  // If only one side matched, that wins (the other side was 'General'
+  // = no signal). This is the common case for short replies like
+  // "thanks!" or "done!" where the user's message carries the skill.
+  if (userSkill !== 'General' && replySkill === 'General') return userSkill;
+  if (replySkill !== 'General' && userSkill === 'General') return replySkill;
+  // Both sides matched something different — pick the more specific
+  // (earlier in SKILL_DEFS = higher index of specificity).
+  const userIdx = SKILL_DEFS.findIndex(d => d.name === userSkill);
+  const replyIdx = SKILL_DEFS.findIndex(d => d.name === replySkill);
+  return (userIdx <= replyIdx) ? userSkill : replySkill;
+}
+
+// ---------------------------------------------------------------------------
+// v3.2.83: screenshot IPC. Lets the renderer (clawsuu, in
+// response to a Tobe chat message) capture the desktop or
+// a specific window and get back a file path + dataUri
+// for embedding in the chat bubble.
+//
+// target values:
+//   'cyberclaw' — mainWindow (the Electron app window
+//                 itself). Uses webContents.capturePage()
+//                 for a pixel-perfect render of the
+//                 running app.
+//   'desktop'   — full DISPLAY=:0 root. Shells out to
+//                 `import` (ImageMagick) which is the
+//                 reliable way to capture X11/Wayland
+//                 from a Node process (capturePage only
+//                 captures the Electron window).
+//   'window'    — capture a specific X11 window by name.
+//                 Default name is 'CyberClaw'. The render
+//                 can pass `windowName` to override.
+//
+// Returns: { ok, filePath, dataUri, target, width, height }
+//   filePath — absolute path on disk under /tmp
+//   dataUri  — base64 data URI (data:image/png;base64,...)
+//             so the renderer can drop it straight into
+//             an <img> without a separate fetch.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('screenshot:capture', async (event, { target = 'cyberclaw', windowName } = {}) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { execFile } = require('child_process');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const outPath = `/tmp/clawsuu-shot-${stamp}.png`;
+    let width = 0, height = 0;
+
+    let buf;
+    if (target === 'cyberclaw') {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, error: 'mainWindow not available' };
+      }
+      const img = await mainWindow.webContents.capturePage();
+      buf = img.toPNG();
+      const size = img.getSize();
+      width = size.width; height = size.height;
+    } else if (target === 'desktop') {
+      // Full root window capture.
+      const env = { ...process.env, DISPLAY: ':0', XAUTHORITY: '/run/user/1000/gdm/Xauthority' };
+      await new Promise((res, rej) => execFile('import', ['-window', 'root', outPath], { env }, (e) => e ? rej(e) : res()));
+      buf = fs.readFileSync(outPath);
+      width = 5680; height = 1920; // approx for the dual-monitor host; exact size comes from identify() if needed
+    } else if (target === 'window') {
+      // Capture a specific X11 window by name.
+      const winName = windowName || 'CyberClaw';
+      const env = { ...process.env, DISPLAY: ':0', XAUTHORITY: '/run/user/1000/gdm/Xauthority' };
+      await new Promise((res, rej) => execFile('import', ['-window', winName, outPath], { env }, (e) => e ? rej(e) : res()));
+      buf = fs.readFileSync(outPath);
+      // Best-effort size from identify if available; falls through silently if not.
+      try {
+        const { execFileSync } = require('child_process');
+        const out = execFileSync('identify', ['-format', '%w %h', outPath]).toString().trim();
+        const [w, h] = out.split(/\s+/).map(Number);
+        if (Number.isFinite(w) && Number.isFinite(h)) { width = w; height = h; }
+      } catch { /* identify not present or failed — leave size 0 */ }
+    } else {
+      return { ok: false, error: `unknown target: ${target}` };
+    }
+
+    fs.writeFileSync(outPath, buf);
+    const dataUri = `data:image/png;base64,${buf.toString('base64')}`;
+    console.log(`[screenshot] captured target=${target} path=${outPath} bytes=${buf.length} ${width}x${height}`);
+    return { ok: true, filePath: outPath, dataUri, target, width, height };
+  } catch (err) {
+    console.error('[screenshot] failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Doctor — opens in a new terminal window

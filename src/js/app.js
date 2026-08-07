@@ -206,6 +206,26 @@ function defaultStats(rarity) {
 // Skills detection (from workspace skills availability)
 const defaultSkills = ['Coding Agent', 'Weather', 'Healthcheck', 'Skill Creator'];
 
+// v3.2.84: skill taxonomy — single source of truth for the renderer.
+// Mirrors SKILL_DEFS in main.js (classifyTask). The main process
+// owns the keyword lists because that's where classification happens;
+// the renderer reads the names + icons to render the inspect panel
+// + ship the same defs to the mobile broadcast.
+//
+// If you change SKILL_DEFS in main.js, mirror the changes here so the
+// renderer doesn't render a category that has no data, and vice versa.
+const SKILL_DEFS = [
+  { name: 'Building',     icon: '🔧' },
+  { name: 'Writing',      icon: '✍️'  },
+  { name: 'Design',       icon: '🎨' },
+  { name: 'Analysis',     icon: '📊' },
+  { name: 'Strategy',     icon: '🗺️'  },
+  { name: 'Research',     icon: '🔍' },
+  { name: 'Communication', icon: '💬' },
+  { name: 'Game',         icon: '🎮' },
+  { name: 'General',      icon: '✨' },
+];
+
 async function loadAgents() {
   try {
     const result = await cyberclaw.agents.discover();
@@ -588,6 +608,15 @@ async function broadcastAgentsListToMobile() {
         // this so the user sees the same selections the
         // desktop has, not defaults. Null if no config.
         spriteConfig: spriteConfig || null,
+        // v3.2.84: companion skill XP + levels (the same
+        // data the desktop inspect panel renders). Read
+        // from companion-stats.json via the existing
+        // `cyberclaw.agents.getStats` IPC. Shape:
+        //   { level, xp, xpTotal, skills: { <name>: { level, xp } } }
+        // Missing stats get the default { level: 1, xp: 0,
+        // xpTotal: 0, skills: {} } from main.js's
+        // `companion:stats` handler.
+        skills: await cyberclaw.agents.getStats(id).catch(() => ({ level: 1, xp: 0, xpTotal: 0, skills: {} })),
       };
     }))).filter(Boolean);
     if (mobileList.length > 0) {
@@ -1087,20 +1116,13 @@ function updateInspect(agentId) {
 
     // Skill list — all companions show their full skill set
     const skillsEl = document.getElementById('inspect-skills');
-    const allSkillDefs = [
-      { name: 'Coding', icon: '💻' },
-      { name: 'Writing', icon: '✍️' },
-      { name: 'Design', icon: '🎨' },
-      { name: 'Analysis', icon: '📊' },
-      { name: 'Strategy', icon: '🗺️' },
-      { name: 'Research', icon: '🔍' },
-      { name: 'Communication', icon: '💬' },
-      { name: 'Game', icon: '🎮' },
-      { name: 'General', icon: '✨' },
-    ];
-    
+    // v3.2.84: use the shared SKILL_DEFS so the renderer can't drift
+    // from main.js's classifier. Was 9 inline defs with a different
+    // "Coding" name + 💻 icon.
+    const allSkillDefs = SKILL_DEFS;
+
     const displaySkills = allSkillDefs;
-    
+
     const skills = stats.skills || {};
     if (displaySkills.length === 0) {
       skillsEl.innerHTML = '<div style="color:var(--text-muted);font-size:9px;padding:2px">No specializations assigned</div>';
@@ -2601,7 +2623,12 @@ window.sendChat = async function() {
       // v3.1.96: strip the desktop's 🤖 default so the mobile's
       // chat history doesn't get a stray robot next to every
       // message from agents without an explicit emoji.
-      addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      // v3.2.83: route through postAgentReplyWithScreenshots so
+      // [SCREENSHOT target=...] directives in the reply fire
+      // image bubbles (see app.js parseScreenshotDirectives).
+      const _leaderName = leader?.name || 'Companion';
+      const _leaderEmoji = (leader?.emoji === '🤖') ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
+      postAgentReplyWithScreenshots(result, _leaderName, _leaderEmoji);
 
       // Check for quest commands in the reply. v3.1.50: the agent
 // can read + edit quests via structured-output tags. Three new
@@ -2768,6 +2795,13 @@ window.sendChat = async function() {
         if (xpAgent) {
           addChatMsg('system', `⚔️ ${xpAgent.name} gained +${xpAmount} ${taskSkill} XP`);
         }
+        // v3.2.84: re-broadcast so the mobile Skills section
+        // sees the new XP without a manual refresh. Same path
+        // as chatty updates — broadcastAgentsListToMobile
+        // picks up the fresh getStats() in the next tick.
+        // Swallow errors: a failed broadcast should never
+        // break the chat reply.
+        try { broadcastAgentsListToMobile(); } catch (_) {}
       }
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
@@ -3103,7 +3137,11 @@ const __sendChatMessageImpl = async function(message, attachments) {
       const leader = agents[mainAgentId];
       // v3.1.96: see sibling site — strip the desktop's 🤖
       // default before sending.
-      addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader?.name || 'Companion', leader?.emoji === '🤖' ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId)));
+      // v3.2.83: route through postAgentReplyWithScreenshots
+      // so [SCREENSHOT] directives fire image bubbles.
+      const _leaderName = leader?.name || 'Companion';
+      const _leaderEmoji = (leader?.emoji === '🤖') ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
+      postAgentReplyWithScreenshots(result, _leaderName, _leaderEmoji);
       window.addDesktopLog?.('💬', 'AI responded', stripAgentReplyDecorations(result.reply).substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: stripAgentReplyDecorations(result.reply) }); } catch {}
@@ -3280,6 +3318,103 @@ function restoreChatHistory() {
   }
 }
 
+// v3.2.83: parse [SCREENSHOT target=...] directives out of
+// an agent's reply. Returns { cleanedText, directives } where:
+//   cleanedText — the reply with the directive lines removed
+//   directives  — array of { target, windowName } extracted
+//
+// Recognized shapes:
+//   [SCREENSHOT]                      → defaults to target=cyberclaw
+//   [SCREENSHOT target=desktop]
+//   [SCREENSHOT target=window windowName="Settings"]
+//   [SCREENSHOT target=cyberclaw]
+//
+// Tobe 2026-08-06 18:25: "can cyberclaw send that images in
+// the cyberclaw chat?". We use a text directive rather than
+// registering a real OpenClaw tool because (a) the LLM emits
+// directives it already understands in this codebase (see
+// [QUEST_*], [REMEMBER:*]), (b) it doesn't require touching
+// agent tools config, (c) the directive is just text the
+// renderer parses client-side — no round-trip through the
+// gateway for tool dispatch.
+//
+// Multi-shot: a single reply can contain multiple directives.
+// We strip ALL of them from the visible text and fire one
+// screenshot IPC per directive.
+function parseScreenshotDirectives(reply) {
+  const directives = [];
+  // Match [SCREENSHOT ...] on its own line. The regex allows
+  // for trailing whitespace + flexible whitespace inside.
+  const re = /\[SCREENSHOT([^\]]*)\]/gi;
+  let cleaned = reply;
+  let m;
+  while ((m = re.exec(reply)) !== null) {
+    const attrs = (m[1] || '').trim();
+    const dir = { target: 'cyberclaw', windowName: null };
+    if (attrs) {
+      const t = attrs.match(/target\s*=\s*"?([a-zA-Z]+)"?/i);
+      if (t) dir.target = t[1].toLowerCase();
+      const wn = attrs.match(/windowName\s*=\s*"([^"]+)"/i);
+      if (wn) dir.windowName = wn[1];
+    }
+    directives.push(dir);
+  }
+  // Strip the directive lines from the visible reply.
+  // Also strip the entire line containing the directive
+  // so we don't leave a dangling bracket artifact.
+  cleaned = cleaned
+    .split('\n')
+    .filter(line => !re.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')   // collapse extra blank lines
+    .trim();
+  return { cleanedText: cleaned, directives };
+}
+
+// v3.2.83: process an agent reply, strip screenshot
+// directives, render the cleaned text via addChatMsg, then
+// fire one screenshot IPC per directive and post each result
+// as an agent-image bubble. Replaces the call sites that
+// previously called `addChatMsg('agent', stripAgentReplyDecorations(result.reply), ...)`
+// directly.
+function postAgentReplyWithScreenshots(result, name, emoji) {
+  const baseReply = stripAgentReplyDecorations(result.reply || '');
+  const { cleanedText, directives } = parseScreenshotDirectives(baseReply);
+  // v3.2.83: also strip the directives before passing the
+  // text down to quest-tag parsing. The directive lines
+  // would otherwise be treated as decorations and possibly
+  // re-stripped (idempotent) or leak into the chat history
+  // if some other code path reads result.reply raw.
+  result.reply = cleanedText;
+  // Render the cleaned text as a regular agent bubble.
+  // We pass null emoji when the agent's emoji is the
+  // desktop default 🤖, mirroring the prior call sites.
+  const displayEmoji = (emoji && emoji !== '🤖') ? emoji : null;
+  addChatMsg('agent', cleanedText, name, displayEmoji);
+  // Fire one screenshot per directive.
+  for (const dir of directives) {
+    if (!cyberclaw?.screenshot) {
+      console.warn('[screenshot] directive parsed but cyberclaw.screenshot not exposed');
+      continue;
+    }
+    cyberclaw.screenshot(dir).then(res => {
+      if (!res || !res.ok) {
+        addChatMsg('error', `⚠️ Screenshot failed (${dir.target}): ${(res && res.error) || 'unknown error'}`, name, displayEmoji);
+        return;
+      }
+      addChatMsg('agent-image', {
+        dataUri: res.dataUri,
+        target: res.target,
+        width: res.width,
+        height: res.height,
+        filePath: res.filePath,
+      }, name, displayEmoji);
+    }).catch(err => {
+      addChatMsg('error', `⚠️ Screenshot error: ${err?.message || err}`, name, displayEmoji);
+    });
+  }
+}
+
 function addChatMsg(type, text, name, emoji) {
   // System messages go to the Events tab
   if (type === 'system') {
@@ -3430,6 +3565,38 @@ function addChatMsg(type, text, name, emoji) {
       break;
     case 'error':
       div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
+      break;
+    case 'agent-image':
+      // v3.2.83: image attachment bubble. Renders a thumbnail
+      // of a captured screenshot with click-to-expand. Used
+      // when the agent's reply contained a [SCREENSHOT
+      // target=...] directive and the screenshot IPC
+      // returned a dataUri. The bubble shows the image plus
+      // a small caption (target + capture timestamp).
+      //
+      // text: { dataUri, target, width, height, filePath }
+      // name: agent display name (e.g. "clawsuu")
+      // emoji: agent's sprite emoji
+      //
+      // The expand happens by replacing the thumbnail src
+      // with the full-resolution dataUri on click — no
+      // modal needed because the dataUri is already in
+      // memory and the image is bounded by the chat width
+      // (so "full size" means "max-width: 100%" which
+      // shows the original resolution).
+      const img = (text && text.dataUri) || '';
+      const meta = [];
+      if (text && text.target) meta.push(escHtml(text.target));
+      if (text && text.width && text.height) meta.push(`${text.width}×${text.height}`);
+      if (text && text.filePath) meta.push(escHtml(text.filePath.split('/').pop()));
+      div.innerHTML = `
+        <span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span>
+        <span class="msg-text">
+          <img class="chat-image-thumb" src="${img}" alt="${escHtml((text && text.target) || 'screenshot')}" loading="lazy"
+               style="display:block; max-width:480px; max-height:320px; border-radius:6px; margin-top:6px; cursor:zoom-in;"
+               onclick="if(this.style.maxWidth==='480px'){this.style.maxWidth='100%';this.style.maxHeight='none';this.style.cursor='zoom-out';}else{this.style.maxWidth='480px';this.style.maxHeight='320px';this.style.cursor='zoom-in';}" />
+          <span style="display:block; margin-top:4px; font-size:11px; opacity:0.6;">${meta.join(' · ')}</span>
+        </span>`;
       break;
   }
 
