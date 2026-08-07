@@ -5945,6 +5945,67 @@ try {
       const merged = Object.assign({}, existing, patch);
       // Persist via the same surface the desktop forge uses.
       await cyberclaw.agents.saveSpriteConfig(agentId, merged);
+      // v3.2.86: regenerate soul.md from the merged
+      // traits. Tobe's report (2026-08-07 20:20):
+      // "Behaviour traits effectively edits the
+      // behaviour md. it reset to default or
+      // something, removed the traits, remained a
+      // boar and chattiness to middle, which is
+      // not what i selected, and the behaviour md
+      // looks the same".
+      //
+      // The previous code only regenerated soul.md
+      // from traits during MIGRATION (when soul.md
+      // didn't exist yet). After that, editing
+      // traits via the mobile would update
+      // sprites.json but leave soul.md untouched —
+      // so the personality in chat didn't change,
+      // even though the UI showed the new traits.
+      //
+      // Now: if the patch includes traits (which
+      // it always does from the mobile), regenerate
+      // soul.md to match. We use the same TRAIT_TO_SOUL
+      // map that migrateAllSouls uses, so the
+      // generated soul matches what the user would
+      // see at first-migration time.
+      //
+      // Trade-off: this OVERWRITES any hand-edited
+      // soul.md content. We accept that because:
+      //   1. Tobe's mental model is "traits drive
+      //      behaviour" (his words, 2026-08-07).
+      //   2. The mobile edit screen doesn't have a
+      //      soul.md text editor — it ONLY edits
+      //      traits. So if the user wants to change
+      //      personality from the mobile, they MUST
+      //      use traits. Hand-edited soul.md is a
+      //      desktop-only path.
+      //   3. If we DON'T overwrite, the user's
+      //      mobile edits silently do nothing
+      //      (which is what Tobe just hit).
+      //
+      // Future: the desktop forge has a soul editor
+      // that bypasses this regeneration. Mobile
+      // trait changes are the only path that
+      // triggers soul.md regeneration. If both
+      // happen, the most recent wins (which is
+      // correct semantics).
+      if (Array.isArray(merged.traits) && merged.traits.length) {
+        try {
+          // eslint-disable-next-line global-require
+          const companionPrompts = require('./companion-prompts');
+          const traitSoulLines = merged.traits
+            .map((t: string) => companionPrompts.TRAIT_TO_SOUL?.[t])
+            .filter(Boolean);
+          if (traitSoulLines.length) {
+            const newSoul = `# ${merged.customName || agentId}\n\n` +
+              traitSoulLines.join(' ') + '\n';
+            companionPrompts.writeSoul(agentId, newSoul);
+            console.log('[mobile-sprite-config-saved] regenerated soul.md for', agentId, 'from', merged.traits.length, 'traits');
+          }
+        } catch (e) {
+          console.warn('[mobile-sprite-config-saved] soul.md regen failed:', e?.message);
+        }
+      }
       // Mirror onto the in-memory agent so the local UI
       // reflects the change immediately.
       const a = agents[agentId];
