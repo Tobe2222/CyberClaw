@@ -5994,7 +5994,7 @@ try {
           // eslint-disable-next-line global-require
           const companionPrompts = require('./companion-prompts');
           const traitSoulLines = merged.traits
-            .map((t: string) => companionPrompts.TRAIT_TO_SOUL?.[t])
+            .map((t) => companionPrompts.TRAIT_TO_SOUL?.[t])
             .filter(Boolean);
           if (traitSoulLines.length) {
             const newSoul = `# ${merged.customName || agentId}\n\n` +
