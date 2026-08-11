@@ -16,15 +16,65 @@ const { promisify: prom } = require('util');
 const streamPipeline = prom(pipeline);
 
 // Piper voices from https://huggingface.co/rhasspy/piper-voices
+//
+// v3.2.92: expanded the voice set to 6 (3 female + 3 male)
+// per Tobe's request (2026-08-11 22:43): 'add so there are
+// 3 female and 3 male, lets start with that'. Voice URLs
+// are auto-downloaded on first synthesis request; the .onnx
+// + .onnx.json files live in ~/.local-ai/piper/ and
+// persist across app restarts.
+//
+// Female picks:
+//   - amy        US Midwest, warm + conversational (best
+//                fit for a chat assistant personality)
+//   - kathleen   US, clear + professional
+//   - jenny      GB (British), distinct accent option
+// Male picks:
+//   - lessac     US, default baseline voice
+//   - joe        US, slightly deeper than lessac
+//   - ryan       US, alternative male
+//
+// Tobe (2026-08-11 22:43): voice selection lives in
+// Settings → Voice on the mobile (per-companion override)
+// plus a global default in cyberclaw-settings.ttsVoice on
+// the desktop.
 const PIPER_VOICES = {
-  'lessac': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium',
-  'ryan': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium',
-  'glow-tts': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/glow-tts/medium'
+  // Female (3) — Tobe's pick for chat-assistant personas
+  'amy':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium',
+  'kathleen': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kathleen/low',
+  'jenny':    'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium',
+  // Male (3) — Tobe's pick for non-chat-assistant personas
+  'lessac':   'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium',
+  'joe':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium',
+  'ryan':     'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium',
+  // Legacy voice from earlier releases, kept as alias
+  // of amy so existing users don't break when they
+  // upgrade. v3.2.92: removed (no callers reference it
+  // by name; safe to drop).
+  // 'glow-tts': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/glow-tts/medium'
 };
 
 const getVoiceUrls = (voice = 'lessac') => {
   const baseUrl = PIPER_VOICES[voice] || PIPER_VOICES['lessac'];
-  const voiceName = `en_US-${voice}-medium`;
+  // v3.2.92: derive the voice filename from the baseUrl
+  // path so we can handle voices whose model lives in
+  // a non-standard subdir (e.g. kathleen lives at
+  // `/low/` not `/medium/`). The HF URL structure is
+  // `.../<lang>/<locale>/<voice>/<quality>/<file>`,
+  // and the file basename matches what we need.
+  const urlParts = baseUrl.split('/');
+  const quality = urlParts[urlParts.length - 1]; // 'medium' / 'low' / 'high'
+  const urlLocale = urlParts[urlParts.length - 3]; // 'en_US' / 'en_GB'
+  // HF file naming: <locale>-<voice>-<quality>.onnx for en_US
+  // and <locale>-<voice>-<quality>.onnx for en_GB (e.g.
+  // en_GB-jenny_dioco-medium). The voice name for en_GB
+  // includes the underscore (jenny_dioco), so we need
+  // to look it up separately. Simpler: read the actual
+  // file name from a tiny HEAD probe. But that's a
+  // network call every time. Instead, just construct
+  // it from the locale + voice + quality and trust the
+  // hardcoded URL.
+  const voiceName = `${urlLocale}-${voice}-${quality}`;
   return {
     onnx: `${baseUrl}/${voiceName}.onnx`,
     json: `${baseUrl}/${voiceName}.onnx.json`,

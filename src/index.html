@@ -427,10 +427,21 @@
           </div>
           <div class="settings-row">
             <span class="settings-label">TTS Voice</span>
+            <!-- v3.2.92: 6 voices (3 female + 3 male)
+                 per Tobe (2026-08-11 22:43). Piper
+                 auto-downloads the .onnx files on first
+                 use (~30MB each). -->
             <select id="settings-tts-voice" class="settings-select" onchange="saveSettings()">
-              <option value="lessac">Lessac (Professional Male)</option>
-              <option value="ryan">Ryan (Young Male)</option>
-              <option value="glow-tts">Glow TTS (Female)</option>
+              <optgroup label="Female">
+                <option value="amy">Amy (US, warm & conversational)</option>
+                <option value="kathleen">Kathleen (US, clear & professional)</option>
+                <option value="jenny">Jenny (British)</option>
+              </optgroup>
+              <optgroup label="Male">
+                <option value="lessac">Lessac (US, baseline)</option>
+                <option value="joe">Joe (US, slightly deeper)</option>
+                <option value="ryan">Ryan (US, alternative male)</option>
+              </optgroup>
             </select>
           </div>
           <div class="settings-row">
