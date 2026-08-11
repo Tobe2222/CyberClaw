@@ -47,6 +47,15 @@ const PIPER_VOICES = {
   'lessac':   'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium',
   'joe':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium',
   'ryan':     'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium',
+  // v3.2.93: sultry/warm voices. Tobe (2026-08-11 23:08):
+  // 'add the most sexy voices also, 1 of each.' Kristin
+  // is piper's go-to low-pitch breathy female; Sam is
+  // the smoothest warm-male option. Both picked on
+  // pitch + warmth + cadence, not name. kathleen is
+  // already a warm female but kristin sits lower and
+  // has more breathy delivery.
+  'kristin':  'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium',
+  'sam':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium',
   // Legacy voice from earlier releases, kept as alias
   // of amy so existing users don't break when they
   // upgrade. v3.2.92: removed (no callers reference it
