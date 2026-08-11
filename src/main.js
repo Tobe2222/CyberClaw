@@ -1672,6 +1672,21 @@ ipcMain.handle('quests:create', (event, quest) => {
   quest.latestChanges = [];
   // v3.2.59: same defaults for the per-quest conversation log.
   quest.conversationLog = [];
+  // v3.10.156: auto-derive a directory when none was
+  // supplied. Same logic as the WS path (onCreateQuest).
+  // The renderer can pass `defaultQuestDir` in the quest
+  // object to influence the auto-pick (it reads from
+  // localStorage.cyberclaw-settings.defaultQuestDir);
+  // otherwise we fall back to ~/quests/<safeName>.
+  // Tobe 2026-08-11: 'i think we just need to adjust such
+  // that it will be created in the defualt directory
+  // with the quest name, what the user inputted as quest
+  // name'.
+  if (!quest.directory || !quest.directory.trim()) {
+    const resolved = resolveQuestDirectory(quest.name, null, quest.defaultQuestDir);
+    console.log(`[quests:create] auto-derived directory for "${quest.name}": ${resolved}`);
+    quest.directory = resolved;
+  }
   quests.unshift(quest);
   // v3.2.61: scaffold the quest directory if one was
   // supplied. mkdir + write INSTRUCTIONS.md + write
@@ -1844,6 +1859,26 @@ function resolveExistingInstructionsPath(quest) {
 // the scaffold failing — a quest without scaffolded files
 // is still a valid quest, the writes just bounce through
 // the JSON-array fallback instead.
+// v3.10.156: auto-derive a directory for a new quest
+// when the caller didn't supply one. Returns a
+// filesystem-safe absolute path under either the caller's
+// default dir or ~/quests. Always returns a path so the
+// downstream scaffold never has to handle "no directory"
+// as a special case.
+function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
+  if (explicitDir && typeof explicitDir === 'string' && explicitDir.trim()) {
+    return explicitDir.trim();
+  }
+  const safeName = (name || 'unnamed-quest')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (callerDefaultDir && typeof callerDefaultDir === 'string' && callerDefaultDir.trim()) {
+    return path.join(callerDefaultDir.trim().replace(/\/+$/, ''), safeName);
+  }
+  return path.join(os.homedir(), 'quests', safeName);
+}
+
 function scaffoldQuestDirectory(quest) {
   if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
   try {
@@ -3763,11 +3798,31 @@ app.whenReady().then(() => {
       // v3.2.61: conversationLog default for parity with the
       // IPC handler (the renderer routes here for create_quest
       // WS messages from the mobile).
+      //
+      // v3.10.156: auto-derive a directory when none is
+      // provided. The old behaviour was to leave the quest
+      // without a directory on disk, which meant the desktop
+      // never scaffolded INSTRUCTIONS.md / CONVERSATION.md
+      // and the user ended up with a "ghost quest" — visible
+      // in the list but no project files anywhere. Tobe
+      // (2026-08-11): 'i think we just need to adjust such
+      // that it will be created in the defualt directory
+      // with the quest name, what the user inputted as
+      // quest name'. We now resolve in this order:
+      //   1. Explicit quest.directory if provided
+      //   2. quest.defaultQuestDir (passed in by the
+      //      caller — the mobile or the renderer reads
+      //      it from localStorage and forwards; this
+      //      avoids an async bridge into the renderer
+      //      from the WS path) + '/<sanitized-name>'
+      //   3. ~/quests/<sanitized-name>
+      // The auto-derived directory is logged + persisted on
+      // the new quest so the user can see where it landed
+      // (and edit later from the quest detail page).
       const quests = loadQuests();
       const newQuest = {
         name: quest.name || 'Untitled quest',
         description: quest.description || '',
-        ...(quest.directory ? { directory: quest.directory } : {}),
         goals: Array.isArray(quest.goals) ? quest.goals : [],
         status: 'active',
         active: false,
@@ -3776,6 +3831,17 @@ app.whenReady().then(() => {
       };
       newQuest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       newQuest.created = new Date().toISOString();
+      // v3.10.156: resolve directory — explicit > caller-
+      // provided defaultDir > ~/quests fallback. Always
+      // pick a path so scaffolding has something to work
+      // with. Same helper as the IPC handler.
+      const existingDir = (typeof quest.directory === 'string' && quest.directory.trim())
+        ? quest.directory.trim()
+        : null;
+      newQuest.directory = resolveQuestDirectory(newQuest.name, existingDir, quest.defaultQuestDir);
+      if (!existingDir) {
+        console.log(`[onCreateQuest] auto-derived directory for "${newQuest.name}": ${newQuest.directory}`);
+      }
       // v3.2.61: scaffold the quest directory if a path was
       // supplied. Same logic as the IPC handler — best-effort,
       // does not fail the create if the path is unwritable.

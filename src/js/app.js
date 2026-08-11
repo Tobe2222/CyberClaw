@@ -1603,7 +1603,23 @@ window.createQuest = async function() {
   if (!name) return;
   const desc = document.getElementById('quest-desc-input').value.trim();
   const dir = document.getElementById('quest-dir-input').value.trim();
-  await cyberclaw.quests.create({ name, description: desc, directory: dir || undefined });
+  // v3.10.156: forward the user's defaultQuestDir from
+  // cyberclaw-settings so main.js's auto-derive picks
+  // the same place the mobile suggests in its "Suggested:"
+  // hint. Without this the WS path (from mobile) lands
+  // at ~/quests/<name> while the desktop renderer
+  // would land at <defaultDir>/<name> — inconsistent.
+  let defaultQuestDir = '';
+  try {
+    const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}');
+    defaultQuestDir = (s.defaultQuestDir || '').trim();
+  } catch (_) {}
+  await cyberclaw.quests.create({
+    name,
+    description: desc,
+    directory: dir || undefined,
+    defaultQuestDir: defaultQuestDir || undefined,
+  });
   hideQuestForm();
   renderQuests();
 };
