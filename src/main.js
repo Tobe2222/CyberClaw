@@ -1862,9 +1862,10 @@ function resolveExistingInstructionsPath(quest) {
 // v3.10.156: auto-derive a directory for a new quest
 // when the caller didn't supply one. Returns a
 // filesystem-safe absolute path under either the caller's
-// default dir or ~/quests. Always returns a path so the
-// downstream scaffold never has to handle "no directory"
-// as a special case.
+// default dir, the system-wide default
+// (`DEFAULT_QUEST_DIR` below), or ~/quests. Always
+// returns a path so the downstream scaffold never has to
+// handle "no directory" as a special case.
 function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   if (explicitDir && typeof explicitDir === 'string' && explicitDir.trim()) {
     return explicitDir.trim();
@@ -1876,8 +1877,24 @@ function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   if (callerDefaultDir && typeof callerDefaultDir === 'string' && callerDefaultDir.trim()) {
     return path.join(callerDefaultDir.trim().replace(/\/+$/, ''), safeName);
   }
+  if (DEFAULT_QUEST_DIR) {
+    return path.join(DEFAULT_QUEST_DIR, safeName);
+  }
   return path.join(os.homedir(), 'quests', safeName);
 }
+
+// v3.10.157: the system-wide default quest directory.
+// Used when the caller didn't supply a directory AND
+// didn't pass a defaultQuestDir. Resolves to Tobe's
+// projects folder on this machine so new quests land
+// alongside his existing repos. Override with the
+// CYBERCLAW_DEFAULT_QUEST_DIR env var if the layout
+// changes. To force ~/quests/<name> as the fallback
+// instead, set the env var to '' (empty string).
+const DEFAULT_QUEST_DIR =
+  process.env.CYBERCLAW_DEFAULT_QUEST_DIR !== undefined
+    ? process.env.CYBERCLAW_DEFAULT_QUEST_DIR
+    : '/media/humpsuu/CYBERDRIVE/2B/work/projects';
 
 function scaffoldQuestDirectory(quest) {
   if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
