@@ -1365,6 +1365,19 @@ class SyncServer extends EventEmitter {
       // so the phone routes it to the exit-reply cache
       // instead of the greeting cache. Mobile plays the
       // cached audio on voice-mode close.
+      case 'request_working_audio': {
+        if (!client.authenticated) return;
+        const text = (msg.text || '').trim();
+        if (!text) {
+          console.warn('[SyncServer] request_working_audio with empty text');
+          return;
+        }
+        console.log(`[SyncServer] Working speech audio request: "${text.substring(0, 60)}"`);
+        this._handleWorkingAudio(ws, text).catch((e) => {
+          console.error('[SyncServer] Working speech synthesis failed:', e.message);
+        });
+        break;
+      }
       case 'request_exit_reply_audio': {
         if (!client.authenticated) return;
         const text = (msg.text || '').trim();
@@ -1735,6 +1748,42 @@ class SyncServer extends EventEmitter {
       }
       if (!sent) console.warn('[SyncServer] greeting audio: no open client to send to');
     }
+  }
+
+  // v3.10.162: synthesize working speech audio on the
+  // desktop and send back as an audio_response tagged
+  // requestId='working_speech'. Same piper TTS path as
+  // greeting + exit reply. Mobile's
+  // WorkingSpeechAudioCache module receives the audio
+  // and stores it keyed by phrase. Once the cache is
+  // warm, the mobile's playWorkingSpeechAndCue() path
+  // reads from cache instead of falling back to Android
+  // TTS. Tobe (2026-08-11 22:22): 'the goal is to build
+  // as local as possible' — using desktop piper for the
+  // working cue keeps a single consistent voice across
+  // greeting + working + AI response + exit reply.
+  async _handleWorkingAudio(ws, text) {
+    const localAI = require('./local-ai');
+    const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+    const cleanText = stripEmojis(text);
+    if (!cleanText) {
+      console.warn('[SyncServer] working speech text was all emojis, nothing to synthesize');
+      return;
+    }
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    if (!audioBase64) {
+      console.warn('[SyncServer] synthesizeSpeech returned empty for working speech');
+      return;
+    }
+    const payload = {
+      type: 'audio_response',
+      audioBase64,
+      mimeType: 'audio/wav',
+      requestId: 'working_speech',
+      text: cleanText,
+    };
+    this._send(ws, payload);
+    console.log(`[SyncServer] Sent working speech audio (${audioBase64.length} chars)`);
   }
 
   // v3.2.29: synthesize exit reply audio on the desktop

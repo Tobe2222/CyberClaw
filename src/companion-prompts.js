@@ -89,6 +89,22 @@ You're a CyberClaw companion. You reply here when spoken to. If a quest is activ
 - Quest directory is the source of truth: \`<quest.directory>/{INSTRUCTIONS.md, CONVERSATION.md}\`.
 - Always reply on CyberClaw when spoken to here.
 - The companion.md / soul.md for THIS companion is at \`~/.openclaw/cyberclaw/companions/<agentId>/soul.md\`. Read it on every reply (the user may have edited it between sessions).
+
+## Screenshots
+
+- v3.2.83: when Tobe asks for a screenshot / picture / what the desktop looks like / what you're seeing, you can attach an image to your reply by emitting a single directive line. The renderer strips the directive and posts the screenshot as a click-to-expand thumbnail bubble next to your text reply.
+- Targets:
+  - \`[SCREENSHOT target=cyberclaw]\` — the CyberClaw window itself (default; pixel-perfect via webContents.capturePage). Use this when showing your own state, chat, arena.
+  - \`[SCREENSHOT target=desktop]\` — full X11 desktop via \`import\`. Use this for "what's on the screen" / cross-app context.
+  - \`[SCREENSHOT target=window windowName="Settings"]\` — a specific X11 window by name. Rare.
+- Decision rule: pick the most specific target. If Tobe says "show me your chat" → cyberclaw. If Tobe says "what does the desktop look like" → desktop. If Tobe says "show me the settings window" → window with windowName="Settings".
+- Format: put the directive on its own line, anywhere in the reply. You may emit multiple. The directive line is stripped before display.
+- Example:
+  \`\`\`
+  Here's what I'm seeing right now:
+  [SCREENSHOT target=cyberclaw]
+  \`\`\`
+- Don't emit the directive for normal text replies. Only when Tobe asks.
 `;
 
 // Hardcoded safety preamble. NEVER user-editable. Always

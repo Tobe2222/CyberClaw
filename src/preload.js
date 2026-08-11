@@ -25,6 +25,13 @@ window.cyberclaw = {
     write: (data) => ipcRenderer.send('terminal:input', data),
     resize: (cols, rows) => ipcRenderer.send('terminal:resize', { cols, rows }),
   },
+  // v3.2.83: screenshot. Called by the renderer (clawsuu)
+  // when the agent's reply contains a [SCREENSHOT target=...]
+  // directive. Returns { ok, filePath, dataUri, target, width,
+  // height }. See main.js screenshot:capture handler for the
+  // target semantics.
+  screenshot: ({ target, windowName } = {}) =>
+    ipcRenderer.invoke('screenshot:capture', { target, windowName }),
   chat: {
     // v3.2.51: accept optional attachments array for
     // multimodal (text + image) content. main.js's
