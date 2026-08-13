@@ -139,8 +139,36 @@ function downloadFile(url, destPath, progressLabel) {
     let total = 0;
 
     const doRequest = (reqUrl) => {
-      const proto = reqUrl.startsWith('https') ? https : http;
-      proto.get(reqUrl, (res) => {
+      // v3.2.97: resolve relative redirect URLs against the
+      // current request URL before recursing. Hugging Face's
+      // CDN returns 307 with `location: /api/resolve-cache/
+      // ...` (a relative path) for some .onnx.json metadata
+      // files. The previous code passed the raw location to
+      // http.get() which threw "Invalid URL" and crashed the
+      // whole Electron process via Node's uncaughtException
+      // handler. Tobe hit this on 2026-08-13 when he picked
+      // the joe voice for the first time — the .onnx
+      // downloaded fine, the .json 307'd to a relative path,
+      // and the desktop died mid-download.
+      //
+      // new URL(absoluteOrRelative, base) handles both:
+      // - "https://huggingface.co/..." → unchanged
+      // - "/api/resolve-cache/..." → resolved against the
+      //   current URL's origin
+      // - "https://cdn.example.com/foo" → unchanged
+      //
+      // Also bump the redirect hop limit so a hostile or
+      // misconfigured server can't loop us forever.
+      let resolved;
+      try {
+        resolved = new URL(reqUrl, url).toString();
+      } catch (e) {
+        file.close();
+        fs.unlink(destPath, () => {});
+        return reject(new Error(`Invalid URL in redirect from ${url}: ${reqUrl}`));
+      }
+      const proto = resolved.startsWith('https') ? https : http;
+      proto.get(resolved, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
           const location = res.headers.location;
           if (!location) {
@@ -148,7 +176,18 @@ function downloadFile(url, destPath, progressLabel) {
             fs.unlink(destPath, () => {});
             return reject(new Error(`Redirect without location header from ${url}`));
           }
-          doRequest(location);
+          // v3.2.97: wrap the recursive call so any
+          // synchronous throw (invalid URL, etc.) is
+          // captured as a promise rejection instead of an
+          // uncaught exception that takes down the whole
+          // Electron process.
+          try {
+            doRequest(location);
+          } catch (e) {
+            file.close();
+            fs.unlink(destPath, () => {});
+            reject(e);
+          }
           return;
         }
         if (res.statusCode !== 200) {
