@@ -104,6 +104,13 @@ class SyncServer extends EventEmitter {
     this.onCreateQuest = options.onCreateQuest || null;
     this.onListQuests = options.onListQuests || null;
     this.onRequestQuestsList = options.onRequestQuestsList || null;
+    // v3.2.95: TTS voice picker mirror. Mobile asks for the
+    // desktop's piper voice list + current selection; on
+    // set_tts_voice, main.js writes localStorage and we
+    // broadcast tts_settings_changed to all connected
+    // mobiles.
+    this.onGetTtsSettings = options.onGetTtsSettings || null;
+    this.onSetTtsVoice = options.onSetTtsVoice || null;
     // v3.2.33: per-quest project instructions file read. Mobile calls
     // request_quest_instructions and main.js answers with the
     // file content via the same IPC the desktop's renderer
@@ -420,6 +427,13 @@ class SyncServer extends EventEmitter {
         this._send(ws, { type: 'auth_result', success: true, name: device.name });
         this._notifyMainWindow('mobile-connected', { name: device.name });
         console.log(`[SyncServer] Device authenticated: ${device.name}`);
+
+        // v3.2.95: send the cached TTS settings on connect so
+        // the mobile's voice picker reflects the current
+        // desktop selection without an extra round trip.
+        if (this._lastTtsSettings) {
+          this._send(ws, this._lastTtsSettings.payload);
+        }
 
         // Send current state and request chat history for this client
         this._sendFullState(ws);
@@ -1689,6 +1703,63 @@ class SyncServer extends EventEmitter {
         this.emit('export_wake_set_to_desktop', { ws, setId: msg.setId, base64: msg.base64, phrase: msg.phrase });
         break;
       }
+      // v3.2.95: mobile asks the desktop for the piper voice
+      // list + the current selection. Used by the mobile's
+      // voice picker to mirror the desktop. Returns
+      // { type: 'tts_settings', ok, voices, current, ts }.
+      case 'request_tts_settings': {
+        if (!client.authenticated) return;
+        if (this.onGetTtsSettings) {
+          try {
+            const r = await this.onGetTtsSettings();
+            this._send(ws, {
+              type: 'tts_settings',
+              ok: r.ok !== false,
+              voices: r.voices || [],
+              current: r.current || 'lessac',
+              error: r.error || null,
+              ts: Date.now(),
+            });
+          } catch (e) {
+            this._send(ws, { type: 'tts_settings', ok: false, voices: [], current: 'lessac', error: e?.message || String(e), ts: Date.now() });
+          }
+        } else {
+          // Desktop doesn't have v3.2.95 wired. Send a
+          // minimal fallback so the mobile renders the
+          // default voice at least.
+          this._send(ws, {
+            type: 'tts_settings', ok: false,
+            voices: [{ id: 'lessac', label: 'Lessac (US, baseline)', group: 'Male' }],
+            current: 'lessac',
+            error: 'Desktop does not support TTS settings sync yet',
+            ts: Date.now(),
+          });
+        }
+        break;
+      }
+      // v3.2.95: mobile sets the desktop's piper voice.
+      // Writes localStorage.cyberclaw-settings.ttsVoice via
+      // executeJavaScript (same key the renderer's saveSettings
+      // writes). On success, broadcasts tts_settings_changed
+      // to all connected mobiles.
+      case 'set_tts_voice': {
+        if (!client.authenticated) return;
+        if (!msg.voice || typeof msg.voice !== 'string') {
+          this._send(ws, { type: 'tts_voice_set', ok: false, error: 'voice id required', ts: Date.now() });
+          return;
+        }
+        if (this.onSetTtsVoice) {
+          try {
+            const r = await this.onSetTtsVoice(msg.voice);
+            this._send(ws, { type: 'tts_voice_set', ok: r.ok !== false, current: r.current || msg.voice, error: r.error || null, ts: Date.now() });
+          } catch (e) {
+            this._send(ws, { type: 'tts_voice_set', ok: false, error: e?.message || String(e), ts: Date.now() });
+          }
+        } else {
+          this._send(ws, { type: 'tts_voice_set', ok: false, error: 'Desktop does not support set_tts_voice yet', ts: Date.now() });
+        }
+        break;
+      }
     }
   }
 
@@ -1706,7 +1777,8 @@ class SyncServer extends EventEmitter {
       console.warn('[SyncServer] greeting text was all emojis, nothing to synthesize');
       return;
     }
-    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    const resolvedVoice = await this._getTtsVoice();
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, resolvedVoice);
     if (!audioBase64) {
       console.warn('[SyncServer] synthesizeSpeech returned empty for greeting');
       return;
@@ -1724,6 +1796,10 @@ class SyncServer extends EventEmitter {
       // audio to its cache key even if the phone's local
       // state has changed since the request.
       text: cleanText,
+      // v3.2.96: echo the resolved piper voice so the
+      // mobile's per-(phrase, voice) cache writes use the
+      // exact key the desktop synthesized against.
+      voice: resolvedVoice,
       ts: Date.now(),
     };
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1770,7 +1846,8 @@ class SyncServer extends EventEmitter {
       console.warn('[SyncServer] working speech text was all emojis, nothing to synthesize');
       return;
     }
-    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    const resolvedVoice = await this._getTtsVoice();
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, resolvedVoice);
     if (!audioBase64) {
       console.warn('[SyncServer] synthesizeSpeech returned empty for working speech');
       return;
@@ -1781,6 +1858,9 @@ class SyncServer extends EventEmitter {
       mimeType: 'audio/wav',
       requestId: 'working_speech',
       text: cleanText,
+      // v3.2.96: echo the resolved piper voice for the
+      // mobile's per-(phrase, voice) cache key.
+      voice: resolvedVoice,
     };
     this._send(ws, payload);
     console.log(`[SyncServer] Sent working speech audio (${audioBase64.length} chars)`);
@@ -1802,7 +1882,8 @@ class SyncServer extends EventEmitter {
       console.warn('[SyncServer] exit reply text was all emojis, nothing to synthesize');
       return;
     }
-    const audioBase64 = await localAI.synthesizeSpeech(cleanText, 'lessac');
+    const resolvedVoice = await this._getTtsVoice();
+    const audioBase64 = await localAI.synthesizeSpeech(cleanText, resolvedVoice);
     if (!audioBase64) {
       console.warn('[SyncServer] synthesizeSpeech returned empty for exit reply');
       return;
@@ -1817,6 +1898,9 @@ class SyncServer extends EventEmitter {
       mimeType: 'audio/wav',
       requestId: 'exit_reply',
       text: cleanText,
+      // v3.2.96: echo the resolved piper voice for the
+      // mobile's per-(phrase, voice) cache key.
+      voice: resolvedVoice,
       ts: Date.now(),
     };
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1985,6 +2069,17 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
   }
 
+  // v3.2.95: TTS voice changed. Tells every connected mobile
+  // to update its local cache of the desktop's current voice.
+  // The mobile's own picker (if open) refreshes its checkmark
+  // on receipt. Cached for reconnect replay.
+  broadcastTtsSettingsChanged(current) {
+    console.log(`[SyncServer] Broadcasting tts_settings_changed: ${current}`);
+    const payload = { type: 'tts_settings_changed', current, ts: Date.now() };
+    this._lastTtsSettings = { payload, ts: Date.now() };
+    this._broadcast(payload);
+  }
+
   broadcastTyping(active) {
     this._broadcast({ type: 'typing', active, ts: Date.now() });
   }
@@ -2095,6 +2190,48 @@ class SyncServer extends EventEmitter {
   _notifyMainWindow(channel, data) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, data);
+    }
+  }
+
+  /**
+   * v3.2.96: read the desktop's currently-selected TTS
+   * voice (piper voice name, e.g. 'lessac', 'amy',
+   * 'kristin') from the renderer's localStorage
+   * settings. Mirrors the inline read in main.js:5200.
+   *
+   * Three audio synthesis paths in this file
+   * (greeting, working, exit reply) previously
+   * hardcoded 'lessac' for the piper synthesis call,
+   * which meant a user who picked 'kristin' in the
+   * desktop settings got LESSAC audio for greeting /
+   * working / exit reply (the only voice that respected
+   * the setting was the main AI-reply TTS path in
+   * main.js). The mobile caches made the bug permanent:
+   * a voice change in the picker only affected the next
+   * wake *if* the cache was empty.
+   *
+   * Fix: read the voice here the same way main.js does,
+   * default to 'lessac' on any failure (missing
+   * mainWindow, renderer not ready, localStorage
+   * missing). The matching mobile-side cache-key change
+   * (in GreetingAudioCache / ExitReplyAudioCache /
+   * WorkingSpeechAudioCache) ensures the per-voice
+   * audio is cached separately, so the next wake after
+   * a voice change actually plays the new voice instead
+   * of the stale cached one.
+   */
+  async _getTtsVoice() {
+    try {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        return 'lessac';
+      }
+      const v = await this.mainWindow.webContents.executeJavaScript(
+        "(() => { const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}'); return s.ttsVoice || 'lessac'; })()"
+      );
+      return v || 'lessac';
+    } catch (err) {
+      console.warn('[SyncServer] _getTtsVoice failed, using default:', err?.message);
+      return 'lessac';
     }
   }
 
