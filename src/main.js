@@ -1707,7 +1707,7 @@ ipcMain.handle('quests:create', (event, quest) => {
     if (!scaffold.ok) {
       console.warn(`[quests:create] scaffold failed for ${quest.id}: ${scaffold.error}`);
     } else {
-      console.log(`[quests:create] scaffolded ${quest.directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+      console.log(`[quests:create] scaffolded ${quest.directory} with INSTRUCTIONS.md + CONVERSATION.md + NOTES.md`);
     }
   }
   saveQuests(quests);
@@ -1769,7 +1769,7 @@ ipcMain.handle('quests:update', (event, id, updates) => {
     if (!scaffold.ok) {
       console.warn(`[quests:update] scaffold failed for ${id}: ${scaffold.error}`);
     } else {
-      console.log(`[quests:update] re-scaffolded ${quests[idx].directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+      console.log(`[quests:update] re-scaffolded ${quests[idx].directory} with INSTRUCTIONS.md + CONVERSATION.md + NOTES.md`);
     }
   }
   return quests[idx];
@@ -1833,6 +1833,18 @@ function questConversationFilePath(quest) {
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'CONVERSATION.md');
 }
 
+// v3.10.158: third essential quest file — running notes
+// (SSH paths, deploy cheatsheets, project structure, etc.).
+// Sibling to INSTRUCTIONS.md and CONVERSATION.md; same
+// directory-relative or id-fallback resolution.
+function questNotesFilePath(quest) {
+  if (!quest) return null;
+  if (quest.directory) {
+    return path.join(quest.directory, 'NOTES.md');
+  }
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'NOTES.md');
+}
+
 // Prefer the new filename; fall back to the v3.2.30-era
 // `QUEST_QUEST_INSTRUCTIONS.md` so users on the old name
 // don't see their work vanish. Returns the path that
@@ -1851,8 +1863,11 @@ function resolveExistingInstructionsPath(quest) {
 // unchanged). Writes:
 //   - INSTRUCTIONS.md (with `# Project instructions` heading)
 //   - CONVERSATION.md (empty, with a comment header)
+//   - NOTES.md (with `# Project notes` heading — third
+//     essential file; running notes about the project,
+//     SSH paths, deploy cheatsheets, etc.)
 //
-// Returns { ok, instructionsPath, conversationPath, mkdirOk }
+// Returns { ok, instructionsPath, conversationPath, notesPath, mkdirOk }
 // on success, or { ok: false, error } if the directory could
 // not be created (e.g. invalid path / no write permission).
 // The desktop's quest-create flow continues regardless of
@@ -1902,9 +1917,10 @@ function scaffoldQuestDirectory(quest) {
     fs.mkdirSync(quest.directory, { recursive: true });
     const instructions = questInstructionsFilePathV2(quest);
     const conversation = questConversationFilePath(quest);
+    const notes = questNotesFilePath(quest);
     // Don't overwrite the user's existing INSTRUCTIONS.md
     // content — only write the placeholder if the file is
-    // absent. Same for CONVERSATION.md.
+    // absent. Same for CONVERSATION.md and NOTES.md.
     if (!fs.existsSync(instructions)) {
       fs.writeFileSync(
         instructions,
@@ -1935,7 +1951,25 @@ function scaffoldQuestDirectory(quest) {
         'utf-8',
       );
     }
-    return { ok: true, instructionsPath: instructions, conversationPath: conversation, mkdirOk: true };
+    // v3.10.158: scaffold NOTES.md as the third essential.
+    // Companion writes running notes (SSH paths, deploy
+    // commands, project structure, gotchas) here. Idempotent
+    // — never overwrites existing content.
+    if (!fs.existsSync(notes)) {
+      fs.writeFileSync(
+        notes,
+        [
+          `# Project notes — ${quest.name || 'Untitled'}`,
+          ``,
+          `Running notes about this project — SSH paths, deploy cheatsheets,`,
+          `project structure, gotchas. Both Tobe and the companion can write here.`,
+          `Add new entries at the bottom with a timestamp; don't delete old entries.`,
+          ``,
+        ].join('\n'),
+        'utf-8',
+      );
+    }
+    return { ok: true, instructionsPath: instructions, conversationPath: conversation, notesPath: notes, mkdirOk: true };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }
@@ -3670,6 +3704,108 @@ app.whenReady().then(() => {
         return { ok: false, reason: 'send_failed', error: e?.message || 'unknown' };
       }
     },
+    // v3.2.95: TTS voice picker is a mirror of the desktop's
+    // piper voice list. The mobile asks for the list + the
+    // current selection on app start; when the user picks a
+    // voice, the mobile sends set_tts_voice to us and we
+    // update the desktop's localStorage.cyberclaw-settings.
+    //
+    // The actual piper synthesis lives in src/local-ai.js
+    // (PIPER_VOICES) and the settings dropdown in src/index.html.
+    // The voice list below is the canonical mirror that the
+    // mobile renders. If the desktop ever adds a 9th voice
+    // to src/index.html's <select>, add it here too.
+    //
+    // Voices are derived from the HTML so the mobile and the
+    // desktop can't drift; if they ever do, the desktop's
+    // dropdown is the source of truth.
+    onGetTtsSettings: async () => {
+      try {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return { ok: false, error: 'desktop window not available' };
+        }
+        // Read both the list of voices (from the <select>'s
+        // options) and the current selection, in one executeJavaScript
+        // round trip. The select id is 'settings-tts-voice'.
+        const result = await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            const sel = document.getElementById('settings-tts-voice');
+            const list = [];
+            if (sel) {
+              for (const group of sel.getElementsByTagName('optgroup')) {
+                const groupLabel = group.getAttribute('label') || '';
+                for (const opt of group.getElementsByTagName('option')) {
+                  list.push({
+                    id: opt.value,
+                    label: opt.textContent,
+                    group: groupLabel,
+                  });
+                }
+              }
+            }
+            const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}');
+            return { voices: list, current: s.ttsVoice || 'lessac' };
+          })()
+        `);
+        return { ok: true, voices: result.voices, current: result.current };
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+    },
+    // v3.2.95: mobile sets the desktop's ttsVoice. Writes
+    // the same localStorage key the renderer's saveSettings()
+    // writes, so the desktop's own dropdown + any code that
+    // reads s.ttsVoice (synthesizeSpeech at main.js:5098, the
+    // greeting/exit-reply synth paths at sync-server.js:1696/1795)
+    // see the new value on the next read.
+    //
+    // We also fire a 'tts-settings-changed' broadcast so
+    // other connected mobiles update their pickers live.
+    onSetTtsVoice: async (voice) => {
+      if (!voice || typeof voice !== 'string') {
+        return { ok: false, reason: 'invalid_voice', error: 'voice must be a non-empty string' };
+      }
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, reason: 'no_main_window', error: 'desktop window not available' };
+      }
+      try {
+        // Validate the voice id is in the dropdown before
+        // writing. Protects against a stale or wrong-id send
+        // from an older mobile.
+        const valid = await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            const sel = document.getElementById('settings-tts-voice');
+            if (!sel) return false;
+            for (const opt of sel.options) if (opt.value === ${JSON.stringify(voice)}) return true;
+            return false;
+          })()
+        `);
+        if (!valid) {
+          return { ok: false, reason: 'unknown_voice', error: 'voice id not in the desktop dropdown' };
+        }
+        // Update the desktop's localStorage + the <select>
+        // value so the dropdown reflects the new choice.
+        // We don't dispatch change (the dropdown's onchange
+        // is saveSettings, which would write localStorage
+        // again — redundant but harmless).
+        await mainWindow.webContents.executeJavaScript(`
+          (() => {
+            const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}');
+            s.ttsVoice = ${JSON.stringify(voice)};
+            localStorage.setItem('cyberclaw-settings', JSON.stringify(s));
+            const sel = document.getElementById('settings-tts-voice');
+            if (sel) sel.value = ${JSON.stringify(voice)};
+          })()
+        `);
+        // Broadcast to all connected mobiles.
+        if (syncServer && syncServer.broadcastTtsSettingsChanged) {
+          try { syncServer.broadcastTtsSettingsChanged(voice); } catch (_) {}
+        }
+        return { ok: true, current: voice };
+      } catch (e) {
+        return { ok: false, reason: 'execute_failed', error: e?.message || String(e) };
+      }
+    },
     // v3.10.77: returns the current list of quests
     // (with id + name) for diagnostic inclusion in
     // failed-mutation error responses. Lets the mobile
@@ -3867,7 +4003,7 @@ app.whenReady().then(() => {
         if (!scaffold.ok) {
           console.warn(`[onCreateQuest] scaffold failed for ${newQuest.id}: ${scaffold.error}`);
         } else {
-          console.log(`[onCreateQuest] scaffolded ${newQuest.directory} with INSTRUCTIONS.md + CONVERSATION.md`);
+          console.log(`[onCreateQuest] scaffolded ${newQuest.directory} with INSTRUCTIONS.md + CONVERSATION.md + NOTES.md`);
         }
       }
       quests.unshift(newQuest);
