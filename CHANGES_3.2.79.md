@@ -9,10 +9,10 @@ messages.
 
 `promptCompanionReaction(promptText)` always defaulted
 to `activeChatAgentId` (whichever companion's chat tab
-was open). If Tobe dropped a hamburger near lamasuu but
+was open). If the user dropped a hamburger near lamasuu but
 clawsuu's chat tab was active, clawsuu would say
 "thanks for the burger" — even though lamasuu was the
-sprite within eating range. Tobe's 2026-08-06 report:
+sprite within eating range. the user's 2026-08-06 report:
 
 > "Perhaps we need to build such that we track which
 > companion that actually eats the food and make it
@@ -113,7 +113,7 @@ should be discoverable from the event payload?" If
 the latter, the payload needs the agent id, and the
 reaction function needs a target argument.
 
-## Verification (for Tobe)
+## Verification (for the user)
 
 1. Restart desktop (v3.2.79).
 2. Install mobile v3.10.138 APK.

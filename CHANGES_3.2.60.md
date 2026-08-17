@@ -2,7 +2,7 @@
 
 ## The change
 
-Tobe 2026-08-04 12:37:
+the user 2026-08-04 12:37:
 > "No need for discord to update quest logs, it does not
 > necessarily know which quest we are working with."
 
@@ -11,7 +11,7 @@ In `src/js/app.js` the v3.2.59 Discord-tail IPC handler
 auto-stamped every Discord-routed message onto the active
 quest's `conversationLog` — same as the chat-pipeline write.
 
-That was wrong. Discord is a separate channel: if Tobe has
+That was wrong. Discord is a separate channel: if the user has
 a "SeedSigner" quest active on the desktop at the moment
 he happens to be chatting about something completely
 unrelated in #cyber-dev with the agent, every line of that
@@ -22,7 +22,7 @@ starred most recently on the desktop; it's not a statement
 about which channel's conversation they want logged.
 
 The chat pipeline (`addChatMsg` path) is a different case:
-when Tobe types into the mobile chat panel while the
+when the user types into the mobile chat panel while the
 SeedSigner quest is active, that IS an explicit signal of
 project focus — he's talking to the companion in the app
 about the project. That's the only path that auto-logs.

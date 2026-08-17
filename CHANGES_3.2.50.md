@@ -2,7 +2,7 @@
 
 ## 1. Two things to fix from the same screenshot
 
-**Tobe's report (2026-08-02 21:36):**
+**the user's report (2026-08-02 21:36):**
 > "He still says he cannot see them. Just make it such that
 > it works like it does in discord. And it says that i sent
 > attachment extra in the chat now, as you see. We dont want

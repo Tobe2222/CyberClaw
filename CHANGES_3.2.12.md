@@ -1,6 +1,6 @@
 # v3.2.12 — Companion sleep state mirrored to mobile + auto-wake on any speech input
 
-Tobe (post v3.2.10 / v3.10.42):
+the user (post v3.2.10 / v3.10.42):
 
 > "the companions dont sleep on the phone, they should. And they
 > should always awaken if spoken to in any way"
@@ -54,7 +54,7 @@ When the active companion's `sleepState === 'sleeping'`:
 
 ## 2. Auto-wake on any speech/chat input
 
-Tobe: "they should always awaken if spoken to in any way".
+the user: "they should always awaken if spoken to in any way".
 
 The desktop's `sendChat()` and `sendChatMessage()` already
 auto-wake on chat. But the mobile ALSO needs to wake on:

@@ -1,6 +1,6 @@
 # v3.1.46 — Wake trainer: replay the latest PROGRESS to a phone that lost its WebSocket mid-training
 
-After v3.1.45 fixed the payload.type spread bug, Tobe
+After v3.1.45 fixed the payload.type spread bug, the user
 re-tested and STILL saw the same symptom. The phone
 showed "Last event: 38s ago" (red) and the desktop log
 showed the [train] and [train-OWW] lines flowing but
@@ -15,7 +15,7 @@ the test client was the only connected client. The
 phone was NOT connected.**
 
 **Root cause:** the phone's WebSocket had died between
-when Tobe pressed Train at 16:13 and when the first
+when the user pressed Train at 16:13 and when the first
 PROGRESS event fired at 16:13:05. The phone's
 SyncClient auto-reconnects, but a NEW WebSocket has a
 new identity. The desktop's `_broadcast()` iterates

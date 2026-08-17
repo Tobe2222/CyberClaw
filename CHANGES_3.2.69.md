@@ -1,6 +1,6 @@
 # v3.2.69 — strip tool-warning lines from agent chat bubbles
 
-Tobe 2026-08-05 11:38:
+the user 2026-08-05 11:38:
 > "this edit fail warning shows up sometimes, even
 > here in discord, and we have talked about it
 > earlier but it was no issue, if it really is no

@@ -2,7 +2,7 @@
 
 ## Bug
 
-Tobe (2026-08-13, post-v3.2.96 install): the desktop crashed when he picked
+The user reported (2026-08-13, post-v3.2.96 install): the desktop crashed when they picked
 the 'joe' piper voice for the first time. The .onnx downloaded fine
 (60.3MB, 100%) but the .onnx.json hit a Hugging Face 307 redirect with a
 **relative** `location: /api/resolve-cache/models/...` header. The
@@ -13,10 +13,11 @@ inside an HTTP callback, outside any try/catch — Node's
 sync-server dropped, all WS clients lost, restart required.
 
 The crash had been latent since v3.2.92 (when piper voices were first
-added). It just happened to fire today because Tobe picked 'joe' for
+added). It just happened to fire today because the user picked 'joe' for
 the first time — the other 7 voices had been downloaded by earlier
 picks or had absolute redirect targets. Relative 307s are common on
-HF's CDN for metadata files.
+HF's CDN for metadata files. (No identifying info — only behavior
+described.)
 
 Also: the desktop that restarted came back as v3.2.96 (no fix), so the
 joe voice would crash again on every cold start until either (a) the

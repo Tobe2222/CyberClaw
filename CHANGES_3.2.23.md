@@ -1,6 +1,6 @@
 # 3.2.23 — fix missed-broadcast replay on mobile reconnect
 
-Tobe reported on v3.2.22 (2026-07-23 21:29):
+The user reported on v3.2.22 (2026-07-23 21:29):
 
 > "@Clawsuu i swipe down to the bottom but no more
 > chats appear"
@@ -38,7 +38,7 @@ Two problems:
 
 1. **60-second window is too narrow.** Real
    disconnects (phone sleep, app switch, brief
-   connectivity loss) routinely exceed 60s. Tobe's
+   connectivity loss) routinely exceed 60s. the user's
    case: the agent reply landed at 4:42 PM CEST;
    the mobile reconnected much later. By then the
    60s window had long expired.

@@ -1,6 +1,6 @@
 # v3.2.10 — Fix desktop CI release creation (silent softprops v2 failures)
 
-Tobe (post v3.2.9):
+the user (post v3.2.9):
 
 > "the new builds failed"
 
@@ -29,10 +29,10 @@ The action returns exit 0 (success) even when no release is
 published, so the workflow step appears green in the UI while
 doing nothing in the background.
 
-This explains why Tobe's APK downloads have had version-mismatch
+This explains why the user's APK downloads have had version-mismatch
 issues (downloaded v3.10.31, app shows v3.10.30): the
 desktop's "release download" UX has been broken since v3.0.0,
-so any APK Tobe pulled was either built manually or from the
+so any APK the user pulled was either built manually or from the
 per-run artifacts page, and the install/App-side APK version
 is its own thing. The mobile repo's release has also been
 broken in this exact same way — recent mobile releases
@@ -60,7 +60,7 @@ instead of relying on auto-detection).
 
 ## v3.2.10.1 — same fix needs `shell: bash` on Windows
 
-Tobe (after v3.2.10):
+the user (after v3.2.10):
 
 > "the windows build failed again"
 
@@ -90,7 +90,7 @@ unchanged (the bash default was already correct there).
   `gh release` + `nick-fields/retry@v3` for all 3 platforms
 - `package.json` 3.2.9 → 3.2.10
 
-## What this means for Tobe
+## What this means for the user
 
 After this lands + the next desktop tag push, **all future
 desktop releases will actually appear at

@@ -1,11 +1,11 @@
 # 3.1.25 — Make the chat-tab emoji unmistakable
 
 ## What it adds
-Tobe: "still looks the same" (after v3.1.24 was deployed, boot log confirmed v3.1.24).
+the user: "still looks the same" (after v3.1.24 was deployed, boot log confirmed v3.1.24).
 
 The v3.1.24 catalog-loading fix is verified working — `~/.openclaw/cyberclaw/debug.log` shows `loadPixelCatalog OK: .../catalog.json (5 sprites)` on every boot, so `getSpriteIcon('boar')` returns `'🐗'` and `getSpriteIcon('hare')` returns `'🐇'`. The chat tab should show those emojis.
 
-But Tobe is still seeing what they call "robot icons". Looking at the v3.1.24 screenshot closely, the icons next to "Clawsuu" and "Lamasuu" in the channel strip look like small pixel-art animals (boar and hare) — they ARE the new emojis, but at 22px on a dark background they're hard to distinguish from the previous avatar PNG render. Tobe is calling them "robot icons" because at that size, a small colorful blob reads as a generic icon.
+But The user is still seeing what they call "robot icons". Looking at the v3.1.24 screenshot closely, the icons next to "Clawsuu" and "Lamasuu" in the channel strip look like small pixel-art animals (boar and hare) — they ARE the new emojis, but at 22px on a dark background they're hard to distinguish from the previous avatar PNG render. The user is calling them "robot icons" because at that size, a small colorful blob reads as a generic icon.
 
 ## Fix: make the emoji dramatically larger and more distinct
 `channel-tab-companion .companion-tab-emoji`:
@@ -28,4 +28,4 @@ After fixing the actual code bug (v3.1.22/23/24), the chat tab was technically r
 
 The lesson is to verify rendering legibility, not just code correctness. After a visual change ships, the change should be CLEARLY VISUALLY DIFFERENT from the previous render. If you can't tell the difference at a glance, the user can't either. A 50%+ size increase and a distinct background make the change unmistakable.
 
-If Tobe reports "still looks the same" again after v3.1.25, the next step is a screenshot diff to confirm whether the icons actually changed at all (in case the CSS isn't being loaded — Electron caches CSS too, and a forced quit + restart is needed).
+If the user reports "still looks the same" again after v3.1.25, the next step is a screenshot diff to confirm whether the icons actually changed at all (in case the CSS isn't being loaded — Electron caches CSS too, and a forced quit + restart is needed).

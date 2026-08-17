@@ -1,6 +1,6 @@
 # v3.1.52 — Quests: always re-read from disk on explicit refresh
 
-Tobe's v3.8.0 testing found that the SyncServer's
+the user's v3.8.0 testing found that the SyncServer's
 `_lastQuestsList` cache could serve stale data to the
 mobile. The cache is supposed to be invalidated on every
 save (via `broadcastQuestsList`), but the broadcast path

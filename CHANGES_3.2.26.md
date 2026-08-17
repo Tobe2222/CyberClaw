@@ -1,6 +1,6 @@
 # 3.2.26 — Phone-side companion Personalize + per-companion chattiness scale
 
-Tobe reported (2026-07-24 08:51):
+The user reported (2026-07-24 08:51):
 
 > "@Clawsuu For some reason he has gotten alot chattier today.
 > The desktop has the companion edit. Lets introduce that into mobile
@@ -12,7 +12,7 @@ Tobe reported (2026-07-24 08:51):
 
 Screenshot showed 5 agent messages from Clawsuu in 5 hours since 3 AM.
 That's the v3.1.3 baseline (60–90 min idle chatter) doing exactly what
-it was tuned to do — but Tobe noticed it was chatty "today" because
+it was tuned to do — but The user noticed it was chatty "today" because
 Clawsuu hit the upper end of the random interval several times in a
 row. Without a knob to dial it down, the user has to wait for the
 desktop or accept the current rate.
@@ -168,7 +168,7 @@ canvas-write pipeline on the phone, the sprite picker would
 be a half-feature. The Settings → View All Companions button
 on the desktop's Settings modal is the entry point for sprite
 swaps; the mobile's Personalize screen is the entry point for
-everything else. Tobe can still pick the sprite on the desktop
+everything else. the user can still pick the sprite on the desktop
 and the new sprite flows to the phone via the existing
 agents_list broadcast.
 
@@ -177,7 +177,7 @@ agents_list broadcast.
 **Always ship the same control on both surfaces when the
 fields are synced.** "Chattiness on the desktop, no chattiness
 on the phone" would have been a quick fix but would have left
-Tobe re-opening the desktop every time he wanted to dial it
+the user re-opening the desktop every time he wanted to dial it
 down. The instant he asks for a synced feature, the surface
 parity becomes non-negotiable.
 
@@ -198,7 +198,7 @@ source of truth.
 **When a feature is "always chatty" because the random interval
 hit the upper end several times in a row, the user blames the
 feature, not the random number generator.** Even though the
-behavior was working as designed, Tobe sees "alot chattier
+behavior was working as designed, the user sees "alot chattier
 today" and assumes something changed. The slider is the
 right escape hatch — the user can dial down without convincing
 themselves the random number generator is broken.

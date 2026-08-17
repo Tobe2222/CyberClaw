@@ -2,7 +2,7 @@
 
 ## The bug
 
-Tobe 2026-08-03 11:18 in #cyber-dev:
+the user 2026-08-03 11:18 in #cyber-dev:
 > "Often get this error timeout message. I don't get this on
 > Discord, why do we get this on CyberClaw? It should have the
 > same timeout etc."

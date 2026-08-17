@@ -1,8 +1,8 @@
 # 3.2.22 — fix mobile chat spam (filter mid-run tool-use messages + dedupe renderer IPC)
 
-## Reported by Tobe (via Discord)
+## Reported by the user (via Discord)
 
-Tobe on Discord after v3.2.21 + v3.10.88 deployed:
+the user on Discord after v3.2.21 + v3.10.88 deployed:
 
 > "@Clawsuu and for some reason it replied for this
 > message in the app now. Its spamming the app for

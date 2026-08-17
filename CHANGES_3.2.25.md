@@ -1,6 +1,6 @@
 # 3.2.25 — Discord conversations no longer appear in the mobile chat app
 
-Tobe reported on v3.2.24 (2026-07-24 00:13):
+The user reported on v3.2.24 (2026-07-24 00:13):
 
 > "@Clawsuu and if we have conversation here on discord
 > it should not appear on the app."
@@ -17,9 +17,9 @@ tool without ever touching the desktop).
 
 But this had an unintended side effect: every agent
 reply in a Discord conversation showed up as a message
-in the mobile chat. If Tobe and I had a long
+in the mobile chat. If the user and I had a long
 conversation in Discord, the mobile chat would fill
-up with all the agent's replies, even though Tobe
+up with all the agent's replies, even though the user
 wasn't engaging with the agent via mobile.
 
 The mobile chat panel should reflect conversations
@@ -40,7 +40,7 @@ broadcasts.
 ```js
 onChatMessage: ({ agentId, agentName, text, isUser }) => {
   // v3.2.25: NO mobile broadcast for Discord-routed
-  // agent replies. Tobe: 'discord conversation should
+  // agent replies. the user: 'discord conversation should
   // not appear on the app.' We still send the IPC to
   // the renderer so chatHistoryByAgent stays in sync.
   if (mainWindow && !mainWindow.isDestroyed()) {

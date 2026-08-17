@@ -1,6 +1,6 @@
 # 3.2.21 (desktop) — fix: audio→LLM pipeline was broken
 
-## Reported by Tobe (via mobile voice mode)
+## Reported by the user (via mobile voice mode)
 
 After v3.2.19 / v3.2.20 mobile, voice mode opens correctly,
 greeting plays, recording works, audio is sent — but the
@@ -24,7 +24,7 @@ replies, so no `chat_message` event is broadcast back to
 the mobile, so no `_voiceReplyWs` audio response goes back.
 
 Net effect: mobile sits on "Transcribing..." forever, exactly
-what Tobe saw.
+what The user saw.
 
 This send used to exist. It was added in commit c275eae
 (2026-04-14) when the sync server was first built. At some
@@ -84,7 +84,7 @@ LLM was never getting the input.
 
 The desktop CyberClaw Electron app loads main.js once at
 startup. The current running process (PID 21463) is running
-the OLD code. **Tobe needs to close the desktop CyberClaw
+the OLD code. **the user needs to close the desktop CyberClaw
 and reopen it** to pick up this fix. After restart, voice
 mode should work end-to-end.
 

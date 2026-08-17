@@ -6,7 +6,7 @@ Aligns with the renderer's 90s `Promise.race` (v3.2.37)
 so the renderer-side timeout and the IPC-side timeout
 fire at the same instant.
 
-**Why:** Tobe's 2026-07-29 14:13 report: a hung agent
+**Why:** the user's 2026-07-29 14:13 report: a hung agent
 call left the chat pipeline stuck for >14 minutes. The
 previous desktop (started 13:38) wedged the openclaw IPC
 chain: the renderer's `await cyberclaw.chat.sendMessage

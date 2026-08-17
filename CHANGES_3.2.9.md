@@ -1,6 +1,6 @@
 # v3.2.9 — Mobile chat history shape mismatch (agent_history)
 
-Tobe (on mobile v3.10.31, desktop v3.2.8):
+the user (on mobile v3.10.31, desktop v3.2.8):
 
 > "i also noticed that that conversation is not in the chat for some
 > reason. All voice mode chats should appear in the chat aswell."

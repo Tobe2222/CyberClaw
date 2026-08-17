@@ -6,7 +6,7 @@ a `console.warn` line when it drops a chat because
 `client.authenticated` is still false. Before, the
 drop was completely silent.
 
-**Why:** Tobe's 2026-07-29 18:30 report: "I wrote in
+**Why:** the user's 2026-07-29 18:30 report: "I wrote in
 the chat but no thinking indication and no response.
 There is the log in second image." The mobile logs
 show no `→ [clawsuu]` line, the desktop log shows no

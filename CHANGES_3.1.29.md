@@ -1,7 +1,7 @@
 # 3.1.29 — Broadcast SVG icons as data URIs (works in React Native)
 
 ## What it adds
-Tobe: "Updated mobile and that still has the old robot icons." After v3.1.28 the desktop was correctly showing Twemoji boar/hare SVGs in the chat channel tabs, but the mobile (v3.1.69) was still showing robot icons.
+the user: "Updated mobile and that still has the old robot icons." After v3.1.28 the desktop was correctly showing Twemoji boar/hare SVGs in the chat channel tabs, but the mobile (v3.1.69) was still showing robot icons.
 
 ## Root cause: relative file paths don't work in React Native's `<Image>`
 v3.1.26 added `iconFile` (relative path like `'assets/icons/boar.svg'`) to the catalog and the broadcast payload. The desktop chat tab uses `<img src="boar.svg">` which works (HTML resolves relative paths from the HTML's location).

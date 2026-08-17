@@ -7,3 +7,8 @@ scripts/__pycache__/
 scripts/piper-sample-generator/models/*.pt
 scripts/piper-sample-generator/models/*.json
 **/__pycache__
+
+# Agent conversation logs — private to the dev's local workspace, not part of the public repo.
+# These are kept on disk for the agent's continuity but must never be committed.
+latest.md
+memory/

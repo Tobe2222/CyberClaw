@@ -68,7 +68,7 @@ followed by a fresh `cyberclaw_system` event carrying
 the now-default content. The mobile updates its
 textbox without an extra round-trip.
 
-Tobe 2026-08-04 17:31: "did we have a cyberclaw md
+the user 2026-08-04 17:31: "did we have a cyberclaw md
 also, outside of companions? If not we should have it
 in the settings (editable with a warning that this
 might break the companions behaviour)."
@@ -127,7 +127,7 @@ might break the companions behaviour)."
   CONVERSATION.md) still live at
   `<quest.directory>/` (or id-based fallback). No
   physical file-migration on directory change —
-  explicit per design (Tobe's mental model: file
+  explicit per design (the user's mental model: file
   co-locates with the project it describes; moving
   the directory is the user's signal that the
   quest is now about a different project).

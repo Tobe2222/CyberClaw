@@ -2,7 +2,7 @@
 
 ## Bug
 
-Tobe (post-v3.2.95, on mobile v3.10.165): the new mobile voice picker sends
+the user (post-v3.2.95, on mobile v3.10.165): the new mobile voice picker sends
 `set_tts_voice` to the desktop, the desktop writes
 `localStorage.cyberclaw-settings.ttsVoice`, the desktop's main reply path
 (main.js:5200) reads it back when synthesizing the AI-response audio —

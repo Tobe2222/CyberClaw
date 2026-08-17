@@ -2,7 +2,7 @@
 
 ## 1. Chat messages now selectable (drag-to-select)
 
-**Tobe's report (2026-08-02 20:27):**
+**the user's report (2026-08-02 20:27):**
 > "I noticed that i cannot Click the messages, as in mark
 > and copy etc, fix so i can do that."
 

@@ -1,6 +1,6 @@
 # v3.2.66 — fix ReferenceError on httpTimeoutMs (v3.2.65 regression)
 
-Tobe 2026-08-05 08:56:
+the user 2026-08-05 08:56:
 > "But I had this error when talking to clawsuu on
 > cyberclaw. What happened here?"
 > [screenshot: `Error: Error invoking remote method

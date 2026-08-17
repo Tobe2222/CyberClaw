@@ -1,6 +1,6 @@
 # v3.2.63 — Layer optimization for cyberclaw.md + soul presets
 
-Tobe 2026-08-04 20:59:
+the user 2026-08-04 20:59:
 > "lets optimize it, keep in mind that we are using
 > openclaw.md, cyberclaw.md, companion.md, and
 > quest_instructions.md. we should optimize these as
@@ -56,7 +56,7 @@ sections:
 - `## Quests` (3 bullets) — when to create a quest,
   what tools to use, when to use `QUEST_NOTE` for
   project knowledge.
-- `## CyberClaw environment` (4 bullets) — Tobe's
+- `## CyberClaw environment` (4 bullets) — the user's
   operational context (desktop sync server on 9247,
   mobile companion app, picture format,
   "always reply on cyberclaw when spoken to").
@@ -77,7 +77,7 @@ Lines cut, with reasons:
 
 What was added:
 
-- The `## CyberClaw environment` section. Tobe's 17:31
+- The `## CyberClaw environment` section. the user's 17:31
   bullets (mkdir+files / picture format / "check files
   before reply" / "always reply on CyberClaw") live
   here, framed as operational reality rather than as
@@ -138,8 +138,8 @@ trait presets. No code change.
 ## What didn't change (deliberate, intentional gap)
 
 - **No edits to existing companions' `soul.md` files**
-  on disk. They're user data; Tobe edits them at will.
-  If Tobe wants his current `clawsuu` / `lamasuu` to
+  on disk. They're user data; the user edits them at will.
+  If the user wants his current `clawsuu` / `lamasuu` to
   pick up the new defaults, he can use Reset-to-
   default from the mobile's Settings or desktop's
   Companion Forge — or just edit the files directly.
@@ -150,7 +150,7 @@ trait presets. No code change.
 - **No edits to existing quests' `INSTRUCTIONS.md` /
   `CONVERSATION.md`** on disk. Same reason.
 - **`openclaw.md` not touched**. Lives outside this
-  repo. If Tobe wants to optimize that one too, it's a
+  repo. If the user wants to optimize that one too, it's a
   separate task.
 
 ## Why bulk-edit friendly + scoped defaults
@@ -161,28 +161,28 @@ than auto-migrating:
 1. **The user owns their files.** `soul.md`,
    `CYBERCLAW.md`, `memory.md`, `INSTRUCTIONS.md`,
    `CONVERSATION.md` are all user-editable. Migrating
-   them silently on Tobe's behalf would surprise him
+   them silently on the user's behalf would surprise him
    next time he opens Companion Forge or Settings and
    sees his edits gone.
 
 2. **Existing companions can stay as they are.** The
    new defaults are better-than-old for new installs
    and resets; existing companions can adopt them
-   when ready, on Tobe's terms. Cost: zero for
+   when ready, on the user's terms. Cost: zero for
    existing companions because their file is theirs.
 
 3. **Reset-to-default is the migrate path.** Both the
    desktop's Companion Forge (soul.md) and the
    mobile's Settings (CYBERCLAW.md) have explicit
    "reset" actions that overwrite the user's file with
-   the new default. Tobe can swap any companion or the
+   the new default. the user can swap any companion or the
    overarching prompt without code.
 
 ## Files
 
 - `src/companion-prompts.js`:
   - `DEFAULT_SYSTEM_PROMPT` rewritten (70 lines → 50 lines,
-    4 sections with bullet points, Tobe's
+    4 sections with bullet points, the user's
     `## CyberClaw environment` block).
   - `SAFETY_PREAMBLE` unchanged.
   - `SOUL_PRESETS` tightened (each preset ~30-40% shorter,
@@ -209,7 +209,7 @@ than auto-migrating:
 - Migration boundary check: `migrateAllSouls` still
   skips companions that already have a soul.md.
   Existing per-companion soul.md / memory.md files on
-  Tobe's disk are NOT touched.
+  the user's disk are NOT touched.
 
 ## What to test on next restart
 
@@ -227,7 +227,7 @@ than auto-migrating:
    as a coherent paragraph rather than a kitchen-sink
    persona.
 5. Optional: reset `clawsuu` / `lamasuu` to defaults
-   if Tobe wants the new sharper style. Existing
+   if the user wants the new sharper style. Existing
    companions are unaffected otherwise.
 
 ## See also

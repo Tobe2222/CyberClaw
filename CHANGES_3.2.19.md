@@ -1,6 +1,6 @@
 # v3.2.19 — Quest callbacks wired into SyncServer (14-day-old bug fix)
 
-Tobe reported on 2026-07-22 that quest edit still
+The user reported on 2026-07-22 that quest edit still
 failed after v3.2.17's name-based fallback + richer
 diagnostic info. The toast said
 "Couldn't update quest: quest not found · wanted id
@@ -34,23 +34,23 @@ nobody references. The runtime check
 `this.onUpdateQuest ? this.onUpdateQuest(...) : null`
 always evaluated falsy.
 
-**Tobe's quest edits have NEVER actually worked since
+**the user's quest edits have NEVER actually worked since
 2026-07-08** — 14 days of silent failure that the
 v3.10.74 broadcast-acked gate + v3.10.77 diagnostic
 info + v3.2.17 name-based fallback all failed to
 catch, because none of those layers fixed the
 underlying wiring.
 
-## How Tobe's diagnostic info caught it
+## How the user's diagnostic info caught it
 
-Tobe tested V2 edit after my v3.2.17 restart. The toast
+The user tested V2 edit after my v3.2.17 restart. The toast
 showed:
 > "Couldn't update quest: quest not found · wanted
 > id \"mlwysbptbii7\", desktop has no quests"
 
 I shipped extra logging in `onListQuests` and
 `onUpdateQuest` (v3.2.17) to log `loadQuests.length`.
-Rebooted. Tobe retried. The new console.logs did NOT
+Rebooted. the user retried. The new console.logs did NOT
 fire — but the sync-server's
 `update_quest: id not found` log DID. That told me
 the function in main.js was never being CALLED, only
@@ -97,7 +97,7 @@ required later.
 **Diagnostic info that itself doesn't work is itself
 diagnostic.** My v3.2.17 added console.log inside
 `onListQuests` and `onUpdateQuest`. The toast at
-Tobe's end showed `available: []` with no `console.log`
+the user's end showed `available: []` with no `console.log`
 preamble. That told me the functions were NEVER BEING
 CALLED — only the outer `if (this.onListQuests) ...
 (this.onListQuests() || [])` evaluates and finds
@@ -106,7 +106,7 @@ existed but never executed → tells me the wiring is
 broken, not the function body.
 
 **A 14-day-old bug is worse than a 14-minute-old bug.**
-Tobe probably thought quest editing was always broken
+the user probably thought quest editing was always broken
 and just worked around it on the desktop. The
 broadcast-acked gate + diagnostic info layers kept
 "fixing" symptoms without addressing the underlying

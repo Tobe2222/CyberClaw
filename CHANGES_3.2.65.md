@@ -1,6 +1,6 @@
 # v3.2.65 — HTTP timeout + safe CLI fallback for chat:send
 
-Tobe 2026-08-05 06:04:
+the user 2026-08-05 06:04:
 > "@Clawsuu any idea why hes not answers?"
 
 Then 06:12:
@@ -32,7 +32,7 @@ queues behind the stuck call. User sees nothing.
 ```
 [chat:send/http] POST http://127.0.0.1:18789/v1/chat/completions  ← last successful
 ... 60 minutes of OpenClaw tail chatter, no chat:send activity ...
-[mobile-chat] hold elapsed, sending text-only: [From: Android Phone] ?  ← Tobe's first message
+[mobile-chat] hold elapsed, sending text-only: [From: Android Phone] ?  ← the user's first message
 [mobile-chat] hold elapsed, sending text-only: [From: Android Phone] Hey
 [mobile-chat] hold elapsed, sending text-only: [From: Android Phone] Hello
 [RW] [sendChatMessage] typing bubble > 300s, force-clearing
@@ -82,7 +82,7 @@ with unbalanced quoting and barfed:
 that entire multi-line error string. The desktop
 returned `{ ok: false, error: err.message }` and
 the renderer displayed `Error: <30KB of stderr>`
-as the chat bubble. Tobe saw it as "he spewed alot
+as the chat bubble. The user saw it as "he spewed alot
 of crap."
 
 **Fix:** switch the CLI fallback from `execCb` to

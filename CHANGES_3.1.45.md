@@ -1,6 +1,6 @@
 # v3.1.45 — Wake trainer: don't let the payload's `type` field overwrite the wire type
 
-After v3.1.44 broadcast progress events, Tobe re-tested and
+After v3.1.44 broadcast progress events, the user re-tested and
 the phone bar STILL didn't move. The logging card on the
 mobile side (v3.2.9) showed `Last event: 113s ago` (red) and
 zero entries in the event log. The desktop log showed tqdm

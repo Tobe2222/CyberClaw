@@ -1,6 +1,6 @@
 # v3.2.15 — Mobile feed/treats relay (companion v3.10.72)
 
-Tobe asked on 2026-07-22 to bring the food/treats
+The user asked on 2026-07-22 to bring the food/treats
 feature to mobile, mirroring the desktop. Mobile
 ships in v3.10.72 (tag `v3.10.72`, branch
 `fix/v3.10.66-active-enrollment-bridge`).

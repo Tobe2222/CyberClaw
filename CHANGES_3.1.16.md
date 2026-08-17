@@ -66,7 +66,7 @@ if (agent.sleepState === 'sleeping') {
 ### 2. Night window was 22:00–08:00, should end at 06:30
 
 The original `isNightTime()` used a coarse `getHours() < 8` check,
-so the auto-wake happened at 08:00 sharp. Tobe asked for 06:30.
+so the auto-wake happened at 08:00 sharp. The user asked for 06:30.
 Switched to minutes-of-day for sub-hour precision:
 
 ```js

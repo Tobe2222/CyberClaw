@@ -4,7 +4,7 @@
 
 After the v3.10.137 mobile fix shipped (correctly sending
 `arena_treat_placed` as a JSON object instead of a
-double-stringified string), Tobe tested the new APK and
+double-stringified string), The user tested the new APK and
 reported on 2026-08-06:
 
 > "clawsuu still cant recognize that he has been feeded.
@@ -48,7 +48,7 @@ the callback **silently never fired**. No error, no log,
 no-op.
 
 This is exactly the same bug class as v3.10.79 (quest
-callbacks missing from constructor — Tobe hit that on
+callbacks missing from constructor — The user hit that on
 2026-07-22 with the quest editor showing "Couldn't update
 quest" repeatedly). The comment block at lines 56-69 of
 sync-server.js even documents that exact pattern.
@@ -114,10 +114,10 @@ if (this.onArenaTreatPlaced) {
 }
 ```
 
-This would have surfaced the bug within minutes of Tobe's
+This would have surfaced the bug within minutes of the user's
 first feed test instead of ~2 weeks later.
 
-## Verification (for Tobe to confirm)
+## Verification (for the user to confirm)
 
 1. Restart the desktop (`npm start`).
 2. Drop a treat on the mobile arena.

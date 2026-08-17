@@ -2,7 +2,7 @@
 
 ## What it fixes
 
-After installing the mobile v3.1.71 chat-label fix, Tobe reported that
+After installing the mobile v3.1.71 chat-label fix, The user reported that
 the chat message labels now show 🤖 (the desktop's default emoji)
 instead of the sprite catalog icon (🦊 for fox, 🐇 for hare, etc.).
 The chat tabs at the bottom of the screen also had no icon at all,

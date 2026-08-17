@@ -1,6 +1,6 @@
 # v3.2.59 — Per-quest conversation log (cross-session memory)
 
-> **Update 2026-08-04 12:37:** Tobe confirmed Discord should NOT
+> **Update 2026-08-04 12:37:** The user confirmed Discord should NOT
 > feed the quest log. v3.2.60 (no version bump yet) unwinds
 > the Discord-tail IPC write path. The chat-pipeline write
 > (`addChatMsg` path) remains. See addendum below; the
@@ -9,7 +9,7 @@
 
 ## The bug
 
-Tobe 2026-08-04 11:55 in #cyber-dev (screenshot attached):
+the user 2026-08-04 11:55 in #cyber-dev (screenshot attached):
 > "Okey so i think we updated and started a new session mid
 > conversation on the mobile cyberclaw. Did we not add a
 > conversation log per quest? If not we need to make the
@@ -21,7 +21,7 @@ Tobe 2026-08-04 11:55 in #cyber-dev (screenshot attached):
 
 The screenshot showed the mobile chat (v3.10.133) had lost
 track of the conversation about SeedSigner parts sourcing
-from Welectron. Tobe had just upgraded the desktop and the
+from Welectron. The user had just upgraded the desktop and the
 mid-conversation restart wiped the in-memory chat history
 that was driving the LLM context — the companion "forgot"
 the entire prior discussion.
@@ -41,8 +41,8 @@ Neither of these is **automatic**. Both require the LLM
 to emit the right tag in its reply, which it does only when
 its system prompt reminds it. Both are also **curated** —
 the LLM decides what's worth logging. They DON'T cover the
-literal "what did Tobe just ask me" / "what did I just answer"
-stream. That's the gap Tobe wants filled.
+literal "what did The user just ask me" / "what did I just answer"
+stream. That's the gap the user wants filled.
 
 There's also a `chatHistoryByAgent[agentId]` (capped at
 200 messages, persisted to localStorage) that mirrors the
@@ -185,7 +185,7 @@ QuestsScreen UI to add per-quest conversation history.
   log captures the raw stream. They're complementary.
 - The cap-200 / 1000-chars-per-entry settings are baked
   constants in `main.js`. Easy to expose via settings UI
-  later if Tobe wants different limits per quest type.
+  later if the user wants different limits per quest type.
 
 ## Files
 
@@ -210,7 +210,7 @@ QuestsScreen UI to add per-quest conversation history.
   4. Quit the desktop (Cmd+Q) WHILE the chat is open.
   5. Re-launch the desktop.
   6. Mobile → chat "What about Adafruit for headers?"
-  7. The companion should remember that Tobe was asking about
+  7. The companion should remember that The user was asking about
      Pi Zero sourcing and reference Welectron/Adafruit in
      the context, not re-ask what the project is about.
 
@@ -221,7 +221,7 @@ QuestsScreen UI to add per-quest conversation history.
   "past conversations" panel. Add as a follow-up.
 - **Discord tail migration is automatic** (covered above)
   but only if `activeQuestId` is set on the desktop at
-  the time the Discord message arrives. If Tobe uses
+  the time the Discord message arrives. If the user uses
   Discord without an active quest (the more typical case),
   the log simply doesn't fire — that's by design; the
   quest is project-scoped, the conversation log is

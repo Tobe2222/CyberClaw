@@ -2,10 +2,10 @@
 
 ## 1. The system prompt wasn't enough
 
-**Tobe's report (2026-08-02 21:10):**
+**the user's report (2026-08-02 21:10):**
 > "but why did he/you not do the changes? Only talk?"
 
-**Screenshot:** Tobe asked for several CSS and agent-path
+**Screenshot:** The user asked for several CSS and agent-path
 changes. Clawsuu replied asking clarifying questions ("Where
 exactly do you want these? Main CSS in arena?") instead of
 making any edits. No tool calls fired.

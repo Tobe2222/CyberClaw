@@ -35,7 +35,7 @@ TTS doesn't read the tag aloud.
 `match(…)` blocks for the actions run on the original
 `result.reply` and still execute the side effect.
 
-**Tobe's 2026-07-29 feedback:** "why does it say the
+**the user's 2026-07-29 feedback:** "why does it say the
 quest append thing? i dont want that."
 
 ### 2. Chat pipeline diagnostics + quest-list timeout
@@ -52,7 +52,7 @@ stage that's stuck:
 
 Plus a `console.warn` if the quest context fetch fails.
 
-**The 3s `quests.list()` timeout.** Tobe's
+**The 3s `quests.list()` timeout.** the user's
 "Why wont you answer?" message on 2026-07-29 11:41
 went through the mobile-chat IPC, hit `sendChatMessage`,
 hit the chatBusy queue, was force-reset, but then

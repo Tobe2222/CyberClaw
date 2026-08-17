@@ -4,7 +4,7 @@
 
 Right after the v3.2.77 fix landed (which finally wired
 the `onArenaTreatPlaced` / `onArenaTreatEaten` callbacks
-in the SyncServer constructor), Tobe tested again and
+in the SyncServer constructor), The user tested again and
 reported on 2026-08-06:
 
 > "He still says the same."
@@ -107,7 +107,7 @@ per IPC + losing any non-JSON-serializable values
 for the safety net. Add at the same time as the v3.10.79
 one-shot warning fix from v3.2.77.
 
-## Verification (for Tobe to confirm)
+## Verification (for the user to confirm)
 
 1. Restart the desktop (one more time).
 2. Drop a treat on the mobile arena.

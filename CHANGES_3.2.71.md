@@ -1,6 +1,6 @@
 # v3.2.71 — make mobile-arena food events chat-visible (revert v3.10.74)
 
-Tobe 2026-08-05 11:59:
+the user 2026-08-05 11:59:
 > "I tried to give him some food but he does not
 > seem to remember, perhaps we should make him
 > comment it each time so he sees it in the log
@@ -24,7 +24,7 @@ v3.10.74 (much earlier) had explicitly removed the
 chat reaction from the mobile-arena path with this
 note:
 
-> "Tobe asked that the food/play reactions NOT
+> "The user asked that the food/play reactions NOT
 > appear in chat ("The comments the companion makes
 > when given food or played with does not need to
 > appear in the chat"). The visual reaction (😋
@@ -33,7 +33,7 @@ note:
 > round-trip and adds the reply to chat, which is
 > noise for trivial actions like eating a treat."
 
-Tobe reversed this on 2026-08-05 11:59. The mobile
+the user reversed this on 2026-08-05 11:59. The mobile
 chat bubble in the screenshot shows the chat
 reaction never fired for the meat drop, so the LLM
 got "Did you like that meat?" with no running
@@ -50,7 +50,7 @@ Mirror the v3.2.70 desktop-side behavior in the
 mobile-arena IPC handlers:
 
 1. `mobile-arena-treat-placed`: append
-   `Tobe gave me <item> (<category>)` to memory.md
+   `the user gave me <item> (<category>)` to memory.md
    (deterministic, no LLM round-trip), then call
    `promptCompanionReaction('I just gave you X. What
    do you think?')` for a visible chat reply.
@@ -72,7 +72,7 @@ always fire even if the chat pipeline is busy.
 ## Why this didn't bite before
 
 When v3.2.70 shipped, only the desktop renderer got
-the fix. Tobe's testing happened entirely on the
+the fix. the user's testing happened entirely on the
 mobile (v3.10.136), so the chat-side reaction never
 fired for his drops. Both code paths needed the
 same fix; I missed the second one.

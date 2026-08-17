@@ -1,6 +1,6 @@
 # 3.2.27 — agents_list broadcast carries spriteConfig + avatar
 
-Tobe's v3.10.94 feedback (the two real bugs after the
+the user's v3.10.94 feedback (the two real bugs after the
 v3.2.26 Personalize release):
 
 > "if the emoji is the preview we can remove it, i was
@@ -112,7 +112,7 @@ After v3.2.27:
 ## Why this is the right shape
 
 **The data flow should be a property of the system, not
-a manual user sync.** Tobe's original ask in v3.2.26 was
+a manual user sync.** the user's original ask in v3.2.26 was
 "the same settings on both surfaces". v3.2.27 makes
 that a property of the broadcast: the mobile's
 Personalize screen reads from the desktop's `sprites.json`
@@ -152,7 +152,7 @@ async try/catch. Worth an ESLint rule for
 
 **"Sync two surfaces" requires reading the data, not
 just writing it.** v3.2.26 added the WRITE path
-(mobile → desktop via `sprite_config_sync`). Tobe's
+(mobile → desktop via `sprite_config_sync`). the user's
 v3.10.94 feedback revealed we hadn't built the READ
 path: the mobile couldn't see what the desktop had.
 A "synced setting" is only synced when the read path
@@ -163,7 +163,7 @@ didn't. In v3.2.27 they do.
 
 **The preview should be a property of the data, not
 a stand-in for it.** v3.2.26's preview was a catalog
-emoji — visually a preview, semantically not. Tobe
+emoji — visually a preview, semantically not. the user
 called this out: "if the emoji is the preview we can
 remove it, i was thinking of the sprite the way it
 looks in the arena." The lesson: don't ship a
@@ -189,7 +189,7 @@ correctness of having sprite config in the broadcast.
 mobile's Personalize screen in v3.2.26 was a "half
 of the desktop forge" — name, scale, traits, chattiness,
 and a sprite picker that was actually a catalog emoji
-picker. Tobe's iteration has been: try the half
+picker. the user's iteration has been: try the half
 version, then say what's wrong, then we close the gap.
 The v3.2.27 gap-closing is to actually ship the avatar
 PNG, not just the catalog metadata. Half-features are

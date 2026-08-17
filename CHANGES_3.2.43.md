@@ -2,12 +2,12 @@
 
 ## 1. Clawsuu now sees the correct active quest
 
-**Tobe's report (2026-08-02 17:27):**
+**the user's report (2026-08-02 17:27):**
 > "clawsuu tells me that he sees another quest. Something is
 > of with the quests it seems."
 
 The chat screenshot showed:
-- Tobe: "I have cyberhive website as my current quest on the
+- the user: "I have cyberhive website as my current quest on the
   phone here."
 - Clawsuu: "Yeah it says Cyber_Music is active, you absolute
   gremlin — your phone is showing me the wrong shit."

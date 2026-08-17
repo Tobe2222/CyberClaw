@@ -2,12 +2,12 @@
 
 ## 1. The "reply-before-work" pattern is gone
 
-**Tobe's report (2026-08-02 18:14):**
+**the user's report (2026-08-02 18:14):**
 > "no the next reply of from it having done the task never
 > comes. It never does. [...] It does not seem to be that
 > way in discord either, even tho it should be that way."
 
-**What's happening:** when Tobe asks Clawsuu to look for SSH
+**What's happening:** when the user asks Clawsuu to look for SSH
 keys in the notes file, Clawsuu replies "On it — digging
 through the notes file now, should have those keys any
 second" — and then stops. No tool call. No follow-up reply.
@@ -59,7 +59,7 @@ others.
 `~/.openclaw/cyberclaw/CYBERCLAW.md`, that file fully
 replaces the default prompt (the default is only loaded when
 the file is missing). So this fix only applies to companions
-that don't have a custom system prompt yet. Tobe doesn't
+that don't have a custom system prompt yet. the user doesn't
 have CYBERCLAW.md on disk, so the default applies. If he
 later creates one, this fix is bypassed — he'll need to
 copy the new section into his custom prompt.

@@ -14,7 +14,7 @@ window than that — 90s gives the typical IPC error
 but if anything goes silently wrong server-side, the
 race rejects and we surface the error.
 
-Tobe's 2026-07-29 feedback: "And the clawsuu is
+the user's 2026-07-29 feedback: "And the clawsuu is
 working seems to disappear from time to time. Perhaps
 when i minimize and open the app again a little
 later. And its still only saying thinking."
@@ -24,7 +24,7 @@ The old code had `try { result = await ... } catch
 THROWS. A truly hung openclaw call (process exists but
 never returns) would block the `await` indefinitely,
 and `removeChatMsg` would never run. The result was
-exactly what Tobe described: the "thinking..." bubble
+exactly what the user described: the "thinking..." bubble
 stuck, then on top of that, `chatBusy=true` block the
 NEXT message for 15s before the queue force-reset.
 
@@ -54,7 +54,7 @@ sees the desktop log warn "AI still thinking after
 110s — clearing indicator" but at least the bubble
 goes away and the app remains responsive.
 
-This is what Tobe saw: long stretches with no reply,
+This is what The user saw: long stretches with no reply,
 no typing indicator update, no chance to send another
 message. With these three layers stacked, the worst
 case is a 90-110s pause where the chat logs explain

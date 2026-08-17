@@ -2,7 +2,7 @@
 
 ## Why
 
-Tobe tested wake mode and the voice input hung at "Transcribing..." for 3+ minutes before he closed out. The mobile recorder had its 30s hard cap, so the audio file wasn't enormous. whisper-cli in isolation works fine (1s on a 2s test clip), so the actual root cause wasn't identified — could be a malformed m4a, ffmpeg getting stuck on a particular file, or whisper hanging on edge-case input.
+The user tested wake mode and the voice input hung at "Transcribing..." for 3+ minutes before he closed out. The mobile recorder had its 30s hard cap, so the audio file wasn't enormous. whisper-cli in isolation works fine (1s on a 2s test clip), so the actual root cause wasn't identified — could be a malformed m4a, ffmpeg getting stuck on a particular file, or whisper hanging on edge-case input.
 
 The defensive fix: bound how long transcription can take. A hung process that the user has to close out by force is worse than a transcription failure that says "sorry, try again".
 

@@ -1,8 +1,8 @@
 # v3.2.56 — combine mobile text + attachments into one LLM turn
 
-## The bug Tobe hit
+## The bug The user hit
 
-Tobe 2026-08-03 07:50 in #cyber-dev:
+the user 2026-08-03 07:50 in #cyber-dev:
 > "clawsuu still says he cannot see the pictures"
 
 The desktop log for that test run:
@@ -16,7 +16,7 @@ The desktop log for that test run:
 [RI] [mobile-attachment-batch] forwarding to chat: ... attachments: 1
 [chat:send/http] response status=200   ← reply to the text-only call
 [IPC] sync-broadcast-chat received: text="I can see the workspace,
-     but I don't see any image attached to your message, Tobe..."
+     but I don't see any image attached to your message, the user..."
 [RI] [sendChatMessage] dispatching to agent ... attachments=1
 [chat:send/http] POST (body=356581b, attachments=1)   ← second call
 [TTS] Synthesized 1132604 chars, sending to mobile...   ← the image description
@@ -28,7 +28,7 @@ The second got the image only → 1.1M chars describing it
 user could read).
 
 The session log shows the user message arrived as text-only.
-The model replied "no image attached". Tobe saw that reply
+The model replied "no image attached". The user saw that reply
 in the chat and reported it. The image-describing reply from
 the second call ended up in the TTS pipeline but not in the
 chat bubble.
@@ -115,7 +115,7 @@ fewest cross-cutting effects. Two IPC handlers, one timer.
 
 **v3.2.56 (desktop).**
 
-## What Tobe should see next
+## What the user should see next
 
 The next image+text he sends from the mobile should land as
 ONE chat turn. The LLM should describe the image in its

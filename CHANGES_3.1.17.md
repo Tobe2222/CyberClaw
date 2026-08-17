@@ -49,7 +49,7 @@ agents list, the list itself is small (~200 bytes per
 companion) and the desktop is the source of truth — there is
 no "stale" to avoid. So the 10-minute window was wrong.
 
-Tobe's case: started the desktop at 07:52, opened the mobile
+the user's case: started the desktop at 07:52, opened the mobile
 app at 08:44. That's 52 minutes — way past 10. So when the
 mobile's first `request_state` hit the desktop, the cache was
 technically there, but the TTL check rejected it. No agents

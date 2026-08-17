@@ -2,7 +2,7 @@
 
 ## 1. Why
 
-**Tobe's report (2026-08-02 22:25):**
+**the user's report (2026-08-02 22:25):**
 > "he claims to still not see the images. And then i tried
 > again with a single picture but that did not show after i
 > sent it, in the bubble. I then tried sending one without
@@ -17,7 +17,7 @@ all.
 
 ## 2. What we know
 
-- My standalone curl test (Tobe's exact shape:
+- My standalone curl test (the user's exact shape:
   `messages[0].content: [{type:text,text:""},{type:image_url,image_url:{url:"data:image/png;base64,..."}}]`)
   works. The model returned "I see a tiny thumbnail came
   through — like 22 pixels of garbage." (correctly
@@ -72,7 +72,7 @@ mismatch is.
 
 ## 4. Three separate problems in this report
 
-Tobe also reported two issues I haven't addressed yet:
+The user also reported two issues I haven't addressed yet:
 
 - **Single-image send produced no user bubble.** This is
   the mobile-side rendering of `attachments` on a single-
@@ -86,7 +86,7 @@ Tobe also reported two issues I haven't addressed yet:
   early-return guard in `__sendChatMessageImpl`:
   `if (!message && (!attachments || attachments.length === 0)) return;`
   — fixed in v3.2.51 (empty message + non-empty attachments
-  is now valid). Should be working. If Tobe's seeing this
+  is now valid). Should be working. If the user's seeing this
   still, might be the focus-check on TextInput not auto-
   attaching (v3.10.129) — but a manually-attached image
   should also work via the 📎 button. Investigating next.

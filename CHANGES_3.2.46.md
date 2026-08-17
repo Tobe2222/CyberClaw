@@ -2,7 +2,7 @@
 
 ## 1. Error messages now reach the mobile
 
-**Tobe's report (2026-08-02 20:18):**
+**the user's report (2026-08-02 20:18):**
 > "Something is wrong with the clawsuu is thinking now.
 > It appeared for a few seconds then its gone. He cant
 > possibly have done the task so fast so my guess is that
@@ -11,7 +11,7 @@
 
 **What was happening:** the IPC's 90s timeout fired because
 the LLM was doing a multi-step task (editing 7 files —
-Tobe's "windows taskbar icon, logo bigger, version control"
+the user's "windows taskbar icon, logo bigger, version control"
 report). The openclaw process was clearly making progress
 (20+ tool calls visible in `SessionTail`) but hadn't
 finished. The IPC killed the process and returned
@@ -51,7 +51,7 @@ case.
 The v3.2.45 chain wrapper wraps the original impl in
 try/finally to resolve the chain promise. With the
 error broadcast fix in #1, errors now reach the mobile
-even when they fire during a queued call. Tobe's chain
+even when they fire during a queued call. the user's chain
 serialization isn't broken — same one-message-at-a-time
 behavior, just with proper error visibility.
 

@@ -2,25 +2,25 @@
 
 ## 1. First chat send after a quest switch now sees the instructions file
 
-**Tobe's report (2026-08-02 15:45):**
+**the user's report (2026-08-02 15:45):**
 > "for some reason i cannot scroll all the way down now when i
 > have the keyboard up. ... hmm, clawsuu on the cyberclaw still
 > seem a bit confused. [...] the messages show it missed the
 > instructions file."
 
 The chat screenshot tells the story:
-- Tobe set CYBERHIVE_WEBSITE V3 as the active quest.
-- Tobe sent "do it".
-- Clawsuu replied "What the fuck, Tobe. I'm sitting here
+- the user set CYBERHIVE_WEBSITE V3 as the active quest.
+- The user sent "do it".
+- Clawsuu replied "What the fuck, the user. I'm sitting here
   starving waiting for you to actually let me into the project
   — you said 'do it' but didn't unlock shit. You wanna hand me
   the keys or what?"
-- Tobe: "The keys? Its in the quest instructions. Or do you not
+- the user: "The keys? Its in the quest instructions. Or do you not
   see that?"
 - Clawsuu: "I'm a dumbass, missed it."
 
 The instructions file was there. The quest editor showed it to
-Tobe. But the companion's chat context didn't have it on the
+the user. But the companion's chat context didn't have it on the
 **first** send after the quest switch.
 
 **Root cause:** `buildActiveQuestContext` is (was) sync and the
@@ -30,11 +30,11 @@ from the SECOND call onwards. The comment in the code even
 called this out:
 
 > "The first chat send after opening a quest will NOT have the
-> instructions file in context; the second one will. Tobe's UX
+> instructions file in context; the second one will. the user's UX
 > is 'open quest, type, send' so the second-send delay is
 > acceptable."
 
-Tobe's UX is exactly "open quest, type, send" — and the
+the user's UX is exactly "open quest, type, send" — and the
 companion's "I'm a dumbass, missed it" reply is the visible
 failure of that tradeoff. The two-send delay isn't acceptable
 when the user only sends one.
@@ -71,7 +71,7 @@ instructions file in context.
 
 ## 2. Companion can leave notes for itself in the quest instructions
 
-**Tobe's report (2026-08-02 15:45):**
+**the user's report (2026-08-02 15:45):**
 > "as it works within the quests it should leave notes for itself,
 > and update key info in the quest instructions for itself, how
 > to do things etc."
@@ -120,7 +120,7 @@ visible chat bubble.
 
 ## 3. Why I didn't add a separate `QUEST_MEMORY.md` file
 
-Worth a note: Tobe's "leave notes for itself" could have been
+Worth a note: the user's "leave notes for itself" could have been
 implemented as a separate `QUEST_MEMORY.md` file inside the
 quest directory. I chose to put the notes in the same
 `QUEST_QUEST_INSTRUCTIONS.md` file under a `## Companion notes`

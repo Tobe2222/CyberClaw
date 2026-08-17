@@ -2,7 +2,7 @@
 
 ## 1. The bug
 
-**Tobe's report (2026-08-02 21:27):**
+**the user's report (2026-08-02 21:27):**
 > "the companion could not see them after they were sent,
 > or looks to be sent from the user perspective."
 

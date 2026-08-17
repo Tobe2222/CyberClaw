@@ -1,6 +1,6 @@
 # v3.1.53 — Wake word training: optional user-recorded near-miss clips
 
-Tobe: "we dont have near-miss in the training path, we
+the user: "we dont have near-miss in the training path, we
 need to add that if we are to use it."
 
 The v3.1.49 wake-word training pipeline uses Piper-TTS-

@@ -1,7 +1,7 @@
 # 3.1.24 — Fix sprite catalog loading in renderer context
 
 ## What it fixes
-Tobe: "no, look at the picture, its a robot icon like it has been previously. For some reason it has not changed or updated."
+the user: "no, look at the picture, its a robot icon like it has been previously. For some reason it has not changed or updated."
 
 After v3.1.23 the chat tabs SHOULD have shown the new sprite icons (🦊 🐇), but the user kept seeing 🤖. The `loadPixelCatalog()` function in `companion-renderer.js` was silently returning `{ companions: [] }` — an empty catalog — because the catalog file path resolution was unreliable in the renderer's `<script>` context.
 

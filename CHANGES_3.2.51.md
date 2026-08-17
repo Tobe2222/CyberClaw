@@ -2,11 +2,11 @@
 
 ## 1. The fix
 
-**Tobe's report (2026-08-02 21:45):**
+**the user's report (2026-08-02 21:45):**
 > "Okey we need this ability so go with the option you
 > think is most appropriate for this app."
 
-Tobe wanted attachments to work like Discord: image bytes
+The user wanted attachments to work like Discord: image bytes
 reach the model inline, not as a path the model can't read.
 The CLI path (`openclaw agent -m <text>`) is text-only by
 design — OpenClaw's gateway-side ACP layer supports

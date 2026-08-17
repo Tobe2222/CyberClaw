@@ -3,7 +3,7 @@
 ## The bug
 
 After v3.2.79 landed (the companion-attribution
-patch), Tobe tested treats on the mobile arena and
+patch), The user tested treats on the mobile arena and
 reported on 2026-08-06 11:34:
 
 > "Okey did a couple drops right now. And the button
@@ -158,14 +158,14 @@ runtime happily produces a working no-op.
 helper at every IPC + function boundary. Could be a
 weekly landing page. Defer to a follow-up.
 
-## Verification (for Tobe)
+## Verification (for the user)
 
 1. Drop a meat on the mobile arena.
 2. Expected: log shows `[promptCompanionReaction] targetId= clawsuu hasAgent= true sleepState= awake chat= true targetAgentId= clawsuu activeChatAgentId= clawsuu`.
 3. Expected: chat:send fires within 100ms.
 4. Expected: clawsuu replies in chat ("Yum, thanks
    for the meat!").
-5. Expected: memory.md appends a `- Tobe gave me meat (food)` line.
+5. Expected: memory.md appends a `- the user gave me meat (food)` line.
 
 If step 5 still doesn't happen, we've found the
 deeper 12-day-old memory regression.

@@ -1,6 +1,6 @@
 # v3.2.70 — make snack events always visible in the chat log
 
-Tobe 2026-08-05 11:59:
+the user 2026-08-05 11:59:
 > "I tried to give him some food but he does not
 > seem to remember, perhaps we should make him
 > comment it each time so he sees it in the log
@@ -9,7 +9,7 @@ Tobe 2026-08-05 11:59:
 
 ## What v3.2.64 (silent snack log) actually did
 
-Looking at the screenshot — Tobe dropped a snack,
+Looking at the screenshot — the user dropped a snack,
 then asked "Was that food satisfying?", and got back
 "Tastes like dust and broken dreams... I need real
 food". The companion had no idea food was just
@@ -20,7 +20,7 @@ Tracing the v3.2.64 code path:
 ```js
 function placeTreatOnArena(...) {
   // 1. Direct append to memory.md (deterministic)
-  promptCompanionSilent(agentId, 'Tobe gave me hamburger (food)', 'happy');
+  promptCompanionSilent(agentId, 'the user gave me hamburger (food)', 'happy');
   // 2. Visible reaction prompt to the LLM
   promptCompanionReaction('I just gave you a hamburger. What do you think?');
 }
@@ -38,20 +38,20 @@ What actually happened on 2026-08-05 11:59:
 
 1. **The reaction got dropped silently.** `promptCompanionReaction`
    has a busy-guard: `if (chatBusy || reactionBusy) return;`.
-   Tobe dropped the snack while a previous reaction /
+   the user dropped the snack while a previous reaction /
    user message was in flight (clawsuu had been
-   responding to "Afternoon already, Tobe..." 9
+   responding to "Afternoon already, the user..." 9
    minutes earlier; the reaction round-trip likely
    hadn't fully drained). Guard returned early —
    **no chat reaction was sent**.
 
 2. **Memory.md updated, but the current session's LLM
    doesn't re-read it.** The silent append wrote
-   `Tobe gave me hamburger (food)` to
+   `the user gave me hamburger (food)` to
    `~/.openclaw/cyberclaw/companions/clawsuu/memory.md`.
    But the OpenClaw session's assembled system prompt
    was already built and injected into the LLM's
-   context window. When the LLM received Tobe's
+   context window. When the LLM received the user's
    follow-up "Was that food satisfying?", it never
    re-read memory.md mid-turn — the file edit was
    invisible to it.
@@ -74,7 +74,7 @@ Two changes:
 
 2. **Skip the silent-prompt path for food events.**
    `placeTreatOnArena` now:
-   - Directly appends `Tobe gave me <item> (<category>)`
+   - Directly appends `the user gave me <item> (<category>)`
      to memory.md (deterministic, no LLM round-trip)
    - Fires `promptCompanionReaction` (visible chat,
      goes through `addChatMsg` as 'agent' message,

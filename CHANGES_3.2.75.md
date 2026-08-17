@@ -12,7 +12,7 @@ was undefined, and the case dispatch silently
 fell through.
 
 The fix lives in the mobile repo as v3.10.137
-(commit `51fc5b1`). Once Tobe rebuilds and
+(commit `51fc5b1`). Once the user rebuilds and
 installs the APK, the chat reaction will fire.
 
 This commit removes the diagnostic logs added in
@@ -47,7 +47,7 @@ syncClient.send({
 });
 ```
 
-Tobe needs to `./build-android.sh` to produce a
+the user needs to `./build-android.sh` to produce a
 new APK and install on his phone for the fix to
 take effect. The JS bundle is baked into the APK
 — no hot-reload possible.

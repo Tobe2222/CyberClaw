@@ -4,7 +4,7 @@
 
 Until now, every companion silently used the global default LLM (`minimax/MiniMax-M3` in your config). The `forge-model-primary` dropdown in the companion editor updated `agent.spriteConfig.primaryModel` but never propagated the choice to `openclaw.json`'s `agents.list[i].model.primary` — so the gateway kept routing every agent to the default model regardless of what the picker said.
 
-Tobe's vision: each companion picks its own LLM. Local models the user has already downloaded (Ollama, LM Studio, llama.cpp server, Jan.ai, vLLM, anything with an OpenAI-compatible `/v1/models` endpoint) are first-class — no bundling model runtimes, no managing downloads.
+the user's vision: each companion picks its own LLM. Local models the user has already downloaded (Ollama, LM Studio, llama.cpp server, Jan.ai, vLLM, anything with an OpenAI-compatible `/v1/models` endpoint) are first-class — no bundling model runtimes, no managing downloads.
 
 ## What changed
 

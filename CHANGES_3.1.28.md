@@ -1,7 +1,7 @@
 # 3.1.28 — Set `_pixelCompanionId` at agent load time
 
 ## What it fixes
-Tobe's DevTools diagnostic on v3.1.27:
+the user's DevTools diagnostic on v3.1.27:
 ```
 lookup test: iconFile=assets/icons/boar.svg icon=🐗 agents_clawsuu_id=undefined agents_lamasuu_id=undefined
 ```

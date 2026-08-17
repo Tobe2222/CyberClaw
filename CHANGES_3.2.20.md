@@ -1,8 +1,8 @@
 # 3.2.20 — chat: always inject quest-tools hint (incl. CREATE_QUEST)
 
-## Reported by Tobe (via mobile chat, screenshot)
+## Reported by the user (via mobile chat, screenshot)
 
-Tobe's chat with Clawsuu (mobile, 2026-07-23):
+the user's chat with Clawsuu (mobile, 2026-07-23):
 
 > "@Clawsuu any idea why the companion could not
 > create a new quest?"
@@ -15,7 +15,7 @@ creating a quest called "Cyber_School":
    already exists in your active quest list and I'll
    roll from there." (hallucinated a tool that doesn't
    exist)
-2. After Tobe said "create one i said": "Cron scheduled
+2. After The user said "create one i said": "Cron scheduled
    an isolated agentTurn to run the quest creation —
    it'll execute in about 15 minutes since 'at'
    schedules a future run, but the request is
@@ -166,7 +166,7 @@ the agent's reasoning includes "don't do this."
 
 ## Manual fallback (until v3.2.20 lands)
 
-Tobe's quest was created via direct file write as a
+the user's quest was created via direct file write as a
 fallback (`~/.openclaw/cyberclaw/quests.json`,
 appended to the array with a fresh id). The mobile
 sees the new quest on the next refresh of the Quests

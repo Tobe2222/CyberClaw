@@ -4,7 +4,7 @@
 
 ### 1. Renderer's rememberMemory path was wrong
 
-After v3.2.80 made the chat reaction fire, Tobe
+After v3.2.80 made the chat reaction fire, the user
 flagged on 2026-08-06 that clawsuu still doesn't
 "remember" food across sessions. The memory.md file
 was last modified 2026-07-25, 12 days ago, despite
@@ -39,18 +39,18 @@ be updated for every treat event.
 
 ### 2. Drop the placed reaction — one comment per treat, not two
 
-Tobe's screenshot from 2026-08-06 13:18 showed
+the user's screenshot from 2026-08-06 13:18 showed
 clawsuu producing two consecutive chat bubbles per
 food drop:
 
-- "Tobe, you're literally grinding meat into my
+- "the user, you're literally grinding meat into my
   goblin belly..." (placed reaction)
 - "Juicy, filling, the kind of protein that hits
   your goblin soul..." (eaten reaction)
 
 Same pattern for the apple: "Apple redemption..."
 followed by "Crunchy, sweet, kinda the palate
-cleanser...". Tobe flagged: "we dont want that".
+cleanser...". the user flagged: "we dont want that".
 
 The mobile arena fires TWO IPC events per drop:
 
@@ -103,13 +103,13 @@ useful for confirming the chain lights up.
     body (removed diagnostic)
 - `package.json`: bump `3.2.81` → `3.2.82`
 
-## Verification (for Tobe)
+## Verification (for the user)
 
 1. Drop a treat on the mobile arena.
 2. Expected: ONE chat bubble from clawsuu ("Yum, that
    was good!") — not two.
 3. Expected: `clawsuu/memory.md` gets a new
-   `- Tobe gave me <food> (<category>)` line
+   `- the user gave me <food> (<category>)` line
    (verify with `cat ~/.openclaw/cyberclaw/companions/clawsuu/memory.md`).
 4. Expected: desktop log shows `[mobile-treat] placed`
    AND `[mobile-treat] eaten` (both events still

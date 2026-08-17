@@ -1,7 +1,7 @@
 # 3.1.22 — Desktop UI uses sprite icons too
 
 ## What it adds
-v3.1.21 added the `icon` field to the catalog and propagated it to the mobile, but the desktop chat tabs, agent rows, and inspect header were still falling back to `🤖` for agents without a custom `emoji`. Tobe: "I dont see the new icons on the chat channels on either of them" — even after restarting desktop and updating mobile to v3.1.68.
+v3.1.21 added the `icon` field to the catalog and propagated it to the mobile, but the desktop chat tabs, agent rows, and inspect header were still falling back to `🤖` for agents without a custom `emoji`. the user: "I dont see the new icons on the chat channels on either of them" — even after restarting desktop and updating mobile to v3.1.68.
 
 The mobile correctly showed `🐾` fallback (because the cache wasn't refreshed yet), but the desktop needed the same fallback chain the mobile has: per-agent `emoji` → sprite catalog `icon` → `🤖`.
 
@@ -19,4 +19,4 @@ All `addChatMsg('agent', ..., agent.emoji)` call sites now pass `agent.emoji || 
 - `package.json` — 3.1.21 → 3.1.22
 
 ## Lesson: a "mobile-only" change is rarely mobile-only
-Tobe's original ask was about the mobile wake trainer picker, but the same icon-source-of-truth principle applies to the desktop chat tabs. The catalog now has the icon; the desktop UI should use it too. The fallback chain (`emoji || icon || '🤖'`) is the same on both platforms — the only difference is the "default" emoji (🤖 on desktop, 🐾 on mobile), and even that could be unified later.
+the user's original ask was about the mobile wake trainer picker, but the same icon-source-of-truth principle applies to the desktop chat tabs. The catalog now has the icon; the desktop UI should use it too. The fallback chain (`emoji || icon || '🤖'`) is the same on both platforms — the only difference is the "default" emoji (🤖 on desktop, 🐾 on mobile), and even that could be unified later.

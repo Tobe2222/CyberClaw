@@ -1,9 +1,9 @@
 # 3.1.21 — Per-sprite icons in the mobile companion list
 
 ## What it adds
-Tobe: "When clicking wake word training i get this Prompt now. It really should be a meny after clicking wake training with the companions in a list and a related icon. This companion icon we could perhaps set as a property of each sprite we use for the companions. We can use that icon in the text channel also, with the icon beside the companion name for the text channels. A related emoji icon for each sprite which are applied to the companion."
+the user: "When clicking wake word training i get this Prompt now. It really should be a meny after clicking wake training with the companions in a list and a related icon. This companion icon we could perhaps set as a property of each sprite we use for the companions. We can use that icon in the text channel also, with the icon beside the companion name for the text channels. A related emoji icon for each sprite which are applied to the companion."
 
-The mobile wake-trainer companion picker was using the native Android `Alert.alert`, which is functional but looks like 2010-era system UI. Tobe wants a proper picker with the companions in a list, each with a related icon. The icon should be a property of the sprite (not a per-agent override), so adding a new sprite gives it a consistent icon across the mobile companion list, the chat tabs, and the wake trainer.
+The mobile wake-trainer companion picker was using the native Android `Alert.alert`, which is functional but looks like 2010-era system UI. the user wants a proper picker with the companions in a list, each with a related icon. The icon should be a property of the sprite (not a per-agent override), so adding a new sprite gives it a consistent icon across the mobile companion list, the chat tabs, and the wake trainer.
 
 ## Change 1: catalog gets an `icon` field per sprite
 `src/assets/companions/catalog.json` now carries an `icon` (emoji) per sprite:

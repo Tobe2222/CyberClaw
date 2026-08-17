@@ -1,7 +1,7 @@
 # 3.1.27 — loadPixelCatalog always re-reads (fixes stale iconFile)
 
 ## What it fixes
-Tobe: "still says the same" after v3.1.26 (Twemoji SVG). DevTools diagnostic showed the chat tab text is literally `🤖` — meaning `getSpriteIconFile()` returned null. The catalog file on disk has `iconFile` for all 5 sprites, but the renderer's cached copy of the catalog (loaded at module init time) was from the OLD code (before iconFile existed) and never got refreshed.
+the user: "still says the same" after v3.1.26 (Twemoji SVG). DevTools diagnostic showed the chat tab text is literally `🤖` — meaning `getSpriteIconFile()` returned null. The catalog file on disk has `iconFile` for all 5 sprites, but the renderer's cached copy of the catalog (loaded at module init time) was from the OLD code (before iconFile existed) and never got refreshed.
 
 ## Root cause: module-level cache + no re-read
 `loadPixelCatalog()` in `src/js/companion-renderer.js` cached the parsed catalog at module scope (`let pixelCatalog = null`). On first call it reads the file and caches. On subsequent calls it returns the cached version. If the renderer process started before v3.1.26 was deployed, the cached catalog never had the `iconFile` field, and the renderer's `getSpriteIconFile()` always returned null even after pulling new code.

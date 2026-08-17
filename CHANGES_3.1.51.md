@@ -1,6 +1,6 @@
 # v3.1.51 — Phone-side quest edit: wire protocol + desktop handlers
 
-Tobe: "yes we need edit ability on Phone" — greenlit the
+the user: "yes we need edit ability on Phone" — greenlit the
 v3.8.x series. This release is the **wire protocol + desktop
 back-end** half of the v3.8.0 feature. The mobile half
 (v3.8.0 mobile) ships the editor UI on top of this protocol.

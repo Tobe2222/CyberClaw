@@ -7,7 +7,7 @@ in the narrow volume band the user happened to record their 6 samples
 in. Whisper, shout, or call from across the room — all attenuated
 relative to training — were missed or detected unreliably.
 
-Tobe (verbatim, 2026-07-18 17:26 GMT+2): "i also want it to be
+the user (verbatim, 2026-07-18 17:26 GMT+2): "i also want it to be
 more dependent on the sounds, not volume, so i can whisper and shout
 to it. Or if the phone is further away i would like it to pick up so
 i can call to it"
@@ -73,7 +73,7 @@ range at inference time.
 
 ## Mobile impact
 
-Wake sets trained BEFORE this fix (Tobe's current "Hey Clawsuu"
+Wake sets trained BEFORE this fix (the user's current "Hey Clawsuu"
 model, and any other v3.2.12-or-earlier trained sets) are unaffected
 — they were trained with the asymmetric range and remain
 amplitude-biased. **Users who want volume invariance must retrain
@@ -97,14 +97,14 @@ A startup-time assertion that augmentation ranges are symmetric
 would catch this at integration time. Or just reading the
 augmentation defaults once when adopting a new pipeline.
 
-**User feature requests can be diagnostic opportunities.** Tobe's
+**User feature requests can be diagnostic opportunities.** the user's
 "I want volume invariance" surfaced a specific upstream misconfig
 that wasn't on our radar. Listen to feature asks as signals about
 hidden bugs in the system.
 
 ## Related
 
-- Tobe's 2026-07-18 17:26 report (peak=0% across all chunks even
+- the user's 2026-07-18 17:26 report (peak=0% across all chunks even
   with right model loaded, RMS 0.089 at conversational volume) —
   the trained classifier was dead, and volume invariance was a
   related-but-separately-broken axis.

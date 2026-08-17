@@ -2,7 +2,7 @@
 
 ## Bug
 
-After v3.1.39 fixed the wire format, Tobe successfully recorded 6
+After v3.1.39 fixed the wire format, the user successfully recorded 6
 samples, hit Train, and watched the progress bar hit 30%
 ("Sending samples to desktop...") and freeze there. The training
 was actually running on the GPU (TTS synthesizing 10000
@@ -10,7 +10,7 @@ positive variants), but the phone's WebSocket had dropped, so:
 
 - Progress events had nowhere to land on the phone
 - The final training result would be sent to a dead socket
-- Tobe had no way to know whether to re-record or wait
+- The user had no way to know whether to re-record or wait
 
 The training that DID finish on the desktop was effectively
 wasted from the phone's perspective.

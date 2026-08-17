@@ -1,6 +1,6 @@
 # v3.2.64 — Strip-on-output for chat history + silent snack logging
 
-Tobe 2026-08-04 21:16:
+the user 2026-08-04 21:16:
 > "We should log snacks by the way, and type of snack
 > so he can talk about them. Perhaps we send a
 > message to him each time we give food, 'user gave
@@ -30,7 +30,7 @@ Three changes:
 
 ## 1. Strip-on-output for chat history
 
-Tobe's screenshot showed a chat bubble with raw
+the user's screenshot showed a chat bubble with raw
 `[QUEST_APPEND_CHANGE: text="..."]` text. The
 stripper (`stripQuestTags`) was added in v3.2.36 and
 called from `addChatMsg` in the chat pipeline. So why
@@ -73,7 +73,7 @@ existing stripQuestTags call in the chat pipeline).
 The LLM was sometimes emitting ONLY a tool tag and no
 chat-visible text. After stripping, the chat bubble
 was empty, which made it look like the companion
-"responded" but said nothing. Tobe's report (paraphrased):
+"responded" but said nothing. the user's report (paraphrased):
 "It should just respond normally mostly in the chat."
 
 Fix: extend the `buildQuestToolsHint` to remind the
@@ -106,7 +106,7 @@ so it shouldn't require a new model adaptation cycle.
 
 ## 3. Silent snack logging
 
-Tobe: "We should log snacks by the way, and type of
+the user: "We should log snacks by the way, and type of
 snack so he can talk about them." Each snack event
 now writes to `memory.md`:
 
@@ -115,14 +115,14 @@ now writes to `memory.md`:
   ```js
   cyberclaw.companions.rememberMemory(agentId, fact);
   ```
-  where `fact` is e.g. "Tobe gave me a hamburger (food)"
+  where `fact` is e.g. "the user gave me a hamburger (food)"
   or "I ate some berries (food)". This lands in
   `~/.openclaw/cyberclaw/companions/<agentId>/memory.md`
   immediately, so future sessions remember the
   snack category.
 - **Silent LLM round-trip second** (optional context):
   the LLM is asked to emit a `[REMEMBER: text="..."]`
-  tag with any context it wants to add (e.g. "Tobe
+  tag with any context it wants to add (e.g. "the user
   gave me a hamburger for the third time tonight —
   clearly an apology for something I did"). The
   silent prompt is built with the `[SILENT LOG MODE]`
@@ -276,7 +276,7 @@ with toys earlier").
      unstripped messages get cleaned in flight.
   3. Arena: drag a hamburger to the companion →
      `memory.md` should now have a line like
-     `- Tobe gave me a hamburger (food)`.
+     `- the user gave me a hamburger (food)`.
   4. Same for other foods (apple, cake, etc.) and
      toys (ball, frisbee) — categories in memory.md
      match `TREAT_CATEGORIES`.

@@ -1,6 +1,6 @@
 # v3.2.67 — second httpTimeoutMs ReferenceError fix (v3.2.66 didn't actually fix it)
 
-Tobe 2026-08-05 09:25:
+the user 2026-08-05 09:25:
 > "tested. I sent a message but it did not show up
 > in the chat for some reason, it said that clawsuu
 > is thinking but im not sure if he got the message

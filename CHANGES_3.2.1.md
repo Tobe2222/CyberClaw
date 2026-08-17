@@ -1,6 +1,6 @@
 # v3.2.1 — Settings: 🧠 LLM Providers section cleanup + provider presets
 
-Tobe (in #cyber-dev): "Regarding the API section of the
+the user (in #cyber-dev): "Regarding the API section of the
 settings. I never really tested much of that. Is that the
 most appropriate API services? Are there more? Or better
 ones suited to this app now that it has evolved some?"

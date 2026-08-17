@@ -1,8 +1,8 @@
 # 3.2.21 — Discord replies now reach the mobile chat (OpenClaw session tail)
 
-## Reported by Tobe (via Discord, screenshot)
+## Reported by the user (via Discord, screenshot)
 
-Tobe's chat with clawsuu (Discord #cyber-dev, mobile
+the user's chat with clawsuu (Discord #cyber-dev, mobile
 chat screenshot):
 
 > "@Clawsuu why answer in discord? I asked through
@@ -200,7 +200,7 @@ known, but that adds storage and complexity that
 isn't worth it for an edge case.
 
 **Better thinking indicators come from actual
-state, not cycling text.** Tobe asked for "short
+state, not cycling text.** The user asked for "short
 and concise" and I gave him per-tool-call phrases
 ("Running command...", "Reading file..."). The
 text is short but it's also **accurate** — the

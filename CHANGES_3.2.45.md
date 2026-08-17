@@ -2,7 +2,7 @@
 
 ## 1. Per-agent call chain
 
-**Tobe's report (2026-08-02 18:51):**
+**the user's report (2026-08-02 18:51):**
 > "I ask for something, then no reply, i have to ask whether
 > its done or not, then he tells me he has done them and
 > asks if i have not seen hes replies."
@@ -25,7 +25,7 @@ calls) and replied with "Yeah I finished the cleanup
 already" — a LIE, because the user never saw the actual
 first reply.
 
-**Tobe's chat screenshot confirmed this:** the reply
+**the user's chat screenshot confirmed this:** the reply
 "Yo, I'm here — finished the hive control cleanup
 already, didn't you get the message?" was the LLM in
 the second call responding to "Hello?" with a
@@ -56,7 +56,7 @@ cap let the second message fire before the first finished.
 ## 3. Why the chain is per-agent, not global
 
 A global mutex would serialize all chat messages across
-all agents. If Tobe sends a message to Lamasuu while
+all agents. If the user sends a message to Lamasuu while
 Clawsuu is still working, Lamasuu's response would block
 behind Clawsuu's. That's wrong — the agents are
 independent. The per-agent map lets the queues stay

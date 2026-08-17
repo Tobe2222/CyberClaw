@@ -37,7 +37,7 @@ during the 10-minute augment substep, and from 75%→88%
 during the 5-minute training substep. The user sees
 continuous feedback instead of a frozen bar.
 
-**Also addressed the "no logging" complaint** (Tobe's words):
+**Also addressed the "no logging" complaint** (the user's words):
 the status message now includes the inner percentage, so the
 phone shows e.g. "Augmenting + features (52% complete)" in
 addition to the bar moving. The user can read the status text

@@ -1,6 +1,6 @@
 # 3.2.24 — mobile activity heartbeat (companions sleep correctly on mobile too)
 
-Tobe reported on v3.2.23 (2026-07-23 23:28):
+The user reported on v3.2.23 (2026-07-23 23:28):
 
 > "@Clawsuu also. The companions should sleep on the
 > mobile also like they do on desktop. And wake up

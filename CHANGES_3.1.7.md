@@ -52,7 +52,7 @@ Verified after the fix:
 
 ### 2. Remove all dead spirit code
 
-Tobe confirmed: **no spirits, no sprites-of-sprites — everything
+The user confirmed: **no spirits, no sprites-of-sprites — everything
 is a companion**. The grouse, boar, etc. are companions, period.
 Strip the spirit machinery that's been left behind across the
 codebase:

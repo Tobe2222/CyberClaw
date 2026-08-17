@@ -2,7 +2,7 @@
 
 ## 1. The bug
 
-**Tobe's report (2026-08-02 22:13):**
+**the user's report (2026-08-02 22:13):**
 > "Okey tested. Something else has broken now."
 
 Screenshot showed the chat with "No response from OpenClaw."

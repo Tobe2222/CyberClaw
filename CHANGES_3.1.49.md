@@ -82,7 +82,7 @@ in `companion-stats.json`, and goal completion
 already routes XP to the right skill on the
 desktop side. The quest-level `skills` was a
 ghost of an old "quest = project" model that
-never got wired up. Tobe's calls for this in
+never got wired up. the user's calls for this in
 the 2026-07-07 feedback thread.
 
 ## Wire protocol additions
@@ -126,7 +126,7 @@ type Quest = {
 - `quest.directory` is sent over the wire and
   shown on the phone as a project path reference,
   but no data is copied into the phone-side
-  filesystem. Per Tobe's "project stays clean,
+  filesystem. Per the user's "project stays clean,
   support data lives in ~/.openclaw/cyberclaw/"
   rule.
 

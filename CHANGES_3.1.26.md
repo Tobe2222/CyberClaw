@@ -1,9 +1,9 @@
 # 3.1.26 — Twemoji SVG icons in chat tabs (smooth, consistent)
 
 ## What it adds
-Tobe: "i just get a warning when i try to paste. but you can obviously see that its still the wrong emojis, no matter their size. change the size back also."
+the user: "i just get a warning when i try to paste. but you can obviously see that its still the wrong emojis, no matter their size. change the size back also."
 
-After v3.1.25 the chat tabs were technically rendering the Unicode emoji glyph (`🐗`, `🐇`), but on Linux the system emoji font (Noto Color Emoji) renders these as **low-resolution bitmaps** that look pixelated at small chat-tab sizes. Tobe was seeing pixel-art boar/hare icons — which is actually the correct emoji glyph, just rendered badly by the system font.
+After v3.1.25 the chat tabs were technically rendering the Unicode emoji glyph (`🐗`, `🐇`), but on Linux the system emoji font (Noto Color Emoji) renders these as **low-resolution bitmaps** that look pixelated at small chat-tab sizes. The user was seeing pixel-art boar/hare icons — which is actually the correct emoji glyph, just rendered badly by the system font.
 
 The fix: bundle the Twemoji SVG files (vector graphics, smooth at any size, consistent across all platforms) and render those instead of the Unicode emoji. The 5 SVGs are tiny (~8KB total) and live at `src/assets/icons/{sprite}.svg`.
 
@@ -32,4 +32,4 @@ By bundling Twemoji, the desktop and mobile show the SAME boar/hare icons regard
 ## Lesson: don't rely on the system emoji font for app iconography
 For app-level icons (chat tabs, picker rows, anywhere you show an identifier for a thing), use a bundled SVG/PNG icon. The Unicode emoji works for typed text (chat messages) because the user knows what they typed. For app UI, the system emoji font varies wildly across platforms and renders poorly on Linux. A small bundle of Twemoji SVGs (~8KB for 5 sprites) gives consistent, smooth, recognizable icons everywhere.
 
-Tobe's feedback chain on this was instructive: v3.1.22 (code fix), v3.1.23 (avatar removed), v3.1.24 (catalog loading), v3.1.25 (size bump), v3.1.26 (Twemoji SVG). Each step was technically correct but didn't fix the actual problem — system emoji rendering on Linux. Bundling Twemoji SVG sidesteps the system emoji font entirely.
+the user's feedback chain on this was instructive: v3.1.22 (code fix), v3.1.23 (avatar removed), v3.1.24 (catalog loading), v3.1.25 (size bump), v3.1.26 (Twemoji SVG). Each step was technically correct but didn't fix the actual problem — system emoji rendering on Linux. Bundling Twemoji SVG sidesteps the system emoji font entirely.

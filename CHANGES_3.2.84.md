@@ -2,7 +2,7 @@
 
 ## What this is
 
-Tobe (2026-08-07) asked for two improvements to
+The user () asked for two improvements to
 the companion skill XP system:
 
 1. Better task categorization (current 9-skill
@@ -10,7 +10,7 @@ the companion skill XP system:
 2. Skill XP visible on mobile in companion settings
    (view-only).
 
-Tobe also said: "Just make it easy and less accurate.
+The user also said: "Just make it easy and less accurate.
 Its just for fun." So this is deliberately a
 small, low-risk change — same stats file, same
 broadcast, same IPC.
@@ -152,7 +152,7 @@ is open.
 - Mobile `package.json`: bump `3.10.138` →
   `3.10.139`.
 
-## Verification (for Tobe)
+## Verification (for the user)
 
 1. **Desktop inspect panel** — open the inspect
    panel for any companion. Skill rows show 9
@@ -179,7 +179,7 @@ is open.
 
 ### Keyword lists vs. LLM classification
 
-Tobe's "less accurate is fine, for fun" framing
+the user's "less accurate is fine, for fun" framing
 was right here. A keyword classifier misses edge
 cases (89% accuracy in my tests) but it's:
 
@@ -223,7 +223,7 @@ remembering for other classifiers.
 
 ## Out of scope (deliberately)
 
-- No LLM-based classifier (Tobe: "less accurate
+- No LLM-based classifier (the user: "less accurate
   is fine").
 - No skill decay (skills only grow).
 - No skill allocation (the desktop already routes
@@ -231,4 +231,4 @@ remembering for other classifiers.
   on that skill; this PR doesn't change that).
 - No new IPC or new stats file (re-uses
   `companion-stats.json`).
-- Mobile is view-only (Tobe's explicit ask).
+- Mobile is view-only (the user's explicit ask).

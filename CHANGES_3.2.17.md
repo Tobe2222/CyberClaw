@@ -1,6 +1,6 @@
 # v3.2.17 — Quest edit: name-based fallback + richer diagnostics
 
-Tobe reported on 2026-07-22 20:01 (with screenshot
+The user reported on 2026-07-22 20:01 (with screenshot
 showing the editor open for CYBERHIVE_WEBSITE V2
 with 4 steps, after tapping Save):
 
@@ -12,7 +12,7 @@ with 4 steps, after tapping Save):
 The screenshot also showed the toast as just
 "Couldn't update quest: quest not found" — without
 the diagnostic info v3.10.74 added. That's a clue:
-Tobe's desktop is on v3.2.15 or earlier (the
+the user's desktop is on v3.2.15 or earlier (the
 diagnostic info was added in v3.2.16). He needs to
 restart the desktop to pick up v3.2.16+.
 
@@ -37,7 +37,7 @@ v3.2.17 ships two more improvements:
    "id doesn't match any quest".
 
 The mobile (v3.10.77) updates the toast to render
-the rich diagnostic. Tobe can now read the toast and
+the rich diagnostic. the user can now read the toast and
 see exactly what's mismatched.
 
 ## Files changed
@@ -57,7 +57,7 @@ see exactly what's mismatched.
 ## Lessons
 
 **When diagnostic info didn't show up, that itself is
-diagnostic.** Tobe's screenshot showed the toast
+diagnostic.** the user's screenshot showed the toast
 WITHOUT the v3.10.74 diagnostic info. That tells us
 his desktop is on v3.2.15 or earlier — the
 diagnostic-info code wasn't deployed. Always note
@@ -86,7 +86,7 @@ Domain Redirects (c)" makes it obvious: "the id
 V2" → confirms stale-id diagnosis. Richer diagnostics
 cheaper than guessing.
 
-**Tobe's toast text was truncated to one line.**
+**the user's toast text was truncated to one line.**
 v3.10.74 set `numberOfLines={2}` on the error toast,
 so 2 lines of room. The basic error took 1 line.
 The diagnostic info would have been on the same

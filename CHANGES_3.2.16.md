@@ -1,6 +1,6 @@
 # v3.2.16 — Mobile food/play reaction cleanup + diagnostic info
 
-Tobe asked on 2026-07-22:
+The user asked on 2026-07-22:
 
 > "The comments the companion makes when given food
 > or played with does not need to appear in the chat
@@ -19,7 +19,7 @@ The v3.10.72 `mobile-arena-treat-placed` and
 `mobile-arena-treat-eaten` IPC handlers called
 `window.promptCompanionReaction(prompt)`, which
 triggers an LLM roundtrip and adds the reply to
-chat. Tobe didn't want chat noise on every feed/play
+chat. the user didn't want chat noise on every feed/play
 action.
 
 **Fix:** Both handlers now log to the desktop log
@@ -32,7 +32,7 @@ not the desktop).
 The desktop's own tap-to-treat flow
 (`placeTreatOnArena` in `src/js/app.js:4905`) still
 calls `promptCompanionReaction` — that's a separate
-path and not affected by this change. If Tobe later
+path and not affected by this change. If the user later
 wants the desktop's treats to also be quiet, that's
 a separate change.
 
@@ -41,7 +41,7 @@ a separate change.
 The v3.10.73 mobile-side gate on
 `firstBroadcastReceived` was supposed to fix the
 "Couldn't update quest: quest not found" error but
-Tobe reports the error persists. Rather than guessing
+the user reports the error persists. Rather than guessing
 at another fix, this release adds diagnostic info to
 the failure response:
 
@@ -62,7 +62,7 @@ The mobile's failedHandler appends
 ` · wanted "X", desktop has [a, b, c]` to the toast
 (truncated to 5 ids + "+N more").
 
-Next time Tobe hits this error, the toast itself will
+Next time the user hits this error, the toast itself will
 tell us whether the mobile is sending an id the desktop
 genuinely doesn't have, or whether there's a deeper
 encoding/mismatch bug.

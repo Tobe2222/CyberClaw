@@ -1,6 +1,6 @@
 # v3.2.68 — relax HTTP timeout to 600s and stop falling through to CLI on timeout
 
-Tobe 2026-08-05 11:00:
+the user 2026-08-05 11:00:
 > "now it timed out again. Cant it just run longer
 > if hes working?"
 
@@ -13,7 +13,7 @@ v3.2.65 added a 60s HTTP fetch timeout on
 1. **60s is too short for legitimate work.** Complex
    tasks (multi-tool code refactors, BOS+ protobuf
    reasoning, anything that triggers several tool
-   calls) routinely exceed 60s. Tobe's 10:44 AM
+   calls) routinely exceed 60s. the user's 10:44 AM
    message about "heaters are basically miners, just
    call them all devices" needed real model work and
    got aborted at 60s with `Error: agent call timed

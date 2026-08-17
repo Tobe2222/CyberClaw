@@ -1,6 +1,6 @@
 # Changelog — v3.1.1 through v3.1.4 (session 2026-06-14)
 
-All changes from Tobe's five turns in this session. Branch:
+All changes from the user's five turns in this session. Branch:
 `feature/companion-improvements`. To test: `npm start` from the
 project root.
 
@@ -235,7 +235,7 @@ input grows. The resizer visually tracks the mouse.
 ## 2. Swords button removed from chat input ✅
 
 `<button id="chat-send">⚔️</button>` was the only obvious "send"
-button, but Tobe flagged it as not working (it was the send button
+button, but the user flagged it as not working (it was the send button
 — Enter also sends). Cleaner: just remove it. Attach (📎) and
 voice (🎤) remain. The placeholder now reads "Type a message...
 (Enter to send, Shift+Enter for newline)" so the keyboard shortcut
@@ -387,7 +387,7 @@ git revert 3639987
 ## v3.1.5 (sixth turn) — multi-companion arena
 
 The bug: only one companion was rendered in the arena at a
-time, even though multiple agents were loaded. Tobe's
+time, even though multiple agents were loaded. the user's
 screenshot showed Clawsuu but no Lamasuu.
 
 ### What changed

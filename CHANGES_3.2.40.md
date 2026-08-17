@@ -1,7 +1,7 @@
 # v3.2.40 — Tag replayed messages + strip `[From: ...]` prefix before the LLM
 
 Two small fixes for mobile-routing confusion that
-Tobe flagged 2026-08-01 in the Discord screenshot:
+the user flagged 2026-08-01 in the Discord screenshot:
 
 1. "clawsuu seems a bit confused still of where to
    respond"
@@ -21,7 +21,7 @@ to the agent, the agent sees:
 > discord earlier...
 
 …and confuses itself about which channel the user is
-on. Tobe's screenshot showed Clawsuu's response:
+on. the user's screenshot showed Clawsuu's response:
 > "I keep losing the thread because the discord-vs-
 > Android routing is jacked."
 
@@ -70,7 +70,7 @@ notification for every `isOwnReply` that's NOT
 chat-focused (per the v3.10.70 logic). So if 5
 agent replies landed while the user was
 disconnected, on reconnect the user gets 5
-notifications stacked in the tray. Tobe saw this
+notifications stacked in the tray. The user saw this
 on the screenshot ("for some reason i get
 notification from earlier messages").
 
@@ -154,7 +154,7 @@ tray already lost those moments.
 
 ### Per-agent routing rules
 
-Tobe's underlying frustration is "messages from
+the user's underlying frustration is "messages from
 different platforms get routed wrong." The
 v3.2.25 design says "mobile-chat goes to mobile
 chat, Discord goes to Discord, never the twain

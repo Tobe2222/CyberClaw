@@ -1,7 +1,7 @@
 # v3.1.42 — Wake trainer: stream PROGRESS events from augment/train substeps
 
 After v3.1.41 fixed the synthetic-clip sample-rate mismatch,
-Tobe re-trained and got a familiar symptom: phone stuck at
+the user re-trained and got a familiar symptom: phone stuck at
 30% "Sending samples to desktop...", no further progress
 events for 2-5 minutes, then a flurry of events all at once
 when the augment substep finally exits.

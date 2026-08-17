@@ -1,6 +1,6 @@
 # v3.2.61 — Per-quest directory scaffolding + file-based conversation log
 
-## Tobe's three-layer behavior model (2026-08-04 16:45)
+## the user's three-layer behavior model (2026-08-04 16:45)
 
 > "Openclaw has one set of behaviour with its md,
 > cyberclaws companion md has its own behaviour, and
@@ -31,7 +31,7 @@ share, and reason about them in one place. The
 previous arrangement had the conversation log in the
 JSON array inside `~/.openclaw/cyberclaw/quests.json`,
 which was buried inside admin metadata — not what
-Tobe wanted.
+The user wanted.
 
 ## What shipped
 
@@ -141,7 +141,7 @@ quest. Future turns find `<quest.directory>/CONVERSATION.md`
 ready to be appended to.
 
 This is the "default to that unless specified" path
-Tobe requested: the Settings field is the default;
+the user requested: the Settings field is the default;
 the user can override per-quest by typing a different
 path in the editor. Empty Settings field → no
 suggestion → user types a path manually (or leaves
@@ -151,7 +151,7 @@ the same scaffold treatment).
 
 ## Why file-based instead of just keeping JSON
 
-Three reasons Tobe's model is right:
+Three reasons the user's model is right:
 1. **Co-location with project files.** A quest
    about `/projects/seed-signer` should have its
    memory, instructions, and conversation IN the same
@@ -162,7 +162,7 @@ Three reasons Tobe's model is right:
 2. **Human readability.** `tail -f CONVERSATION.md`,
    `grep "Welectron" CONVERSATION.md`. The JSON array
    in `quests.json` is opaque — `cat quests.json | jq`
-   works but it's not what Tobe wants for a per-quest
+   works but it's not what the user wants for a per-quest
    workflow.
 3. **Version-controllable.** The quest directory is
    the natural git repo (or sub-repo) for that
@@ -223,7 +223,7 @@ entries; the user sees the markdown file.
   `getConversationLog` / `clearConversationLog` from
   v3.2.59 already work for the renderer; the new
   `getConversationFile` IPC isn't on the renderer
-  side yet — Tobe can add it later if needed for a
+  side yet — the user can add it later if needed for a
   desktop panel).
 - `package.json`: 3.2.60 → 3.2.61.
 - `CHANGES_3.2.61.md`.

@@ -2,7 +2,7 @@
 
 ## 1. Found the bug
 
-**Tobe's report (2026-08-03 00:18):**
+**the user's report (2026-08-03 00:18):**
 > "tested again. The first message there the image did not
 > carry through it seems, but the second did it looks
 > like, perhaps not. Companion still cant see it it seems"

@@ -2,7 +2,7 @@
 
 ## 1. The mystery
 
-**Tobe's report (2026-08-03 00:05):**
+**the user's report (2026-08-03 00:05):**
 > "Still nothing. Why is this so complicated? Just do it
 > the same way discord does it?"
 
