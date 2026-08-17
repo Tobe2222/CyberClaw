@@ -1449,10 +1449,24 @@ function buildQuestToolsHint() {
 // prompt can, and it's the freshest signal in the
 // prompt window.
 //
+// v3.2.98: relaxed from "ONE specific question" cap —
+// Tobe flagged the cap as too tight when the request
+// genuinely has multiple independent blockers. The
+// rule now allows a short bulleted list when each item
+// is a real blocker; the default is still to act on a
+// stated assumption rather than ask. The companion
+// agent (clawsuu) had a recent session where it asked
+// exactly one question before proceeding and the user
+// wanted more latitude.
+//
 // Keep this short — it's the last thing read, so every
 // word matters. Don't bloat it with examples or context.
 function buildWorkFirstSuffix() {
-  return '[Action rule: do the work in this turn, then reply with the result. If you genuinely cannot proceed without more information, ask ONE specific question — do not promise work you have not started. The user should see your reply when the work is done, not when you start.]';
+  // v3.2.98: relaxed from "ONE specific question" — Tobe flagged
+  // the cap as too tight. Allow a short bulleted list when each
+  // item is a real independent blocker; default is to act on a
+  // stated assumption rather than ask.
+  return '[Action rule: do the work in this turn, then reply with the result. Only ask if you genuinely cannot proceed. A short list of clarifying questions is fine when each is a real blocker; default to acting on a stated assumption rather than asking. The user should see your reply when the work is done, not when you start.]';
 }
 // v3.2.36: strip any quest-tool tags from a reply before
 // showing it in the chat. The tag parsers run on the
