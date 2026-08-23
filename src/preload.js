@@ -80,6 +80,19 @@ window.cyberclaw = {
     getMemory: (agentId) => ipcRenderer.invoke('companion:get-memory', agentId),
     rememberMemory: (agentId, line) => ipcRenderer.invoke('companion:remember-memory', agentId, line),
     clearMemory: (agentId) => ipcRenderer.invoke('companion:clear-memory', agentId),
+    // v3.3.0: per-companion enabled-skills toggles
+    getEnabledSkills: (agentId) => ipcRenderer.invoke('companion:get-enabled-skills', agentId),
+    setEnabledSkills: (agentId, skillIds) => ipcRenderer.invoke('companion:set-enabled-skills', agentId, skillIds),
+  },
+  // v3.3.0: user-managed Skill library — browse, create, edit,
+  // delete process-specific skill markdown files.
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    read: (skillId) => ipcRenderer.invoke('skills:read', skillId),
+    create: (payload) => ipcRenderer.invoke('skills:create', payload),
+    update: (skillId, payload) => ipcRenderer.invoke('skills:update', skillId, payload),
+    delete: (skillId) => ipcRenderer.invoke('skills:delete', skillId),
+    seedStarters: () => ipcRenderer.invoke('skills:seed-starters'),
   },
   system: {
     // v3.2.32: overarching CYBERCLAW.md prompt shared by

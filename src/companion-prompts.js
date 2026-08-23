@@ -293,6 +293,15 @@ function assembleContext(agentId) {
   if (memory && memory.trim()) {
     block += '# What you remember\n\n' + memory + '\n\n';
   }
+  // v3.3.0: enabled skills are appended as a process content
+  // block so the LLM can apply them when relevant. Loaded lazily
+  // so a missing skill file doesn't crash context assembly.
+  try {
+    const skillsBlock = require('./skill-store').buildSkillsPromptBlock(agentId);
+    if (skillsBlock) block += skillsBlock;
+  } catch (e) {
+    console.error('[companion-prompts] skills block load failed:', e.message);
+  }
   if (!block.trim()) return '';
   return `[SYSTEM CONTEXT — do not mention to the user]\n${block}[END SYSTEM CONTEXT]\n\n`;
 }

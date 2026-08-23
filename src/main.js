@@ -5,6 +5,8 @@ const fs = require('fs');
 const pty = require('node-pty');
 // v3.2.32: companion soul + memory + CYBERCLAW.md prompt loader
 const companionPrompts = require('./companion-prompts');
+// v3.3.0: user-managed Skill library (per-companion toggles + prompt augmentation)
+const skillStore = require('./skill-store');
 
 // Desktop log panel — sends structured log entries to renderer via IPC
 function discordLog(emoji, title, detail = '', level = 'info') {
@@ -2194,6 +2196,44 @@ ipcMain.handle('companion:remember-memory', (event, agentId, line) => {
 });
 ipcMain.handle('companion:clear-memory', (event, agentId) => {
   return companionPrompts.clearMemory(agentId);
+});
+
+// v3.3.0: User-managed Skill library. Each skill is a markdown
+// file under ~/.openclaw/cyberclaw/skills/<id>/SKILL.md with
+// YAML frontmatter. Per-companion enabled-skills lists live in
+// companions/<id>/enabled-skills.json. assembleContext() reads
+// them and includes enabled skill content in the system prompt.
+ipcMain.handle('skills:list', () => {
+  try { return { ok: true, skills: skillStore.listSkills() }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('skills:read', (event, skillId) => {
+  try { return skillStore.readSkill(skillId); }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('skills:create', (event, payload) => {
+  try { return skillStore.createSkill(payload || {}); }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('skills:update', (event, skillId, payload) => {
+  try { return skillStore.updateSkill(skillId, payload || {}); }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('skills:delete', (event, skillId) => {
+  try { return skillStore.deleteSkill(skillId); }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('skills:seed-starters', () => {
+  try { return { ok: true, seeded: skillStore.seedStarterSkills() }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('companion:get-enabled-skills', (event, agentId) => {
+  try { return { ok: true, enabled: skillStore.getEnabledSkills(agentId) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('companion:set-enabled-skills', (event, agentId, skillIds) => {
+  try { return { ok: true, enabled: skillStore.setEnabledSkills(agentId, skillIds) }; }
+  catch (e) { return { ok: false, error: e.message }; }
 });
 
 // v3.2.32: overarching system prompt IPC.

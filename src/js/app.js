@@ -1139,6 +1139,8 @@ function updateInspect(agentId) {
         </div>`;
       }).join('');
     }
+    // v3.3.0: per-companion enabled-skills toggles
+    refreshInspectEnabledSkills(agentId);
   });
 
   // Model stack — primary + fallback rows
@@ -1921,6 +1923,12 @@ function escapeHtml(str) {
 
 // Load quests on startup
 renderQuests();
+// v3.3.0: load skills library on startup
+refreshSkillsList().then(() => {
+  // Once the skill library is loaded, refresh the per-companion
+  // toggle list (in case the inspect panel is already showing one)
+  if (agentOrder[focusIndex]) refreshInspectEnabledSkills(agentOrder[focusIndex]);
+}).catch(e => console.warn('[skills] initial load failed:', e.message));
 
 // ---------------------------------------------------------------------------
 // Quest Editor (transforms left panel into quest detail view)
@@ -7020,6 +7028,374 @@ window.forgetLearnedSkill = async function(skillName) {
   await window.openLearnedSkillsModal();
   // Also refresh the inspect panel's gear area if it still exists
   try { loadEquipment(id); } catch {}
+};
+
+// ═══════════════════════════════════════════════════════════
+//  SKILLS LIBRARY (v3.3.0)
+//
+//  The skills library lets the user browse, create, edit, and delete
+//  process-specific skill markdown files. Per-companion toggle state
+//  lives in companions/<id>/enabled-skills.json and is what sees the
+//  skill content included in the companion's prompt at chat-send time.
+//
+//  Skills must be PROCESS-SPECIFIC, not generic. The "Send Screenshots"
+//  skill describes a concrete numbered workflow. The category-level
+//  Skill Categories in the inspect panel (Building / Writing / etc.)
+//  are something different — those are auto-classified task XP, set
+//  by main.js based on chat content.
+// ═══════════════════════════════════════════════════════════
+
+let _skillsCache = null;
+let _enabledSkillsCache = {};
+let _activeSkillId = null; // for skill detail modal
+
+async function refreshSkillsList() {
+  const list = document.getElementById('skill-list');
+  const empty = document.getElementById('skill-empty');
+  if (!list) return;
+  const result = await cyberclaw.skills.list();
+  const skills = (result && result.skills) || [];
+  _skillsCache = skills;
+  // Render rows (always — even when empty so user can see the + button row above)
+  if (skills.length === 0) {
+    list.innerHTML = '';
+    if (empty) list.appendChild(empty);
+    return;
+  }
+  list.innerHTML = skills.map(s => {
+    const triggerCount = (s.triggers || []).length;
+    return `<div class="skill-row" onclick="openSkillDetail('${escapeAttr(s.id)}')">
+      <div class="skill-row-icon">${escapeHtml(s.icon || '🔧')}</div>
+      <div class="skill-row-body">
+        <div class="skill-row-name">${escapeHtml(s.name)}</div>
+        <div class="skill-row-desc">${escapeHtml(s.description || '(no description)')}</div>
+      </div>
+      <div class="skill-row-meta">${triggerCount} trigger${triggerCount === 1 ? '' : 's'}</div>
+    </div>`;
+  }).join('');
+}
+
+async function refreshEnabledSkillsCache(agentId) {
+  if (!agentId) return [];
+  const r = await cyberclaw.agents.getEnabledSkills(agentId);
+  _enabledSkillsCache[agentId] = (r && r.enabled) || [];
+  return _enabledSkillsCache[agentId];
+}
+
+async function refreshInspectEnabledSkills(agentId) {
+  const el = document.getElementById('inspect-enabled-skills');
+  if (!el) return;
+  const skills = _skillsCache || (await refreshSkillsList().then(() => _skillsCache) || []);
+  const enabled = await refreshEnabledSkillsCache(agentId);
+  if (skills.length === 0) {
+    el.innerHTML = '<div class="enabled-skill-empty">No skills in the library yet. Create one in the SKILLS LIBRARY section on the left.</div>';
+    return;
+  }
+  el.innerHTML = skills.map(s => {
+    const isOn = enabled.includes(s.id);
+    return `<div class="enabled-skill-row" onclick="toggleEnabledSkill('${escapeAttr(s.id)}', ${agentId})" title="${escapeAttr(s.description || '')}">
+      <div class="enabled-skill-toggle ${isOn ? 'on' : ''}">${isOn ? '✓' : ''}</div>
+      <div class="enabled-skill-icon">${escapeHtml(s.icon || '🔧')}</div>
+      <div class="enabled-skill-name">${escapeHtml(s.name)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleEnabledSkill(skillId, agentId) {
+  if (!agentId) return;
+  const current = _enabledSkillsCache[agentId] || [];
+  let next;
+  if (current.includes(skillId)) {
+    next = current.filter(id => id !== skillId);
+  } else {
+    next = [...current, skillId];
+  }
+  await cyberclaw.agents.setEnabledSkills(agentId, next);
+  _enabledSkillsCache[agentId] = next;
+  // Re-render the toggle list (cheap; just toggles a class)
+  refreshInspectEnabledSkills(agentId);
+}
+
+// ── Skill form (create new) ────────────────────────────────
+
+window.showSkillForm = function() {
+  const form = document.getElementById('skill-form');
+  if (form) form.classList.remove('hidden');
+  const msgEl = document.getElementById('skill-validation-msg');
+  if (msgEl) { msgEl.textContent = ''; msgEl.className = 'skill-validation-msg'; }
+  const name = document.getElementById('skill-name-input');
+  if (name) name.focus();
+};
+
+window.hideSkillForm = function() {
+  const form = document.getElementById('skill-form');
+  if (form) form.classList.add('hidden');
+  ['skill-name-input','skill-desc-input','skill-triggers-input','skill-body-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const msgEl = document.getElementById('skill-validation-msg');
+  if (msgEl) { msgEl.textContent = ''; msgEl.className = 'skill-validation-msg'; }
+};
+
+window.createSkill = async function() {
+  const name = (document.getElementById('skill-name-input')?.value || '').trim();
+  const desc = (document.getElementById('skill-desc-input')?.value || '').trim();
+  const triggersRaw = (document.getElementById('skill-triggers-input')?.value || '').trim();
+  const body = document.getElementById('skill-body-input')?.value || '';
+  const msgEl = document.getElementById('skill-validation-msg');
+  if (!name) {
+    if (msgEl) { msgEl.textContent = 'Name is required.'; msgEl.className = 'skill-validation-msg has-errors'; }
+    return;
+  }
+  const triggers = triggersRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const result = await cyberclaw.skills.create({ name, description: desc, triggers, body });
+  if (!result || !result.ok) {
+    if (msgEl) { msgEl.textContent = 'Create failed: ' + (result && result.error ? result.error : 'unknown error'); msgEl.className = 'skill-validation-msg has-errors'; }
+    return;
+  }
+  // Show validation feedback (warnings are OK, errors aren't)
+  if (result.validation) {
+    const v = result.validation;
+    const msgs = [];
+    if (v.errors && v.errors.length) msgs.push('Errors: ' + v.errors.map(e => e.message).join('; '));
+    if (v.warnings && v.warnings.length) msgs.push('Heads up: ' + v.warnings.map(w => w.message).join('; '));
+    if (msgs.length && msgEl) {
+      msgEl.textContent = msgs.join('\n');
+      msgEl.className = 'skill-validation-msg ' + (v.errors.length ? 'has-errors' : 'has-warnings');
+    }
+  }
+  await refreshSkillsList();
+  // Re-render the toggle list in the inspect panel so the new skill appears
+  const focused = agentOrder[focusIndex];
+  if (focused) refreshInspectEnabledSkills(focused);
+  // Open the detail modal for the new skill (so the user sees what they made)
+  if (result.skill) {
+    setTimeout(() => openSkillDetail(result.skill.id), 100);
+  }
+  // Clear form but keep it visible so user can create another if they want
+  ['skill-name-input','skill-desc-input','skill-triggers-input','skill-body-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+};
+
+window.seedStarterSkills = async function() {
+  const result = await cyberclaw.skills.seedStarters();
+  if (result && result.ok) {
+    await refreshSkillsList();
+    const focused = agentOrder[focusIndex];
+    if (focused) refreshInspectEnabledSkills(focused);
+    if (result.seeded && result.seeded.length) {
+      addChatMsg('system', `📚 Seeded ${result.seeded.length} starter skill${result.seeded.length === 1 ? '' : 's'}: ${result.seeded.join(', ')}`);
+    } else {
+      addChatMsg('system', '📚 Starter skills already present.');
+    }
+  }
+};
+
+// ── Skill detail modal (view + edit + delete) ────────────────────────
+
+window.openSkillDetail = async function(skillId) {
+  const r = await cyberclaw.skills.read(skillId);
+  if (!r || !r.ok) {
+    addChatMsg('system', `Couldn't open skill: ${r ? r.error : 'unknown error'}`);
+    return;
+  }
+  _activeSkillId = skillId;
+  renderSkillDetailView(r.skill);
+  const overlay = document.getElementById('skill-detail-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+  const actions = document.getElementById('skill-detail-actions');
+  if (actions) actions.style.display = '';
+};
+
+window.closeSkillDetail = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  const overlay = document.getElementById('skill-detail-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  _activeSkillId = null;
+};
+
+function escapeAttr(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Minimal markdown -> HTML for the skill detail view. Covers
+// headings, lists, paragraphs, inline code, code blocks, and
+// bold/italic. Enough for SKILL.md files; intentionally not
+// a full markdown parser.
+function renderMarkdown(md) {
+  if (!md) return '';
+  const escape = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = md.split(/\r?\n/);
+  let out = '';
+  let inCode = false;
+  let inList = null; // 'ul' | 'ol' | null
+  let paragraph = [];
+  const flushPara = () => {
+    if (paragraph.length) {
+      const text = inlineFormat(escape(paragraph.join(' ')));
+      out += `<p>${text}</p>`;
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (inList) { out += `</${inList}>`; inList = null; }
+  };
+  for (const raw of lines) {
+    const line = raw;
+    if (line.startsWith('```')) {
+      flushPara(); flushList();
+      if (inCode) { out += '</code></pre>'; inCode = false; }
+      else { out += '<pre><code>'; inCode = true; }
+      continue;
+    }
+    if (inCode) { out += escape(line) + '\n'; continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flushPara(); flushList();
+      out += `<h${h[1].length}>${inlineFormat(escape(h[2]))}</h${h[1].length}>`;
+      continue;
+    }
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (ol) {
+      flushPara();
+      if (inList !== 'ol') { flushList(); out += '<ol>'; inList = 'ol'; }
+      out += `<li>${inlineFormat(escape(ol[1]))}</li>`;
+      continue;
+    }
+    const ul = line.match(/^\s*[-*]\s+(.*)$/);
+    if (ul) {
+      flushPara();
+      if (inList !== 'ul') { flushList(); out += '<ul>'; inList = 'ul'; }
+      out += `<li>${inlineFormat(escape(ul[1]))}</li>`;
+      continue;
+    }
+    if (line.trim() === '') {
+      flushPara(); flushList();
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushPara(); flushList();
+  if (inCode) out += '</code></pre>';
+  return out;
+}
+
+// Inline formatting: **bold**, *italic*, `code`. Runs after HTML-escape
+// so we look for patterns in the escaped text.
+function inlineFormat(text) {
+  return text
+    .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, (_, c) => `<strong>${c}</strong>`)
+    .replace(/\*([^*]+)\*/g, (_, c) => `<em>${c}</em>`);
+}
+
+function renderSkillDetailView(skill) {
+  const body = document.getElementById('skill-detail-body');
+  const titleEl = document.getElementById('skill-detail-title');
+  const iconEl = document.getElementById('skill-detail-icon');
+  if (titleEl) titleEl.textContent = skill.name.toUpperCase();
+  if (iconEl) iconEl.textContent = skill.icon || '📚';
+  const triggersHtml = (skill.triggers || []).map(t => `<li>${escapeHtml(t)}</li>`).join('');
+  const meta = `<div class="skill-detail-meta">
+    <strong>id:</strong> <code>${escapeHtml(skill.id)}</code>
+    &nbsp;·&nbsp; <strong>triggers:</strong> ${(skill.triggers || []).length}
+    &nbsp;·&nbsp; <strong>path:</strong> <code>${escapeHtml(skill.path || '')}</code>
+  </div>`;
+  body.innerHTML = `<div class="skill-detail-view">
+    ${meta}
+    <h2>Description</h2>
+    <p>${escapeHtml(skill.description || '(none)')}</p>
+    ${triggersHtml ? `<h3>Triggers</h3><ul>${triggersHtml}</ul>` : ''}
+    <h2>Process</h2>
+    ${renderMarkdown(skill.body || '(empty)')}
+  </div>`;
+  // Re-show the action bar in case we were in edit mode
+  const actions = document.getElementById('skill-detail-actions');
+  if (actions) actions.style.display = '';
+  // Reset action bar to default
+  actions.innerHTML = `
+    <button class="skill-detail-btn" onclick="enterSkillEditMode()">✎ Edit</button>
+    <button class="skill-detail-btn danger" onclick="deleteSkillFromDetail()">🗑 Delete</button>
+  `;
+}
+
+window.enterSkillEditMode = async function() {
+  if (!_activeSkillId) return;
+  const r = await cyberclaw.skills.read(_activeSkillId);
+  if (!r || !r.ok) return;
+  const s = r.skill;
+  const body = document.getElementById('skill-detail-body');
+  body.innerHTML = `<form class="skill-edit-form" onsubmit="event.preventDefault(); saveSkillEdit();">
+    <label>Name</label>
+    <input id="skill-edit-name" type="text" value="${escapeAttr(s.name)}" />
+    <label>Icon</label>
+    <input id="skill-edit-icon" type="text" value="${escapeAttr(s.icon || '🔧')}" maxlength="4" />
+    <label>Description (one line)</label>
+    <input id="skill-edit-desc" type="text" value="${escapeAttr(s.description || '')}" />
+    <label>Triggers (one per line)</label>
+    <textarea id="skill-edit-triggers" rows="3">${escapeHtml((s.triggers || []).join('\n'))}</textarea>
+    <label>Process (markdown — supports headings, lists, code)</label>
+    <textarea id="skill-edit-body" rows="18">${escapeHtml(s.body || '')}</textarea>
+    <div id="skill-edit-msg" class="skill-validation-msg"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button type="button" class="skill-detail-btn" onclick="renderSkillDetailView((window._activeSkillDetail || s))">Cancel</button>
+      <button type="submit" class="skill-detail-btn">Save</button>
+    </div>
+  </form>`;
+  // Hide the bottom action bar in edit mode (Save/Cancel are inside the form)
+  const actions = document.getElementById('skill-detail-actions');
+  if (actions) actions.style.display = 'none';
+  // Remember the current skill for cancel
+  window._activeSkillDetail = s;
+};
+
+window.saveSkillEdit = async function() {
+  if (!_activeSkillId) return;
+  const name = document.getElementById('skill-edit-name')?.value.trim();
+  const desc = document.getElementById('skill-edit-desc')?.value.trim();
+  const icon = document.getElementById('skill-edit-icon')?.value.trim();
+  const triggersRaw = document.getElementById('skill-edit-triggers')?.value || '';
+  const body = document.getElementById('skill-edit-body')?.value || '';
+  const triggers = triggersRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const r = await cyberclaw.skills.update(_activeSkillId, { name, description: desc, icon, triggers, body });
+  const msgEl = document.getElementById('skill-edit-msg');
+  if (!r || !r.ok) {
+    if (msgEl) { msgEl.textContent = 'Save failed: ' + (r && r.error ? r.error : 'unknown error'); msgEl.className = 'skill-validation-msg has-errors'; }
+    return;
+  }
+  if (r.validation && msgEl) {
+    const v = r.validation;
+    const msgs = [];
+    if (v.errors && v.errors.length) msgs.push('Errors: ' + v.errors.map(e => e.message).join('; '));
+    if (v.warnings && v.warnings.length) msgs.push('Heads up: ' + v.warnings.map(w => w.message).join('; '));
+    if (msgs.length) {
+      msgEl.textContent = msgs.join('\n');
+      msgEl.className = 'skill-validation-msg ' + (v.errors.length ? 'has-errors' : 'has-warnings');
+      if (v.errors.length) return; // don't close on error
+    }
+  }
+  await refreshSkillsList();
+  const focused = agentOrder[focusIndex];
+  if (focused) refreshInspectEnabledSkills(focused);
+  renderSkillDetailView(r.skill);
+};
+
+window.deleteSkillFromDetail = async function() {
+  if (!_activeSkillId) return;
+  if (!confirm(`Delete skill "${_activeSkillId}"? This can't be undone.`)) return;
+  const r = await cyberclaw.skills.delete(_activeSkillId);
+  if (r && r.ok) {
+    await refreshSkillsList();
+    const focused = agentOrder[focusIndex];
+    if (focused) refreshInspectEnabledSkills(focused);
+    closeSkillDetail();
+  } else {
+    alert('Delete failed: ' + (r && r.error ? r.error : 'unknown error'));
+  }
 };
 
 // ═══════════════════════════════════════════════════════════

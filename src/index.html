@@ -60,6 +60,34 @@
         </div>
       </div>
 
+      <!-- v3.3.0: Skills library. Browse, create, edit process
+           skills that companions can be equipped with. -->
+      <div class="panel-header">
+        <span class="rune-icon">📚</span> SKILLS LIBRARY
+        <button class="quest-add-btn" onclick="showSkillForm()" title="New skill">+</button>
+      </div>
+      <div class="skill-form hidden" id="skill-form">
+        <input type="text" id="skill-name-input" placeholder="Skill name (e.g. Send Screenshots to User)" maxlength="80" />
+        <textarea id="skill-desc-input" placeholder="Short description (one line)" rows="2" maxlength="240"></textarea>
+        <textarea id="skill-triggers-input" placeholder="When to use (one phrase per line, e.g. 'user asks for a picture')" rows="3"></textarea>
+        <textarea id="skill-body-input" placeholder="Process — write the steps the companion should follow. Use headings and numbered/bulleted lists." rows="10"></textarea>
+        <div id="skill-validation-msg" class="skill-validation-msg"></div>
+        <div class="skill-form-actions">
+          <button class="quest-form-btn save" onclick="createSkill()">Create</button>
+          <button class="quest-form-btn cancel" onclick="hideSkillForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="skill-section" id="skill-list">
+        <!-- Skills populated dynamically -->
+        <div class="skill-empty" id="skill-empty">
+          <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">
+            <div style="font-size:20px;margin-bottom:6px">📚</div>
+            No skills yet.<br>Click + to create your first skill,<br>or seed the starter set below.
+          </div>
+          <button class="skill-seed-btn" onclick="seedStarterSkills()">Seed Starter Skills</button>
+        </div>
+      </div>
+
       <!-- Session -->
       <div class="panel-header system-hdr">
         <span class="rune-icon">📡</span> SESSION
@@ -203,6 +231,25 @@
         </div>
       </div>
 
+      <!-- v3.3.0: Skill detail/edit modal. Shows a skill's full SKILL.md
+           content with edit/delete buttons. -->
+      <div id="skill-detail-overlay" class="modal-overlay hidden" onclick="closeSkillDetail(event)">
+        <div class="modal-panel skill-detail-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon" id="skill-detail-icon">📚</span>
+            <span id="skill-detail-title">SKILL</span>
+            <button class="modal-close" onclick="closeSkillDetail()">✕</button>
+          </div>
+          <div class="skill-detail-body" id="skill-detail-body">
+            <!-- Populated dynamically: view + edit modes -->
+          </div>
+          <div class="skill-detail-actions" id="skill-detail-actions">
+            <button class="skill-detail-btn" onclick="enterSkillEditMode()">✎ Edit</button>
+            <button class="skill-detail-btn danger" onclick="deleteSkillFromDetail()">🗑 Delete</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Terminal strip: tabs on top (companion channels left, system views right) -->
       <div id="terminal-strip">
         <div class="terminal-tabs-bar">
@@ -313,17 +360,18 @@
              are what openclaw calls "skills", so the user-facing label
              is now "Skills" to match) -->
         <div class="inspect-section">
-          <div class="section-title">Skills</div>
+          <div class="section-title">Skill Categories</div>
           <div id="inspect-skills"></div>
         </div>
 
-        <!-- Abilities (v3.1.4: the equip/learn section, previously
-             labelled "Skills", is now "Abilities") -->
-        <div class="inspect-section" id="inspect-skills-section">
-          <div class="section-title">Abilities</div>
-          <div class="inspect-skills-actions">
-            <button class="learn-skill-btn" onclick="learnNewSkill()" title="Search and equip a new skill">📚 Learn New Skill</button>
-            <button class="learned-skills-btn" onclick="openLearnedSkillsModal()" title="View the skills this companion already knows">📋 Learned Skills</button>
+        <!-- v3.3.0: Per-companion enabled-skills toggles. Each row
+             in #inspect-enabled-skills is one skill from the library,
+             on/off toggled. The companion's prompt picks up the
+             content of every enabled skill on chat-send. -->
+        <div class="inspect-section">
+          <div class="section-title">Enabled Skills</div>
+          <div id="inspect-enabled-skills" class="enabled-skills-list">
+            <!-- Populated dynamically by refreshInspectEnabledSkills() -->
           </div>
         </div>
 
