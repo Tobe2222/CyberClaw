@@ -3130,13 +3130,24 @@ const __sendChatMessageImpl = async function(message, attachments) {
   // channel adapter doesn't enforce a per-message cap; the
   // 180s was a desktop-only choice). 600s gives complex
   // tasks room without making the user wait forever.
-  const AGENT_TIMEOUT_MS = 600000; // 600s
+  // v3.10.179: bumped to 900s (15 min) per Tobe 2026-08-30
+  // 11:56. The 600s cap fired on a multi-fix request that
+  // actually completed at ~11:09 — the LLM call did NOT
+  // hang, it was just slow because it had several distinct
+  // sub-tasks (kpow save flow probe + brand colors +
+  // cache buster) and a git tag/push/verify loop. Bumping
+  // to 15 min gives those multi-step tasks headroom without
+  // leaving the user staring at a wedged bubble forever.
+  // The typingFailsafe is bumped proportionally (600s) so
+  // the typing bubble survives long enough to cover a
+  // full legitimate run.
+  const AGENT_TIMEOUT_MS = 900000; // 900s = 15 min
   const typingFailsafe = setTimeout(() => {
-    console.warn('[sendChatMessage] typing bubble > 300s, force-clearing');
-    window.addDesktopLog?.('⚠️', 'AI still thinking after 300s — clearing indicator', message.substring(0, 60), 'warn');
+    console.warn('[sendChatMessage] typing bubble > 600s, force-clearing');
+    window.addDesktopLog?.('⚠️', 'AI still thinking after 600s — clearing indicator', message.substring(0, 60), 'warn');
     try { removeChatMsg(typingId); } catch {}
     try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
-  }, 300000);
+  }, 600000);
 
   try {
     let result;
@@ -3145,9 +3156,9 @@ const __sendChatMessageImpl = async function(message, attachments) {
         // v3.2.51: pass attachments (multimodal content).
         cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         new Promise((_, reject) =>
-          // v3.2.58: AGENT_TIMEOUT_MS is 600s (600000). The
-          // 90s in the error string is historical; the
-          // actual cap is AGENT_TIMEOUT_MS. If the LLM call
+          // v3.10.179: AGENT_TIMEOUT_MS is 900s (900000).
+          // The 90s in the legacy error string is historical;
+          // the actual cap is AGENT_TIMEOUT_MS. If the LLM call
           // exceeds this, the chat bubble shows the error
           // but the underlying LLM call continues on the
           // gateway (this is a UI-side Promise.race, not an
@@ -6834,12 +6845,14 @@ window.sendChat = async function() {
     // path. Was 90s; bumped to match the main path so the
     // user sees consistent timeout behavior across both
     // paths. The 110s typingFailsafe became 300s.
-    const AGENT_TIMEOUT_MS = 600000;
+    // v3.10.179: bumped to 900s (15 min) to match the
+    // main path. Tobe 2026-08-30 11:56.
+    const AGENT_TIMEOUT_MS = 900000;
     const typingFailsafe = setTimeout(() => {
-      console.warn('[sendChat:img] typing bubble > 300s, force-clearing');
-      window.addDesktopLog?.('⚠️', 'AI still thinking after 300s (image path)', message.substring(0, 60), 'warn');
+      console.warn('[sendChat:img] typing bubble > 600s, force-clearing');
+      window.addDesktopLog?.('�️', 'AI still thinking after 600s (image path)', message.substring(0, 60), 'warn');
       try { removeChatMsg(typingId); } catch {}
-    }, 300000);
+    }, 600000);
 
     try {
       let result;
