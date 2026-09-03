@@ -197,6 +197,12 @@ window.cyberclaw = {
       probe: (id) => ipcRenderer.invoke('llm:endpoints:probe', id),
       detectOllama: () => ipcRenderer.invoke('llm:endpoints:detect-ollama'),
     },
+    ollama: {
+      status: (model) => ipcRenderer.invoke('llm:ollama-status', { model }),
+      warm: (model) => ipcRenderer.invoke('llm:ollama-warm', { model }),
+      unload: (model) => ipcRenderer.invoke('llm:ollama-unload', { model }),
+      start: () => ipcRenderer.invoke('llm:ollama-start'),
+    },
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),

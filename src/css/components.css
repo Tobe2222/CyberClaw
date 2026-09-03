@@ -725,6 +725,51 @@
   font-family: var(--font-mono);
 }
 
+/* Local LLM status pill — sits in chat-input-area, only shown
+   when the active companion's primary model is a local Ollama
+   model. Three states: running (green), cold (amber), down
+   (red). Includes a too-big warning state for models that
+   won't fit available VRAM. */
+.llm-status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-family: var(--font-mono);
+  padding: 3px 8px; border-radius: 10px;
+  margin-bottom: 4px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.llm-status-pill .llm-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 6px currentColor;
+}
+.llm-status-pill .llm-label {
+  color: var(--text);
+}
+.llm-status-pill .llm-action {
+  font-size: 9px; padding: 2px 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text);
+  border-radius: 4px; cursor: pointer;
+  font-family: var(--font-mono);
+}
+.llm-status-pill .llm-action:hover {
+  background: rgba(255,255,255,0.15);
+}
+.llm-status-pill .llm-action:disabled {
+  opacity: 0.5; cursor: wait;
+}
+.llm-status-pill.state-running { border-color: rgba(0,255,128,0.35); }
+.llm-status-pill.state-running .llm-dot { background: #00ff80; color: #00ff80; }
+.llm-status-pill.state-cold { border-color: rgba(247,147,30,0.4); }
+.llm-status-pill.state-cold .llm-dot { background: var(--gold); color: var(--gold); }
+.llm-status-pill.state-down { border-color: rgba(255,80,80,0.4); }
+.llm-status-pill.state-down .llm-dot { background: #ff5050; color: #ff5050; }
+.llm-status-pill.state-toobig { border-color: rgba(255,180,0,0.5); }
+.llm-status-pill.state-toobig .llm-dot { background: #ffb400; color: #ffb400; }
+.llm-status-pill.state-loading { opacity: 0.7; }
+
 .inspect-level {
   font-family: var(--font-cyber); font-size: 10px; color: var(--gold);
   background: rgba(247,147,30,0.1); border: 1px solid rgba(247,147,30,0.25);

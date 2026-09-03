@@ -2453,6 +2453,187 @@ ipcMain.handle('llm:endpoints:detect-ollama', async () => {
   return { ok: true, endpoint: ep, alreadyConfigured: false };
 });
 
+// ─── Local Ollama runtime status / warm-up / unload ───────────────
+//
+// Companion model strings look like "ollama/qwen2.5-coder:32b":
+//   <providerId>/<modelId>
+// We resolve the provider's baseUrl from openclaw.json
+// (models.providers[providerId].baseUrl) and call Ollama's
+// native /api/ps and /api/generate endpoints (NOT the OpenAI-
+// compatible /v1/ surface) because /api/ps is the only way to
+// see what's actually loaded in VRAM.
+//
+// State pill in chat header shows:
+//   🟢 running  — model is in VRAM right now
+//   🟡 cold     — Ollama up, model on disk but not loaded
+//   🔴 down     — Ollama not reachable
+//   ⚠ too-big  — model won't fit available VRAM (estimated)
+//
+// We use /api/ps (not /v1/models) because /v1/models only
+// reports what's *on disk*, not what's currently in VRAM.
+
+function parseModelRef(modelStr) {
+  if (!modelStr || typeof modelStr !== 'string') return null;
+  const idx = modelStr.indexOf('/');
+  if (idx <= 0) return null;
+  const providerId = modelStr.slice(0, idx).toLowerCase();
+  const modelId = modelStr.slice(idx + 1);
+  if (!providerId || !modelId) return null;
+  return { providerId, modelId };
+}
+
+// Resolve a model string to its Ollama base URL + raw model name.
+// Returns { baseUrl, modelId, providerName } or null if it's not
+// an Ollama-style provider. We accept any provider whose baseUrl
+// points at localhost:11434 (covers the typical Ollama setup,
+// including the "ollama" provider in openclaw.json which uses
+// /v1 in its baseUrl but still talks to native Ollama).
+function resolveOllamaEndpoint(modelStr) {
+  const ref = parseModelRef(modelStr);
+  if (!ref) return null;
+  const cfg = readOpenClawConfig();
+  const provider = cfg?.models?.providers?.[ref.providerId];
+  if (!provider || !provider.baseUrl) return null;
+  // Strip trailing /v1 (or any path) — Ollama's native API
+  // lives at the root, not /v1.
+  const baseUrl = String(provider.baseUrl).replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+  if (!/localhost|127\.0\.0\.1/.test(baseUrl)) return null; // remote Ollama — don't try to manage
+  return { baseUrl, modelId: ref.modelId, providerName: provider.name || ref.providerId };
+}
+
+// Pull current GPU memory info from nvidia-smi. Returns total
+// VRAM in MB, or null if no NVIDIA GPU is present. Used for the
+// "too-big" estimate — Ollama doesn't expose this directly.
+function getGpuMemoryMb() {
+  try {
+    const out = execSync(
+      'nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
+      { timeout: 2000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    ).trim();
+    const [total] = out.split('\n')[0].split(',').map(s => parseInt(s.trim(), 10));
+    return Number.isFinite(total) ? total : null;
+  } catch { return null; }
+}
+
+ipcMain.handle('llm:ollama-status', async (event, { model } = {}) => {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) {
+    return { ok: false, error: 'Not a local Ollama model', state: 'unsupported', model };
+  }
+  const { baseUrl, modelId } = resolved;
+  // Reachable?
+  let psBody = null;
+  try {
+    const r = await fetchWithAbort(`${baseUrl}/api/ps`, {}, 2500);
+    if (!r.ok) return { ok: false, state: 'down', error: `Ollama not reachable at ${baseUrl}`, model, baseUrl };
+    psBody = await r.json();
+  } catch (e) {
+    return { ok: false, state: 'down', error: `Ollama not reachable at ${baseUrl}`, model, baseUrl };
+  }
+  const loaded = Array.isArray(psBody.models) ? psBody.models.find(m => m.name === modelId || m.model === modelId) : null;
+  // VRAM fit check (best-effort). /api/ps reports size_vram per
+  // loaded model in bytes. For unloaded models we use /api/tags
+  // which reports the on-disk size (the same bytes that will be
+  // loaded into VRAM, modulo quantization layers that may stay
+  // on CPU).
+  const totalVramMb = getGpuMemoryMb();
+  let estimatedSizeMb = null;
+  if (loaded?.size_vram) {
+    estimatedSizeMb = Math.round(loaded.size_vram / 1024 / 1024);
+  } else {
+    try {
+      const r = await fetchWithAbort(`${baseUrl}/api/tags`, {}, 2500);
+      if (r.ok) {
+        const info = await r.json();
+        const m = Array.isArray(info.models) ? info.models.find(x => x.name === modelId || x.model === modelId) : null;
+        if (m?.size) estimatedSizeMb = Math.round(m.size / 1024 / 1024);
+      }
+    } catch { /* tags is optional */ }
+  }
+  const fits = !totalVramMb || !estimatedSizeMb || estimatedSizeMb < totalVramMb * 0.9;
+  return {
+    ok: true,
+    state: loaded ? 'running' : (fits ? 'cold' : 'too-big'),
+    model,
+    modelId,
+    baseUrl,
+    loaded: !!loaded,
+    vram: {
+      totalMb: totalVramMb,
+      estimatedModelMb: estimatedSizeMb,
+      fits,
+    },
+    expiresAt: loaded?.expires_at || null,
+  };
+});
+
+// Force-load a model into VRAM by sending a minimal generate
+// request with keep_alive set to 30m. Runs async (don't await
+// the model response — we don't need it; just the side-effect
+// of Ollama loading the weights).
+ipcMain.handle('llm:ollama-warm', async (event, { model } = {}) => {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
+  try {
+    // Fire-and-forget: Ollama may take 5-30s for a cold load,
+    // and we don't want to block the renderer. We return
+    // immediately and let the renderer poll status() to see
+    // when the model lands.
+    fetch(`${resolved.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: resolved.modelId,
+        prompt: '',
+        stream: false,
+        keep_alive: '30m',
+      }),
+    }).catch(() => {});
+    return { ok: true, started: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Evict a model from VRAM by sending a generate request with
+// keep_alive: 0. Same fire-and-forget pattern as warm.
+ipcMain.handle('llm:ollama-unload', async (event, { model } = {}) => {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
+  try {
+    fetch(`${resolved.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: resolved.modelId,
+        prompt: '',
+        stream: false,
+        keep_alive: 0,
+      }),
+    }).catch(() => {});
+    return { ok: true, unloaded: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Spawn `ollama serve` as a detached child. Returns the PID
+// so the caller can monitor it. We deliberately do NOT wait
+// for the process — Ollama takes a moment to bind 11434.
+ipcMain.handle('llm:ollama-start', async () => {
+  try {
+    const out = spawn('ollama', ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, OLLAMA_KEEP_ALIVE: '30m' },
+    });
+    out.unref();
+    return { ok: true, pid: out.pid };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // v3.1.33: change a companion's primary model. Edits
 // openclaw.json directly (openclaw doesn't expose an
 // `agents edit --model` subcommand, so we patch the
