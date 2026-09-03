@@ -128,6 +128,17 @@ class SyncServer extends EventEmitter {
     // surface the desktop forge uses) and broadcasts the
     // updated agents_list so the change appears on every
     // connected client.
+    // v3.3.0: skills library — same shape as quests (mobile
+    // can browse, create, update, delete, toggle). main.js
+    // wires these to skill-store.js calls.
+    this.onListSkills = options.onListSkills || null;
+    this.onReadSkill = options.onReadSkill || null;
+    this.onCreateSkill = options.onCreateSkill || null;
+    this.onUpdateSkill = options.onUpdateSkill || null;
+    this.onDeleteSkill = options.onDeleteSkill || null;
+    this.onSeedStarterSkills = options.onSeedStarterSkills || null;
+    this.onGetEnabledSkills = options.onGetEnabledSkills || null;
+    this.onSetEnabledSkills = options.onSetEnabledSkills || null;
     this.onSaveSpriteConfig = options.onSaveSpriteConfig || null;
     // v3.2.35: companion soul + memory read/clear from mobile.
     // Mobile is read-only on soul (the desktop forge is the editor);
@@ -1760,6 +1771,123 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      // v3.3.0: skills library (mirror of the desktop IPCs).
+      // The phone can browse, create, update, delete, and
+      // toggle skills just like the desktop's left sidebar.
+      case 'request_skills_list': {
+        if (!client.authenticated) return;
+        try {
+          const r = this.onListSkills ? this.onListSkills() : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skills_list', ok: !!(r && r.ok), skills: (r && r.skills) || [], error: r?.error || null, ts: Date.now() });
+        } catch (e) {
+          this._send(ws, { type: 'skills_list', ok: false, skills: [], error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'request_skill_read': {
+        if (!client.authenticated) return;
+        const id = msg.skillId;
+        if (!id) { this._send(ws, { type: 'skill_read', ok: false, error: 'skillId required', ts: Date.now() }); return; }
+        try {
+          const r = this.onReadSkill ? this.onReadSkill(id) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skill_read', ok: !!(r && r.ok), skill: r?.skill || null, error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+        } catch (e) {
+          this._send(ws, { type: 'skill_read', ok: false, skill: null, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'create_skill': {
+        if (!client.authenticated) return;
+        try {
+          const r = this.onCreateSkill ? this.onCreateSkill(msg.payload || {}) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skill_create_result', ok: !!(r && r.ok), skill: r?.skill || null, validation: r?.validation || null, error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+          // Broadcast the updated list to every connected client so
+          // the desktop UI refreshes too.
+          if (r && r.ok) this._broadcastSkillsList();
+        } catch (e) {
+          this._send(ws, { type: 'skill_create_result', ok: false, skill: null, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'update_skill': {
+        if (!client.authenticated) return;
+        const id = msg.skillId;
+        if (!id) { this._send(ws, { type: 'skill_update_result', ok: false, error: 'skillId required', ts: Date.now() }); return; }
+        try {
+          const r = this.onUpdateSkill ? this.onUpdateSkill(id, msg.payload || {}) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skill_update_result', ok: !!(r && r.ok), skill: r?.skill || null, validation: r?.validation || null, error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+          if (r && r.ok) this._broadcastSkillsList();
+        } catch (e) {
+          this._send(ws, { type: 'skill_update_result', ok: false, skill: null, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'delete_skill': {
+        if (!client.authenticated) return;
+        const id = msg.skillId;
+        if (!id) { this._send(ws, { type: 'skill_delete_result', ok: false, error: 'skillId required', ts: Date.now() }); return; }
+        try {
+          const r = this.onDeleteSkill ? this.onDeleteSkill(id) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skill_delete_result', ok: !!(r && r.ok), error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+          if (r && r.ok) this._broadcastSkillsList();
+        } catch (e) {
+          this._send(ws, { type: 'skill_delete_result', ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'seed_starter_skills': {
+        if (!client.authenticated) return;
+        try {
+          const r = this.onSeedStarterSkills ? this.onSeedStarterSkills() : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'skill_seed_result', ok: !!(r && r.ok), seeded: r?.seeded || [], error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+          if (r && r.ok) this._broadcastSkillsList();
+        } catch (e) {
+          this._send(ws, { type: 'skill_seed_result', ok: false, error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'request_enabled_skills': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        if (!agentId) { this._send(ws, { type: 'enabled_skills', ok: false, error: 'agentId required', ts: Date.now() }); return; }
+        try {
+          const r = this.onGetEnabledSkills ? this.onGetEnabledSkills(agentId) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'enabled_skills', agentId, ok: !!(r && r.ok), enabled: r?.enabled || [], error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+        } catch (e) {
+          this._send(ws, { type: 'enabled_skills', agentId, ok: false, enabled: [], error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+      case 'set_enabled_skills': {
+        if (!client.authenticated) return;
+        const agentId = msg.agentId;
+        if (!agentId) { this._send(ws, { type: 'enabled_skills_set', ok: false, error: 'agentId required', ts: Date.now() }); return; }
+        try {
+          const r = this.onSetEnabledSkills ? this.onSetEnabledSkills(agentId, Array.isArray(msg.skillIds) ? msg.skillIds : []) : { ok: false, error: 'Desktop skills not wired' };
+          this._send(ws, { type: 'enabled_skills_set', agentId, ok: !!(r && r.ok), enabled: r?.enabled || [], error: r?.ok ? null : (r?.error || 'unknown error'), ts: Date.now() });
+        } catch (e) {
+          this._send(ws, { type: 'enabled_skills_set', agentId, ok: false, enabled: [], error: e?.message || String(e), ts: Date.now() });
+        }
+        break;
+      }
+    }
+  }
+
+  // v3.3.0: broadcast the skills list to all connected clients.
+  // Used after create/update/delete/seed so every client refreshes
+  // its sidebar automatically without polling.
+  _broadcastSkillsList() {
+    try {
+      if (!this.onListSkills) return;
+      const r = this.onListSkills();
+      const skills = (r && r.skills) || [];
+      const payload = { type: 'skills_list_broadcast', skills, ts: Date.now() };
+      for (const ws of this.wss.clients) {
+        try { this._send(ws, payload); } catch {}
+      }
+    } catch (e) {
+      console.log('[SyncServer] _broadcastSkillsList failed:', e?.message);
     }
   }
 

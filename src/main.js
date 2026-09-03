@@ -1900,18 +1900,18 @@ function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   return path.join(os.homedir(), 'quests', safeName);
 }
 
-// v3.10.157: the system-wide default quest directory.
+// v3.10.157 + v3.3.2: the system-wide default quest directory.
 // Used when the caller didn't supply a directory AND
-// didn't pass a defaultQuestDir. Resolves to Tobe's
-// projects folder on this machine so new quests land
-// alongside his existing repos. Override with the
-// CYBERCLAW_DEFAULT_QUEST_DIR env var if the layout
-// changes. To force ~/quests/<name> as the fallback
-// instead, set the env var to '' (empty string).
+// didn't pass a defaultQuestDir. Falls back to ~/quests/<name>
+// (a portable default that works on any user's machine).
+// Override with the CYBERCLAW_DEFAULT_QUEST_DIR env var to
+// point at a specific projects folder. Set the env var to ''
+// (empty string) to force the same ~/quests/<name> fallback
+// even if it would otherwise resolve elsewhere.
 const DEFAULT_QUEST_DIR =
   process.env.CYBERCLAW_DEFAULT_QUEST_DIR !== undefined
     ? process.env.CYBERCLAW_DEFAULT_QUEST_DIR
-    : '/media/humpsuu/CYBERDRIVE/2B/work/projects';
+    : path.join(os.homedir(), 'quests');
 
 function scaffoldQuestDirectory(quest) {
   if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
@@ -4376,6 +4376,41 @@ app.whenReady().then(() => {
           });
         }
       }
+    },
+    // v3.3.0: skills library callbacks. Mirror the
+    // desktop IPCs so the phone can browse / create /
+    // edit / delete / toggle skills via SyncServer.
+    onListSkills: () => {
+      try { return { ok: true, skills: skillStore.listSkills() }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onReadSkill: (skillId) => {
+      try { return skillStore.readSkill(skillId); }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onCreateSkill: (payload) => {
+      try { return skillStore.createSkill(payload || {}); }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onUpdateSkill: (skillId, payload) => {
+      try { return skillStore.updateSkill(skillId, payload || {}); }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onDeleteSkill: (skillId) => {
+      try { return skillStore.deleteSkill(skillId); }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onSeedStarterSkills: () => {
+      try { return { ok: true, seeded: skillStore.seedStarterSkills() }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onGetEnabledSkills: (agentId) => {
+      try { return { ok: true, enabled: skillStore.getEnabledSkills(agentId) }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    },
+    onSetEnabledSkills: (agentId, ids) => {
+      try { return { ok: true, enabled: skillStore.setEnabledSkills(agentId, ids) }; }
+      catch (e) { return { ok: false, error: e.message }; }
     },
   });
   syncServer.start();

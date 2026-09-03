@@ -448,10 +448,11 @@ when the user wants a visual. Save the actual image and attach it.
 
 2. **Save to a workspace path the chat transport can resolve.**
 
-   Workspace paths the renderer can fetch:
-
-   - \`/media/humpsuu/CYBERDRIVE/2B/work/...\`  (the CYBERDRIVE)
-   - \`/home/humpsuu/...\`                       (the home directory)
+   The chat transport can fetch files from any path the OpenClaw
+   gateway's file-transfer plugin allows. On a typical setup, save
+   the screenshot into the user's project workspace (e.g. a
+   \`screenshots/\` folder under the active quest directory, or the
+   user's home directory). 
 
    **Never use \`/tmp/\`** — the chat transport can't reach across into
    /tmp and the image will silently fail to render for the user.
@@ -464,7 +465,7 @@ when the user wants a visual. Save the actual image and attach it.
    \`\`\`
    Here's the dashboard as of 14:32:
 
-   MEDIA:/media/humpsuu/CYBERDRIVE/2B/work/projects/cyber_database/screenshots/dashboard-2026-08-23T1432.png
+   MEDIA:/home/<you>/projects/<project>/screenshots/dashboard-2026-08-23T1432.png
    \`\`\`
 
    The MEDIA: line must be on its own line, not inline with text.
@@ -485,165 +486,13 @@ when the user wants a visual. Save the actual image and attach it.
   the action you're documenting, not before.
 `,
   },
-  {
-    id: 'deploy-via-pm2',
-    content: `---
-name: Deploy Website via pm2
-description: How to deploy code changes to the cyberhive.no VPS using pm2 + scp
-icon: 🚀
-triggers:
-  - user asks to ship a code change to production
-  - user asks to update the website
-  - user says "deploy" or "push to live"
----
-
-# Deploy Website via pm2
-
-## When to use
-
-Use this when the user wants to push a code change to the live
-**cyberhive.no** website (the VPS at \`208.113.135.124\`).
-
-**Not for:** CyberClaw desktop/mobile (those use git + .deb rebuild
-+ apt install), CyberDatabase (runs locally from source), CyberRepair
-(local CLI). Use the right skill for the right thing.
-
-## VPS cheatsheet
-
-- **Host:** \`cyberhive-30gb\` @ \`208.113.135.124\` (ubuntu)
-- **SSH key:** \`~/.ssh/cyberhive.pem\`
-- **Project root:** \`/home/ubuntu/projects/cyberhive_website\`
-- **Run manager:** pm2. Two processes:
-  - \`0\` = \`nok_btc\` (BTC/NOK price updater)
-  - \`1\` = \`server\` (main Express app)
-- **Public URL:** \`https://cyberhive.no\`
-- **PM2 restart:** \`pm2 restart 1\` or \`pm2 restart server\`
-  (NEVER restart 0 unless you mean to bounce the price updater)
-
-## Restart semantics
-
-The site has two kinds of files; they restart differently:
-
-- **\`Public/*.{css,js,ejs}\`** — LIVE on next page load, no restart.
-- **\`Server/*.js\`** — REQUIRES \`pm2 restart 1\` after scp.
-
-If you're not sure which files changed, restart. The cost is ~3 seconds
-of downtime.
-
-## Process
-
-1. **Confirm what changed and confirm it builds locally.** Run
-   \`node -c <file>\` on any changed Server/*.js files. If anything
-   parses wrong, fix it locally first — never deploy broken code.
-
-2. **SCP the changed files to the VPS:**
-
-   \`\`\`bash
-   scp -i ~/.ssh/cyberhive.pem \\
-     Server/software-routes.js \\
-     ubuntu@208.113.135.124:/home/ubuntu/projects/cyberhive_website/Server/
-   \`\`\`
-
-   For multi-file changes, list each file on its own \`scp\` line. The
-   VPS destination path mirrors the local path under
-   \`/home/ubuntu/projects/cyberhive_website/\`.
-
-3. **Restart pm2 if any \`Server/*.js\` changed:**
-
-   \`\`\`bash
-   ssh -i ~/.ssh/cyberhive.pem ubuntu@208.113.135.124 \\
-     'cd /home/ubuntu/projects/cyberhive_website && pm2 restart 1'
-   \`\`\`
-
-4. **Verify the deploy.** Curl the affected endpoint from the VPS:
-
-   \`\`\`bash
-   ssh -i ~/.ssh/cyberhive.pem ubuntu@208.113.135.124 \\
-     'curl -sI https://cyberhive.no/<affected-path> | head -5'
-   \`\`\`
-
-   Or \`pm2 logs server --lines 50 --nostream\` to check for errors.
-
-5. **Tell the user what shipped and what URL to hit.**
-
-## Anti-patterns
-
-- **Don't \`git pull\` on the VPS** unless the user explicitly asks. The
-  local \`cyberhive_website\` checkout isn't always in sync with the
-  VPS — files were historically scp'd piecemeal. \`git pull\` may bring
-  in unrelated changes or fail outright.
-- **Don't restart pm2 process \`0\`** unless you mean to bounce the
-  price updater. \`pm2 restart 1\` for app changes.
-- **Don't \`apt install\` anything on the VPS** without explicit ask.
-`,
-  },
-  {
-    id: 'manage-cybercomputer-services',
-    content: `---
-name: Manage Cybercomputer Services
-description: How to start/stop/check status of background services running on cybercomputer
-icon: 🛠️
-triggers:
-  - user asks to start/stop/restart CyberDatabase
-  - user asks why something isn't responding on localhost
-  - agent needs to verify a service is running before testing
----
-
-# Manage Cybercomputer Services
-
-## When to use
-
-Use this when you need to check, start, stop, or restart one of the
-background services running on **cybercomputer** (this host,
-\`192.168.10.133\`). Cybercomputer is the primary company host as of
-2026-08-23, so these are the services the rest of the house relies on.
-
-## Service catalogue
-
-| Service | Port | Launcher | Status command |
-|---|---|---|---|
-| **CyberDatabase** server | 3847 | \`cyber-database {start\|stop\|status}\` | \`cyber-database status\` |
-| **CyberDatabase** Electron GUI | 3847 | \`cyber-database-electron\` | \`ss -tln \\| grep 3847\` |
-| **CyberRepair** CLI | (CLI) | \`cyber-repair\` | \`cyber-repair --help\` |
-| **CyberClaw** desktop dev | 9247 | \`npm start\` from cyberclaw project | \`ss -tln \\| grep 9247\` |
-| **OpenClaw** gateway | 18789 | systemd / user session | \`ss -tln \\| grep 18789\` |
-
-## Process
-
-1. **Identify which service** the user (or you) need to touch. Don't
-   shotgun-restart everything.
-
-2. **Check status first.** Most service launchers have a \`status\`
-   subcommand, and the port check (\`ss -tln | grep <port>\`) is a
-   reliable cross-check.
-
-3. **Stop before swapping modes.** CyberDatabase has two modes
-   (standalone server + Electron desktop); they BOTH try to bind port
-   3847. Switching modes requires stopping one first. The
-   \`cyber-database-electron\` launcher handles this automatically.
-
-4. **Read the logs** if a service fails to start:
-   - CyberDatabase: \`/tmp/cyber-database.log\`
-   - CyberClaw: \`/tmp/cyberclaw-desktop.log\`
-   - OpenClaw: \`journalctl --user -u openclaw-gateway -n 50\` or
-     \`/tmp/openclaw/openclaw-<date>.log\`
-
-5. **Don't \`kill -9\` unless you've tried SIGTERM first.** Electron
-   processes have zygote children that need a clean shutdown to avoid
-   leaving GPU/network helper orphans.
-
-## Port-conflict matrix
-
-If port 3847 (CyberDatabase) is occupied when you try to start the
-standalone server, the Electron GUI from a previous session is still
-running. \`cyber-database stop\` resolves it.
-
-If port 9247 (CyberClaw sync server) is occupied when you try to
-launch the desktop, an old \`npm start\` process is still alive. Find
-it with \`ps -ef | grep -E "electron|node " | grep cyberclaw\` and
-kill the chain (see TOOLS.md for the exact restart pattern).
-`,
-  },
+  // deploy-via-pm2 and manage-cybercomputer-services were removed from
+  // the default seed in v3.3.1 — they're Tobe-specific desktop
+  // workflows that shouldn't ship to other users. Tobe keeps them
+  // as manual skills in his own ~/.openclaw/cyberclaw/skills/.
+  // If we ever want to ship them as opt-in starters, list them under
+  // STARTER_SKILLS with a per-user filter rather than as universal
+  // defaults.
 ];
 
 function seedStarterSkills() {
