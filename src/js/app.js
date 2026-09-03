@@ -240,8 +240,8 @@ async function loadAgents() {
     // Filter out unbound agents with no workspace (like "main")
     // v3.3.2: only skip the generic default placeholder paths. Don't
     // hardcode a per-user home dir — the OpenClaw gateway already
-    // expands '~' for us, so a user with /home/alice/workspace is
-    // filtered the same way as /home/humpsuu/workspace was.
+    // expands '~' for us, so any user's default workspace is filtered
+    // the same way regardless of their home directory.
     const filtered = result.agents.filter(a => {
       if (a.channel !== 'None') return true; // has a binding
       if (a.workspace && a.workspace !== '~/workspace') return true;
