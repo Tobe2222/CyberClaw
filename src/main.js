@@ -2578,55 +2578,7 @@ function getGpuMemoryMb() {
 }
 
 ipcMain.handle('llm:ollama-status', async (event, { model } = {}) => {
-  const resolved = resolveOllamaEndpoint(model);
-  if (!resolved) {
-    return { ok: false, error: 'Not a local Ollama model', state: 'unsupported', model };
-  }
-  const { baseUrl, modelId } = resolved;
-  // Reachable?
-  let psBody = null;
-  try {
-    const r = await fetchWithAbort(`${baseUrl}/api/ps`, {}, 2500);
-    if (!r.ok) return { ok: false, state: 'down', error: `Ollama not reachable at ${baseUrl}`, model, baseUrl };
-    psBody = await r.json();
-  } catch (e) {
-    return { ok: false, state: 'down', error: `Ollama not reachable at ${baseUrl}`, model, baseUrl };
-  }
-  const loaded = Array.isArray(psBody.models) ? psBody.models.find(m => m.name === modelId || m.model === modelId) : null;
-  // VRAM fit check (best-effort). /api/ps reports size_vram per
-  // loaded model in bytes. For unloaded models we use /api/tags
-  // which reports the on-disk size (the same bytes that will be
-  // loaded into VRAM, modulo quantization layers that may stay
-  // on CPU).
-  const totalVramMb = getGpuMemoryMb();
-  let estimatedSizeMb = null;
-  if (loaded?.size_vram) {
-    estimatedSizeMb = Math.round(loaded.size_vram / 1024 / 1024);
-  } else {
-    try {
-      const r = await fetchWithAbort(`${baseUrl}/api/tags`, {}, 2500);
-      if (r.ok) {
-        const info = await r.json();
-        const m = Array.isArray(info.models) ? info.models.find(x => x.name === modelId || x.model === modelId) : null;
-        if (m?.size) estimatedSizeMb = Math.round(m.size / 1024 / 1024);
-      }
-    } catch { /* tags is optional */ }
-  }
-  const fits = !totalVramMb || !estimatedSizeMb || estimatedSizeMb < totalVramMb * 0.9;
-  return {
-    ok: true,
-    state: loaded ? 'running' : (fits ? 'cold' : 'too-big'),
-    model,
-    modelId,
-    baseUrl,
-    loaded: !!loaded,
-    vram: {
-      totalMb: totalVramMb,
-      estimatedModelMb: estimatedSizeMb,
-      fits,
-    },
-    expiresAt: loaded?.expires_at || null,
-  };
+  return ollamaStatusImpl(model);
 });
 
 // Force-load a model into VRAM by sending a minimal generate
@@ -2634,66 +2586,20 @@ ipcMain.handle('llm:ollama-status', async (event, { model } = {}) => {
 // the model response — we don't need it; just the side-effect
 // of Ollama loading the weights).
 ipcMain.handle('llm:ollama-warm', async (event, { model } = {}) => {
-  const resolved = resolveOllamaEndpoint(model);
-  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
-  try {
-    // Fire-and-forget: Ollama may take 5-30s for a cold load,
-    // and we don't want to block the renderer. We return
-    // immediately and let the renderer poll status() to see
-    // when the model lands.
-    fetch(`${resolved.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: resolved.modelId,
-        prompt: '',
-        stream: false,
-        keep_alive: '30m',
-      }),
-    }).catch(() => {});
-    return { ok: true, started: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  return ollamaWarmImpl(model);
 });
 
 // Evict a model from VRAM by sending a generate request with
 // keep_alive: 0. Same fire-and-forget pattern as warm.
 ipcMain.handle('llm:ollama-unload', async (event, { model } = {}) => {
-  const resolved = resolveOllamaEndpoint(model);
-  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
-  try {
-    fetch(`${resolved.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: resolved.modelId,
-        prompt: '',
-        stream: false,
-        keep_alive: 0,
-      }),
-    }).catch(() => {});
-    return { ok: true, unloaded: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  return ollamaUnloadImpl(model);
 });
 
 // Spawn `ollama serve` as a detached child. Returns the PID
 // so the caller can monitor it. We deliberately do NOT wait
 // for the process — Ollama takes a moment to bind 11434.
 ipcMain.handle('llm:ollama-start', async () => {
-  try {
-    const out = spawn('ollama', ['serve'], {
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, OLLAMA_KEEP_ALIVE: '30m' },
-    });
-    out.unref();
-    return { ok: true, pid: out.pid };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  return ollamaStartImpl();
 });
 
 // v3.1.33: change a companion's primary model. Edits
@@ -3796,6 +3702,48 @@ app.whenReady().then(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-activity-ping', { agentId });
       }
+    },
+    onLlmAction: (model, action, meta) => {
+      // v3.3.5: mobile tapped a button on LlmStatusPill
+      // (Start / Warm up / Unload). We run the same logic
+      // the desktop renderer uses, then broadcast the new
+      // status to all mobile clients so the phone's pill
+      // updates in real time.
+      //
+      // We deliberately do NOT forward this to the renderer
+      // — all the logic lives in main.js (the *Impl functions
+      // added alongside the IPC handlers), so we just call
+      // them directly. The desktop's own pill will refresh
+      // next time the user clicks the chat tab; we don't
+      // need to force a refresh here because the broadcast
+      // includes the new state and the renderer listens for
+      // sync-server broadcasts too (it doesn't today, but
+      // that's a minor polish item).
+      (async () => {
+        let r;
+        try {
+          if (action === 'start') r = await ollamaStartImpl();
+          else if (action === 'warm') r = await ollamaWarmImpl(model);
+          else if (action === 'unload') r = await ollamaUnloadImpl(model);
+          else r = { ok: false, error: `unknown action: ${action}` };
+        } catch (err) {
+          r = { ok: false, error: err.message };
+        }
+        // Pull the fresh status and broadcast it.
+        const status = await ollamaStatusImpl(model).catch(() => ({ state: 'down', model }));
+        if (syncServer?.broadcastLlmStatus) {
+          try {
+            syncServer.broadcastLlmStatus({
+              ...status,
+              agentId: null, // mobile-initiated, no agent context
+              model,
+            });
+          } catch (err) {
+            console.warn('[onLlmAction] broadcast failed:', err?.message);
+          }
+        }
+        console.log(`[onLlmAction] ${action} ${model}: ok=${r.ok} state=${status.state}`);
+      })();
     },
     onArenaTreatPlaced: (treat, meta) => {
       // v3.10.72: mobile dropped a food/treat on the
@@ -5498,6 +5446,150 @@ ipcMain.handle('sync-generate-pairing', () => {
 ipcMain.handle('sync-broadcast-state', (e, state) => {
   if (syncServer) syncServer.broadcastState(state);
 });
+
+// v3.3.5: push local-LLM pill status from desktop renderer to
+// mobile clients. The renderer calls this on chat-open and
+// after every pill action (warm/unload/start). Mobile renders
+// a matching pill. If no sync-server is running (e.g. user
+// disabled mobile sync), this is a no-op.
+ipcMain.handle('sync-broadcast-llm-status', (e, status) => {
+  if (syncServer && typeof syncServer.broadcastLlmStatus === 'function') {
+    try { syncServer.broadcastLlmStatus(status); } catch (err) {
+      console.warn('[sync-broadcast-llm-status] failed:', err?.message);
+    }
+  }
+  return { ok: true };
+});
+
+// v3.3.5: mobile-initiated pill actions. The phone can trigger
+// warm / unload / start on the desktop. We resolve the model
+// string the same way the desktop does, run the action, then
+// broadcast the new status so the mobile pill updates.
+//   action: 'start' | 'warm' | 'unload'
+//   model:  e.g. 'ollama/qwen2.5-coder:32b'
+ipcMain.handle('llm:ollama-action', async (e, { model, action } = {}) => {
+  if (!action) return { ok: false, error: 'action required' };
+  try {
+    if (action === 'start') {
+      const r = await ollamaStartImpl();
+      // Mobile wants the new status broadcast back too.
+      if (syncServer?.broadcastLlmStatus) {
+        const status = await ollamaStatusImpl(model);
+        syncServer.broadcastLlmStatus({ ...status, agentId: null, model });
+      }
+      return r;
+    }
+    if (action === 'warm') {
+      const r = await ollamaWarmImpl(model);
+      if (syncServer?.broadcastLlmStatus) {
+        const status = await ollamaStatusImpl(model);
+        syncServer.broadcastLlmStatus({ ...status, agentId: null, model });
+      }
+      return r;
+    }
+    if (action === 'unload') {
+      const r = await ollamaUnloadImpl(model);
+      if (syncServer?.broadcastLlmStatus) {
+        const status = await ollamaStatusImpl(model);
+        syncServer.broadcastLlmStatus({ ...status, agentId: null, model });
+      }
+      return r;
+    }
+    return { ok: false, error: `unknown action: ${action}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Reusable implementations, called by both IPC handlers and
+// the mobile action dispatcher above. Kept as named functions
+// so they're easy to test and reuse without going through
+// ipcMain's listener registry.
+async function ollamaStatusImpl(model) {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) {
+    return { ok: false, error: 'Not a local Ollama model', state: 'unsupported', model };
+  }
+  const { baseUrl, modelId } = resolved;
+  let psBody = null;
+  try {
+    const r = await fetchWithAbort(`${baseUrl}/api/ps`, {}, 2500);
+    if (!r.ok) return { ok: false, state: 'down', error: `Local LLM server not reachable at ${baseUrl}`, model, baseUrl };
+    psBody = await r.json();
+  } catch (e) {
+    return { ok: false, state: 'down', error: `Local LLM server not reachable at ${baseUrl}`, model, baseUrl };
+  }
+  const loaded = Array.isArray(psBody.models) ? psBody.models.find(m => m.name === modelId || m.model === modelId) : null;
+  const totalVramMb = getGpuMemoryMb();
+  let estimatedSizeMb = null;
+  if (loaded?.size_vram) {
+    estimatedSizeMb = Math.round(loaded.size_vram / 1024 / 1024);
+  } else {
+    try {
+      const r = await fetchWithAbort(`${baseUrl}/api/tags`, {}, 2500);
+      if (r.ok) {
+        const info = await r.json();
+        const m = Array.isArray(info.models) ? info.models.find(x => x.name === modelId || x.model === modelId) : null;
+        if (m?.size) estimatedSizeMb = Math.round(m.size / 1024 / 1024);
+      }
+    } catch { /* tags is optional */ }
+  }
+  const fits = !totalVramMb || !estimatedSizeMb || estimatedSizeMb < totalVramMb * 0.9;
+  return {
+    ok: true,
+    state: loaded ? 'running' : (fits ? 'cold' : 'too-big'),
+    model,
+    modelId,
+    baseUrl,
+    loaded: !!loaded,
+    vram: { totalMb: totalVramMb, estimatedModelMb: estimatedSizeMb, fits },
+    expiresAt: loaded?.expires_at || null,
+  };
+}
+
+async function ollamaWarmImpl(model) {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
+  try {
+    fetch(`${resolved.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: resolved.modelId, prompt: '', stream: false, keep_alive: '30m' }),
+    }).catch(() => {});
+    return { ok: true, started: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function ollamaUnloadImpl(model) {
+  const resolved = resolveOllamaEndpoint(model);
+  if (!resolved) return { ok: false, error: 'Not a local Ollama model' };
+  try {
+    fetch(`${resolved.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: resolved.modelId, prompt: '', stream: false, keep_alive: 0 }),
+    }).catch(() => {});
+    return { ok: true, unloaded: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function ollamaStartImpl() {
+  try {
+    const out = spawn('ollama', ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, OLLAMA_KEEP_ALIVE: '30m' },
+    });
+    out.unref();
+    return { ok: true, pid: out.pid };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser }) => {
   console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser });

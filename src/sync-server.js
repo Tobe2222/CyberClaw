@@ -538,6 +538,29 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
+
+      case 'llm_action': {
+        // v3.3.5: mobile-initiated LLM pill action. Phone taps
+        // "Start" / "Warm up" / "Unload" on the LlmStatusPill
+        // component; we forward to the main process via the
+        // llm:ollama-action IPC. The desktop runs the action and
+        // broadcasts the new status back via llm_status, so the
+        // phone's pill updates in real time without polling.
+        //
+        // Authentication: same as chat — the phone must have
+        // completed pairing and have a valid token.
+        if (!client.authenticated) return;
+        if (typeof msg.action !== 'string' || typeof msg.model !== 'string') return;
+        const validActions = ['start', 'warm', 'unload'];
+        if (!validActions.includes(msg.action)) return;
+        if (this.onLlmAction) {
+          this.onLlmAction(msg.model, msg.action, {
+            ws,
+            deviceName: client.name,
+          });
+        }
+        break;
+      }
       case 'arena_treat_placed': {
         // v3.10.72: mobile dropped a treat on the arena. The
         // desktop handles the AI text reaction so the chat
@@ -2210,6 +2233,33 @@ class SyncServer extends EventEmitter {
 
   broadcastTyping(active) {
     this._broadcast({ type: 'typing', active, ts: Date.now() });
+  }
+
+  // v3.3.5: broadcast local-LLM status to the mobile. Fires on
+  // desktop chat-open and after any pill action (warm/unload/start).
+  // The mobile renders a matching pill so the user can start
+  // Ollama from the phone after a reboot without needing to
+  // touch the desktop. Payload shape mirrors the IPC status
+  // response so the renderer doesn't need to reformat.
+  //
+  // We use type 'llm_status' to keep it distinct from
+  // 'state_sync' (full state dumps) and 'chat_message' (per-
+  // message broadcasts). Mobile's onAgentTool / onMessage
+  // handler routes this to the pill component.
+  broadcastLlmStatus(status) {
+    if (!status) return;
+    const payload = {
+      type: 'llm_status',
+      agentId: status.agentId || null,
+      model: status.model || null,
+      state: status.state,           // 'running' | 'cold' | 'down' | 'too-big' | 'unsupported'
+      baseUrl: status.baseUrl || null,
+      providerName: status.providerName || null,
+      modelId: status.modelId || null,
+      vram: status.vram || null,
+      ts: Date.now(),
+    };
+    this._broadcast(payload);
   }
 
   sendAudioResponse(ws, audioBase64, mimeType = 'audio/mpeg') {

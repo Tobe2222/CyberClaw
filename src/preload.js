@@ -204,7 +204,17 @@ window.cyberclaw = {
       start: () => ipcRenderer.invoke('llm:ollama-start'),
       resolveLocal: (model) => ipcRenderer.invoke('llm:resolve-local', { model }),
       probeAllLocal: () => ipcRenderer.invoke('llm:probe-all-local'),
+      // v3.3.5: mobile-initiated actions. The phone can trigger
+      // warm/unload/start via this RPC; the desktop runs the
+      // action and re-broadcasts the new status.
+      action: (model, action) => ipcRenderer.invoke('llm:ollama-action', { model, action }),
     },
+  },
+  // v3.3.5: desktop → mobile broadcast helpers. The renderer
+  // calls these when local-LLM pill state changes, so the phone
+  // sees the same status without re-querying.
+  sync: {
+    broadcastLlmStatus: (status) => ipcRenderer.invoke('sync-broadcast-llm-status', status),
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),

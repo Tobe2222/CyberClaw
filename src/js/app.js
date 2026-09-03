@@ -2468,6 +2468,9 @@ function renderLlmPillState(pill, model, r, resolved) {
     } else {
       pill.style.display = 'none';
     }
+    // v3.3.5: push current pill state to mobile so the phone
+    // sees the same status without re-querying.
+    broadcastLlmStatusToMobile(model, r, resolved);
     return;
   }
 
@@ -2498,6 +2501,31 @@ function renderLlmPillState(pill, model, r, resolved) {
     pill.title = 'This model is too large for the available GPU memory.';
   } else {
     pill.style.display = 'none';
+  }
+  // v3.3.5: push current pill state to mobile so the phone
+  // sees the same status without re-querying.
+  broadcastLlmStatusToMobile(model, r, resolved);
+}
+
+// v3.3.5: forward the desktop's pill state to mobile clients
+// via the sync-server broadcast. Fire-and-forget — if the
+// mobile isn't connected (or sync-server isn't running), the
+// call returns ok: true and nothing happens.
+function broadcastLlmStatusToMobile(model, status, resolved) {
+  if (!cyberclaw?.sync?.broadcastLlmStatus) return;
+  try {
+    cyberclaw.sync.broadcastLlmStatus({
+      agentId: activeChatAgentId || null,
+      model,
+      modelId: status?.modelId || resolved?.modelId || null,
+      baseUrl: status?.baseUrl || resolved?.baseUrl || null,
+      providerName: resolved?.providerName || null,
+      state: status?.state || 'unsupported',
+      vram: status?.vram || null,
+    });
+  } catch (e) {
+    // Mobile sync is optional — never break the desktop pill.
+    console.warn('[llm-pill] broadcast failed:', e?.message);
   }
 }
 
