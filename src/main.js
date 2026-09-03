@@ -2501,6 +2501,68 @@ function resolveOllamaEndpoint(modelStr) {
   return { baseUrl, modelId: ref.modelId, providerName: provider.name || ref.providerId };
 }
 
+// v3.3.5: generic "is this model local?" resolver. Returns
+// { isLocal, baseUrl, modelId, providerName } for ANY provider
+// whose baseUrl points at localhost or 127.0.0.1 — covers
+// Ollama, LM Studio, llama.cpp server, vLLM, etc. Used by the
+// renderer to decide whether to show the local-LLM pill.
+ipcMain.handle('llm:resolve-local', (event, { model } = {}) => {
+  if (!model) return { isLocal: false };
+  const ref = parseModelRef(model);
+  if (!ref) {
+    // No provider prefix — assume it's a raw model id on a
+    // default local Ollama endpoint.
+    return { isLocal: false, modelId: model, note: 'no-provider-prefix' };
+  }
+  const cfg = readOpenClawConfig();
+  const provider = cfg?.models?.providers?.[ref.providerId];
+  if (!provider || !provider.baseUrl) return { isLocal: false, modelId: ref.modelId };
+  const baseUrl = String(provider.baseUrl).replace(/\/+$/, '');
+  const isLocal = /localhost|127\.0\.0\.1/.test(baseUrl);
+  return {
+    isLocal,
+    baseUrl,
+    modelId: ref.modelId,
+    providerName: provider.name || ref.providerId,
+    providerId: ref.providerId,
+  };
+});
+
+// v3.3.5: on app startup (and on demand from the renderer),
+// probe any provider in openclaw.json whose baseUrl is local.
+// Used to surface the pill proactively before the user opens
+// a chat. Returns a list of { providerId, baseUrl, reachable,
+// models: [...], lastProbedAt }.
+ipcMain.handle('llm:probe-all-local', async () => {
+  const cfg = readOpenClawConfig();
+  const providers = (cfg?.models?.providers) || {};
+  const results = [];
+  for (const [id, p] of Object.entries(providers)) {
+    if (!p.baseUrl) continue;
+    const baseUrl = String(p.baseUrl).replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+    if (!/localhost|127\.0\.0\.1/.test(baseUrl)) continue; // skip remote
+    let reachable = false;
+    let models = [];
+    try {
+      const r = await fetchWithAbort(`${baseUrl}/api/tags`, {}, 2000);
+      if (r.ok) {
+        const data = await r.json();
+        reachable = true;
+        models = Array.isArray(data.models) ? data.models.map(m => m.name) : [];
+      }
+    } catch { /* offline */ }
+    results.push({
+      providerId: id,
+      providerName: p.name || id,
+      baseUrl,
+      reachable,
+      models,
+      lastProbedAt: Date.now(),
+    });
+  }
+  return results;
+});
+
 // Pull current GPU memory info from nvidia-smi. Returns total
 // VRAM in MB, or null if no NVIDIA GPU is present. Used for the
 // "too-big" estimate — Ollama doesn't expose this directly.

@@ -202,6 +202,8 @@ window.cyberclaw = {
       warm: (model) => ipcRenderer.invoke('llm:ollama-warm', { model }),
       unload: (model) => ipcRenderer.invoke('llm:ollama-unload', { model }),
       start: () => ipcRenderer.invoke('llm:ollama-start'),
+      resolveLocal: (model) => ipcRenderer.invoke('llm:resolve-local', { model }),
+      probeAllLocal: () => ipcRenderer.invoke('llm:probe-all-local'),
     },
   },
   wizard: {

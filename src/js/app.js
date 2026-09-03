@@ -2364,43 +2364,78 @@ function updateChatHeader(agentId) {
 // ─── Local LLM status pill ───────────────────────────────
 //
 // Shows a small status indicator above the chat input when the
-// active companion is using a local Ollama model. Three states
-// (running/cold/down) plus a "too-big" warning when the model
-// can't fit available VRAM. Click the pill to warm / unload /
-// start Ollama. Mobile reads the same status through the
-// sync-server chat-state broadcast (see sync-server.js).
+// active companion's primary model points at a local server
+// (any provider whose baseUrl is localhost/127.0.0.1). Three
+// states (running/cold/down) plus a "too-big" warning when the
+// model can't fit available VRAM. Click the pill to warm /
+// unload / start the local server. Mobile reads the same
+// status through the sync-server chat-state broadcast.
 //
-// We poll status() once on chat-open and again after any pill
-// action; we do NOT poll continuously — the user explicitly
-// triggers checks via the pill, and Ollama's /api/ps is fast
-// enough to call on demand.
+// We probe on chat-open and after each pill action. We do NOT
+// poll continuously — the user explicitly triggers checks via
+// the pill, and Ollama's /api/ps is fast enough to call on
+// demand.
+//
+// v3.3.5: was ollama-only via /^ollama\// regex. Now uses
+// cyberclaw.llm.ollama.resolveLocal(model) which inspects the
+// provider's baseUrl directly — works for any local provider
+// (ollama, lmstudio, llamacpp, vllm, etc.).
 
 let _llmPillRefreshTimer = null;
+let _localProviderCache = null; // cached resolveLocal result per model string
 
-function isLocalOllamaModel(modelStr) {
-  if (!modelStr || typeof modelStr !== 'string') return false;
-  // Ollama provider id is "ollama" but we also accept anything
-  // pointing at localhost:11434 in case the user renamed it.
-  return /^ollama\//i.test(modelStr);
+// Renderer-side mirror of main.js parseModelRef. Splits
+// "provider/model" into { providerId, modelId }. Used only for
+// the startup cache warm-up; the actual "is this local?" check
+// goes through the IPC layer (cyberclaw.llm.ollama.resolveLocal).
+function parseModelRef(modelStr) {
+  if (!modelStr || typeof modelStr !== 'string') return null;
+  const idx = modelStr.indexOf('/');
+  if (idx <= 0) return null;
+  const providerId = modelStr.slice(0, idx).toLowerCase();
+  const modelId = modelStr.slice(idx + 1);
+  if (!providerId || !modelId) return null;
+  return { providerId, modelId };
+}
+
+async function isLocalModel(modelStr) {
+  if (!modelStr || typeof modelStr !== 'string') return null;
+  if (_localProviderCache && _localProviderCache.model === modelStr) {
+    return _localProviderCache;
+  }
+  try {
+    const r = await cyberclaw.llm.ollama.resolveLocal(modelStr);
+    _localProviderCache = { ...r, model: modelStr };
+    return _localProviderCache;
+  } catch {
+    return null;
+  }
+}
+
+function clearLocalProviderCache() {
+  _localProviderCache = null;
 }
 
 async function refreshLlmStatusPill(agent) {
   const pill = document.getElementById('llm-status-pill');
   if (!pill) return;
   if (!agent) { pill.style.display = 'none'; return; }
-  // agent.primaryModel holds the raw "provider/model" string
-  // (e.g. "ollama/qwen2.5-coder:32b"). agent.model is the
-  // formatted display name (e.g. "Ollama — Qwen 2.5 32B") and
-  // is NOT what we want to send to the IPC layer.
   const model = agent.primaryModel || '';
-  if (!isLocalOllamaModel(model)) {
+  if (!model) { pill.style.display = 'none'; return; }
+
+  // Resolve whether this model points at a local server. If not,
+  // hide the pill (this companion uses a cloud API; nothing to
+  // start).
+  const resolved = await isLocalModel(model);
+  if (!resolved || !resolved.isLocal) {
     pill.style.display = 'none';
     return;
   }
+
   // Show a loading shimmer while we probe
   pill.style.display = 'inline-flex';
   pill.className = 'llm-status-pill state-loading';
-  pill.querySelector('.llm-label').textContent = `checking ${shortModelName(model)}…`;
+  pill.querySelector('.llm-label').textContent = `checking ${formatModelName(model)}…`;
   pill.querySelector('.llm-action').textContent = '';
   pill.querySelector('.llm-action').disabled = true;
   let r;
@@ -2409,24 +2444,27 @@ async function refreshLlmStatusPill(agent) {
   } catch (e) {
     r = { ok: false, error: e.message };
   }
-  renderLlmPillState(pill, model, r);
+  renderLlmPillState(pill, model, r, resolved);
 }
 
-function renderLlmPillState(pill, model, r) {
+function renderLlmPillState(pill, model, r, resolved) {
   const dot = pill.querySelector('.llm-dot');
   const label = pill.querySelector('.llm-label');
   const btn = pill.querySelector('.llm-action');
   btn.disabled = false;
   btn.onclick = null;
-  const modelShort = shortModelName(model);
+  const modelShort = formatModelName(model);
+  const providerLabel = resolved?.providerName
+    ? resolved.providerName.charAt(0).toUpperCase() + resolved.providerName.slice(1)
+    : 'Local server';
 
   if (!r || !r.ok) {
     if (r?.state === 'down') {
       pill.className = 'llm-status-pill state-down';
-      label.textContent = `🦙 Ollama down (${r.baseUrl || 'localhost:11434'})`;
+      label.textContent = `🔴 ${providerLabel} down (${r.baseUrl || 'localhost'})`;
       btn.textContent = 'Start';
       btn.onclick = () => handleLlmPillAction(model, 'start');
-      pill.title = 'Click to spawn `ollama serve`';
+      pill.title = `Click to spawn \`ollama serve\` (the local LLM server ${modelShort} uses).`;
     } else {
       pill.style.display = 'none';
     }
@@ -2435,17 +2473,17 @@ function renderLlmPillState(pill, model, r) {
 
   if (r.state === 'running') {
     pill.className = 'llm-status-pill state-running';
-    label.textContent = `🟢 ${modelShort} loaded in VRAM`;
+    label.textContent = `🟢 ${modelShort} loaded`;
     btn.textContent = 'Unload';
     btn.onclick = () => handleLlmPillAction(model, 'unload');
-    const vramStr = r.vram?.estimatedModelMb ? ` (~${r.vram.estimatedModelMb} MB)` : '';
-    pill.title = `Model is warm. Click to evict and free VRAM${vramStr}.`;
+    const vramStr = r.vram?.estimatedModelMb ? ` (~${r.vram.estimatedModelMb} MB in VRAM)` : '';
+    pill.title = `Model is warm and ready. Click to evict and free VRAM${vramStr}.`;
   } else if (r.state === 'cold') {
     pill.className = 'llm-status-pill state-cold';
     label.textContent = `🟡 ${modelShort} not loaded`;
     btn.textContent = 'Warm up';
     btn.onclick = () => handleLlmPillAction(model, 'warm');
-    pill.title = 'Click to pre-load the model into VRAM (~5-15s).';
+    pill.title = 'Click to pre-load the model into VRAM (~5-15s). Replies become instant after warm-up.';
   } else if (r.state === 'too-big') {
     pill.className = 'llm-status-pill state-toobig';
     const total = r.vram?.totalMb ? `${(r.vram.totalMb / 1024).toFixed(1)} GB VRAM` : 'this GPU';
@@ -2453,11 +2491,7 @@ function renderLlmPillState(pill, model, r) {
     label.textContent = `⚠ ${modelShort} (${modelSize}) won't fit ${total}`;
     btn.textContent = 'Open settings';
     btn.onclick = () => {
-      // Hop into settings → LLM Endpoints so user can pick a
-      // smaller model. We don't auto-change the companion's
-      // model here — that's a user-facing decision.
-      addChatMsg('system', `⚠ ${modelShort} is ${modelSize} but this host only has ${total}. Try a smaller model like qwen2.5-coder:7b in Settings → LLM Endpoints.`);
-      // Best-effort: scroll the LLM endpoints panel into view if open.
+      addChatMsg('system', `⚠ ${modelShort} is ${modelSize} but this host only has ${total}. Try a smaller model in Settings → LLM Endpoints.`);
       const el = document.getElementById('llm-endpoints-list');
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -2478,11 +2512,11 @@ async function handleLlmPillAction(model, action) {
     if (action === 'start') {
       const r = await cyberclaw.llm.ollama.start();
       if (!r.ok) {
-        addChatMsg('system', '❌ Could not start Ollama: ' + (r.error || 'unknown'));
+        addChatMsg('system', '❌ Could not start local LLM server: ' + (r.error || 'unknown') + '. Is `ollama` installed and on PATH?');
       } else {
-        addChatMsg('system', `🦙 Started ollama serve (pid ${r.pid}). Give it a moment to bind 11434.`);
+        addChatMsg('system', `🦙 Started ollama serve (pid ${r.pid}). Give it a moment to bind the port.`);
       }
-      // Wait a beat for Ollama to come up before re-probing.
+      // Wait a beat for the server to come up before re-probing.
       setTimeout(() => refreshLlmStatusPill(agents[activeChatAgentId]), 1500);
       return;
     }
@@ -2493,10 +2527,7 @@ async function handleLlmPillAction(model, action) {
         btn.textContent = oldText; btn.disabled = false;
         return;
       }
-      addChatMsg('system', `🔥 Loading ${shortModelName(model)} into VRAM…`);
-      // Poll status a few times until the model lands or we
-      // give up. 30s is plenty for a 7B; 32B CPU-offload can
-      // take longer but we don't block forever.
+      addChatMsg('system', `🔥 Loading ${formatModelName(model)} into VRAM…`);
       pollUntilLoaded(model, 30);
       return;
     }
@@ -2507,8 +2538,7 @@ async function handleLlmPillAction(model, action) {
         btn.textContent = oldText; btn.disabled = false;
         return;
       }
-      addChatMsg('system', `💤 Evicted ${shortModelName(model)} from VRAM.`);
-      // Wait a moment for Ollama to update its /api/ps, then refresh.
+      addChatMsg('system', `💤 Evicted ${formatModelName(model)} from VRAM.`);
       setTimeout(() => refreshLlmStatusPill(agents[activeChatAgentId]), 800);
       return;
     }
@@ -2526,24 +2556,18 @@ function pollUntilLoaded(model, maxSeconds) {
     const r = await cyberclaw.llm.ollama.status(model).catch(() => null);
     if (r && r.state === 'running') {
       refreshLlmStatusPill(agents[activeChatAgentId]);
-      addChatMsg('system', `✅ ${shortModelName(model)} loaded — replies are instant now.`);
+      addChatMsg('system', `✅ ${formatModelName(model)} loaded — replies are instant now.`);
       return;
     }
     if (Date.now() - start > maxSeconds * 1000) {
       // Give up — re-render so the user sees the current state.
       refreshLlmStatusPill(agents[activeChatAgentId]);
-      addChatMsg('system', `⏱ Still loading ${shortModelName(model)} after ${maxSeconds}s. Check Settings → LLM Endpoints if this persists.`);
+      addChatMsg('system', `⏱ Still loading ${formatModelName(model)} after ${maxSeconds}s. Check Settings → LLM Endpoints if this persists.`);
       return;
     }
     _llmPillRefreshTimer = setTimeout(tick, 1500);
   };
   _llmPillRefreshTimer = setTimeout(tick, 1500);
-}
-
-function shortModelName(modelStr) {
-  if (!modelStr) return '';
-  const idx = modelStr.indexOf('/');
-  return idx >= 0 ? modelStr.slice(idx + 1) : modelStr;
 }
 
 // Populate the companion channel tabs (top-left of the terminal strip).
@@ -4007,6 +4031,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Discover agents from OpenClaw
   await loadAgents();
+
+  // v3.3.5: warm the local-LLM provider cache at startup. This
+  // makes the pill appear instantly the first time the user opens
+  // a local-model companion chat, instead of after a 2s probe.
+  // Fire-and-forget — if Ollama isn't running yet (post-reboot
+  // scenario) we still want the chat UI to be ready; the pill
+  // will render in its loading state and update once the probe
+  // completes.
+  (async () => {
+    try {
+      const providers = await cyberclaw.llm.ollama.probeAllLocal();
+      // For each companion whose model.primary resolves to a
+      // local provider, pre-populate the cache so the first
+      // pill render is instant.
+      for (const agentId of agentOrder) {
+        const a = agents[agentId];
+        if (!a || !a.primaryModel) continue;
+        const ref = parseModelRef(a.primaryModel);
+        if (!ref) continue;
+        const local = providers.find(p => p.providerId === ref.providerId);
+        if (local) {
+          _localProviderCache = {
+            isLocal: true,
+            model: a.primaryModel,
+            baseUrl: local.baseUrl,
+            modelId: ref.modelId,
+            providerName: local.providerName,
+            providerId: ref.providerId,
+          };
+        }
+      }
+      // If the user opens a chat before this completes, the
+      // pill will fall back to a one-shot resolveLocal call.
+    } catch (e) {
+      console.warn('[llm-pill] startup probe failed:', e?.message);
+    }
+  })();
 
   if (agentOrder.length === 0) {
     console.warn('No companions found');
