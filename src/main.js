@@ -240,6 +240,25 @@ function loadStats() {
       }
     }
   }
+  // v3.3.8: migrate legacy `anthropic-<agentId>` keys to the
+  // bare agent id. Earlier versions keyed stats by the model
+  // provider + agent id (e.g. `anthropic-clawsuu`); the
+  // current renderer looks them up by bare id (`clawsuu`),
+  // so any stats saved before that change were orphaned —
+  // the mobile Skills panel showed level 1 / 0 XP forever
+  // even though `companion-stats.json` had real XP. Copy
+  // any legacy-prefixed entry to its bare-id key (don't
+  // delete the old entry yet — it might still be useful for
+  // reference, and it's harmless). Later a future migration
+  // can prune the old keys.
+  for (const key of Object.keys(stats)) {
+    const m = key.match(/^(anthropic|ollama|openai|google|minimax)-(.+)$/);
+    if (m && !stats[m[2]]) {
+      stats[m[2]] = stats[key];
+      mutated = true;
+      console.log(`[companion-stats] migrated legacy key '${key}' → '${m[2]}'`);
+    }
+  }
   if (mutated) saveStats(stats);
   return stats;
 }

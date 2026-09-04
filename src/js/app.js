@@ -2745,6 +2745,50 @@ function updateChatTarget() {
   // chat-target element was removed — no-op
 }
 
+// v3.3.8: shared helper — award XP to the best-matching
+// companion based on the LLM-reply's taskSkill. Called from
+// BOTH `sendChat` (typed desktop input) and
+// `__sendChatMessageImpl` (mobile/voice/prompt IPC path).
+//
+// Before this helper existed, XP was only awarded on the
+// desktop's typed-input path (sendChat). The mobile chat
+// IPC path went through `__sendChatMessageImpl`, which was
+// added later and never got the XP block — so mobile chats
+// silently dropped the XP reward, and the mobile Skills
+// panel stayed at level 1 forever even after dozens of
+// real conversations. The fix is to centralize the logic
+// and call it from both reply handlers. Errors are
+// swallowed so a transient IPC failure never breaks the
+// chat reply itself.
+async function awardXpForReply(result, fallbackAgentId) {
+  if (!result || !result.ok) return;
+  const taskSkill = result.taskSkill;
+  if (!taskSkill) return;
+  try {
+    const xpAmount = 10 + Math.floor(Math.random() * 10);
+    // Find companion with this focus, or fall back to the
+    // agent we're currently chatting with.
+    const specialist = agentOrder.find(id => {
+      const a = agents[id];
+      return a?.focusSkills?.includes(taskSkill);
+    });
+    const xpTarget = specialist || fallbackAgentId;
+    if (!xpTarget) return;
+    await cyberclaw.agents.addXP(xpTarget, taskSkill, xpAmount);
+    const xpAgent = agents[xpTarget];
+    if (xpAgent) {
+      addChatMsg('system', `⚔️ ${xpAgent.name} gained +${xpAmount} ${taskSkill} XP`);
+    }
+    // v3.2.84: re-broadcast so the mobile Skills section
+    // sees the new XP without a manual refresh. Same path
+    // as chatty updates — broadcastAgentsListToMobile
+    // picks up the fresh getStats() in the next tick.
+    try { broadcastAgentsListToMobile(); } catch (_) {}
+  } catch (e) {
+    console.warn('[XP] awardXpForReply failed:', e?.message);
+  }
+}
+
 window.sendChat = async function() {
   const input = document.getElementById('chat-input');
   const message = input.value.trim();
@@ -3079,28 +3123,7 @@ window.sendChat = async function() {
       }
 
       // Award XP to the best-matching companion based on task type
-      const taskSkill = result.taskSkill;
-      if (taskSkill) {
-        const xpAmount = 10 + Math.floor(Math.random() * 10);
-        // Find companion with this focus, or fall back to party leader
-        const specialist = agentOrder.find(id => {
-          const a = agents[id];
-          return a?.focusSkills?.includes(taskSkill);
-        });
-        const xpTarget = specialist || mainAgentId;
-        await cyberclaw.agents.addXP(xpTarget, taskSkill, xpAmount);
-        const xpAgent = agents[xpTarget];
-        if (xpAgent) {
-          addChatMsg('system', `⚔️ ${xpAgent.name} gained +${xpAmount} ${taskSkill} XP`);
-        }
-        // v3.2.84: re-broadcast so the mobile Skills section
-        // sees the new XP without a manual refresh. Same path
-        // as chatty updates — broadcastAgentsListToMobile
-        // picks up the fresh getStats() in the next tick.
-        // Swallow errors: a failed broadcast should never
-        // break the chat reply.
-        try { broadcastAgentsListToMobile(); } catch (_) {}
-      }
+      await awardXpForReply(result, mainAgentId);
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
@@ -3454,6 +3477,11 @@ const __sendChatMessageImpl = async function(message, attachments) {
       window.addDesktopLog?.('💬', 'AI responded', stripAgentReplyDecorations(result.reply).substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: stripAgentReplyDecorations(result.reply) }); } catch {}
+      // v3.3.8: award XP for this reply. Same logic as
+      // sendChat() now — mobile/voice/prompt chats were
+      // silently bypassing XP because this code path was
+      // added in v3.2.51 without the v3.2.84 XP block.
+      await awardXpForReply(result, mainAgentId);
     } else {
       addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
     }
@@ -6662,7 +6690,7 @@ try {
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
       }
       promptCompanionReaction(
-        'I just ate ' + name + '. Give a short happy reaction about how it tasted.',
+        'You just ate a ' + name + ' that Tobe gave you. Briefly share how it made you feel — short, in-character reaction (1-2 sentences). Speak as yourself, not about the user.',
         meta?.companionId,
       );
     } catch (err) {
