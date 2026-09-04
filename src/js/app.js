@@ -7984,7 +7984,7 @@ window.promptCompanionEat = function(treatType) {
       `I ate ${name} (${category})`
     ).catch(e => console.warn('[promptCompanionEat] memory append failed:', e?.message));
   }
-  promptCompanionReaction('I just ate ' + name + '. Give a short happy reaction about how it tasted.');
+  promptCompanionReaction('You just ate a ' + name + ' that Tobe gave you. Briefly share how it made you feel — short, in-character reaction (1-2 sentences). Speak as yourself, not about the user.');
 };
 
 // v3.2.70: reaction-queue removed. The OpenClaw lane
