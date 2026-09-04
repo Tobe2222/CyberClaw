@@ -2192,7 +2192,19 @@ ipcMain.handle('companion:save-avatar', (event, agentId, dataUrl) => {
 // these. write-soul and remember-memory go through
 // `cyberclaw.companions.*` from preload.js.
 ipcMain.handle('companion:get-soul', (event, agentId) => {
-  return { ok: true, content: companionPrompts.readSoul(agentId), presets: companionPrompts.SOUL_PRESETS };
+  // v3.3.9: also expose TRAIT_TO_SOUL so the desktop forge
+  // can rebuild the soul preview live when the user toggles
+  // trait checkboxes (see buildSoulFromTraits in app.js).
+  // Without this, the forge would have to reimplement the
+  // trait-to-sentence mapping or hit the IPC on every
+  // checkbox change — both fragile. The mapping is small
+  // and stable, shipping it with every get-soul call is fine.
+  return {
+    ok: true,
+    content: companionPrompts.readSoul(agentId),
+    presets: companionPrompts.SOUL_PRESETS,
+    traitToSoul: companionPrompts.TRAIT_TO_SOUL || {},
+  };
 });
 ipcMain.handle('companion:save-soul', (event, agentId, content) => {
   try { return { ok: true, ...companionPrompts.writeSoul(agentId, content) }; }

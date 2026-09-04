@@ -4642,6 +4642,43 @@ const CHATTINESS_DESCRIPTIONS = {
   5: 'Very chatty — comments every 15–30 minutes.',
 };
 
+// v3.3.9: live soul regeneration when the user toggles
+// behaviour traits in the forge. Before this, the soul
+// textarea was decoupled from the trait checkboxes:
+// toggling a trait updated the saved spriteConfig but
+// the soul.md on disk (and the textarea) stayed whatever
+// it was before. The companion's character drifted out
+// of sync with the traits the user explicitly picked
+// (Tobe 2026-09-04 15:08).
+//
+// The fix has three pieces:
+//   1. `currentTraitSoulMap` — the TRAIT_TO_SOUL table
+//      loaded once when the forge opens. The desktop
+//      forge's checkbox handler reads from this map to
+//      rebuild the soul preview in O(n) where n = trait
+//      count.
+//   2. `buildSoulFromTraits(traits, name)` — pure
+//      function, no DOM access. Mirrors the migration
+//      logic in companion-prompts.js so the textarea
+//      content stays byte-identical to what
+//      migrateAllSouls would have written.
+//   3. `currentSoulIsCustom` flag — tracks whether the
+//      user has hand-edited the soul. While false, every
+//      trait toggle regenerates the soul preview. The
+//      moment the user types in the textarea, the flag
+//      flips to true and trait toggles stop touching the
+//      soul (the user's words win). Apply-preset resets
+//      the flag to false.
+let currentTraitSoulMap = {};
+let currentSoulIsCustom = false;
+
+function buildSoulFromTraits(traits, name) {
+  const arr = Array.isArray(traits) ? traits : [];
+  const lines = arr.map((t) => currentTraitSoulMap[t]).filter(Boolean);
+  if (!lines.length) return '';
+  return `# ${name || ''}\n\n` + lines.join(' ') + '\n';
+}
+
 function showForgeCompanion(pixelId) {
   const viewer = document.getElementById('forge-companion-viewer');
   if (!viewer) return;
@@ -4718,6 +4755,12 @@ function openCompanionForge(agentId) {
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
       cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
     });
+    // v3.3.9: wire trait-checkbox changes to live soul
+    // regeneration. attachTraitSoulListeners is idempotent —
+    // it overwrites any prior handler so re-opening the forge
+    // (openCompanionForge called twice for the same companion
+    // after edits) doesn't accumulate stale handlers.
+    attachTraitSoulListeners();
     // Load models — prefer saved config, fall back to agent's stored model
     const modelEl = document.getElementById('forge-model-primary');
     if (modelEl) {
@@ -4761,7 +4804,25 @@ async function loadCompanionSoulEditor(agentId) {
   try {
     const r = await cyberclaw.agents.getSoul(agentId);
     ta.value = r.content || '';
+    // v3.3.9: cache the trait→soul map so the change
+    // listener can rebuild the preview without another
+    // IPC round-trip per checkbox toggle.
+    if (r && r.traitToSoul && typeof r.traitToSoul === 'object') {
+      currentTraitSoulMap = r.traitToSoul;
+    }
     presetSel.value = 'custom'; // don't auto-select a preset
+    // v3.3.9: detect if the loaded soul matches what
+    // we'd auto-generate from the current trait checkboxes.
+    // If so, mark the soul as NOT custom so future trait
+    // toggles regenerate it. If the user hand-edited the
+    // soul previously (so it differs from the auto-gen),
+    // keep currentSoulIsCustom = true so we don't clobber
+    // their words when they toggle a trait.
+    const traits = getCheckedForgeTraits();
+    const nameEl = document.getElementById('editor-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const auto = buildSoulFromTraits(traits, name);
+    currentSoulIsCustom = (ta.value.trim() !== auto.trim()) && ta.value.trim().length > 0;
     updateSoulStatus();
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
@@ -4774,20 +4835,108 @@ function updateSoulStatus() {
   const status = document.getElementById('forge-soul-status');
   if (!ta || !status) return;
   const bytes = new Blob([ta.value]).size;
+  // v3.3.9: when the soul is hand-edited (custom),
+  // surface that in the status label so the user knows
+  // future trait toggles won't auto-regenerate the
+  // preview. The byte count stays on the same line so
+  // the layout doesn't shift.
+  const customTag = currentSoulIsCustom ? ' · custom (won’t sync to traits)' : '';
   if (bytes === 0) {
     status.textContent = 'Empty';
     status.style.color = '';
   } else if (bytes > 8192) {
-    status.textContent = bytes + ' bytes — OVER 8KB LIMIT (save disabled)';
+    status.textContent = bytes + ' bytes — OVER 8KB LIMIT (save disabled)' + customTag;
     status.style.color = '#ff8080';
   } else if (bytes > 4096) {
-    status.textContent = bytes + ' bytes — large, will warn on save';
+    status.textContent = bytes + ' bytes — large, will warn on save' + customTag;
     status.style.color = '#ffb060';
   } else {
-    status.textContent = bytes + ' bytes';
-    status.style.color = '';
+    status.textContent = bytes + ' bytes' + customTag;
+    status.style.color = currentSoulIsCustom ? '#80c0ff' : '';
   }
 }
+
+// v3.3.9: read the currently-checked traits from the
+// forge's checkbox grid and return them as an array of
+// bare trait ids (stripping the `trait-` prefix). Cheap;
+// the grid has at most ~9 checkboxes.
+function getCheckedForgeTraits() {
+  const out = [];
+  document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
+    if (cb.checked) out.push(cb.id.replace('trait-', ''));
+  });
+  return out;
+}
+
+// v3.3.9: rebuild the soul textarea from the current
+// trait selection, IF the user hasn't hand-edited the
+// soul. Called on every trait-checkbox change. If the
+// user has typed in the textarea (`currentSoulIsCustom`
+// is true), we leave the soul alone — the user's words
+// win, even if they conflict with the traits. The user
+// can always tap "Apply preset" or hit the new "Reset
+// from traits" button to force regeneration.
+function regenerateSoulFromTraits() {
+  if (currentSoulIsCustom) return;
+  const ta = document.getElementById('forge-soul-editor');
+  if (!ta) return;
+  const traits = getCheckedForgeTraits();
+  const nameEl = document.getElementById('editor-name');
+  const name = nameEl ? nameEl.value.trim() : '';
+  const generated = buildSoulFromTraits(traits, name);
+  if (ta.value !== generated) {
+    ta.value = generated;
+    updateSoulStatus();
+  }
+}
+
+// v3.3.9: idempotent wiring of trait-checkbox listeners.
+// Replaces any prior listener with a fresh closure so
+// opening the forge twice in a row doesn't double-fire.
+// Also wires the textarea input listener once (so the
+// user typing flips `currentSoulIsCustom` to true) and
+// captures the TRAIT_TO_SOUL map from the most-recent
+// `companion:get-soul` IPC result (called from
+// loadCompanionSoulEditor).
+function attachTraitSoulListeners() {
+  document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
+    // Remove any prior listener by replacing the node.
+    // cloneNode preserves checked state + attributes but
+    // drops the listeners — cheaper than tracking
+    // references and avoids subtle duplicate-fire bugs
+    // when the forge is reopened mid-edit.
+    const fresh = cb.cloneNode(true);
+    cb.parentNode.replaceChild(fresh, cb);
+    fresh.addEventListener('change', regenerateSoulFromTraits);
+  });
+  // Soul textarea input — the user's own typing marks the
+  // soul as custom so subsequent trait toggles stop
+  // regenerating. The user can clear the field (empty
+  // textarea + trait changes = empty soul, which is fine).
+  const ta = document.getElementById('forge-soul-editor');
+  if (ta && !ta._soulCustomListenerAttached) {
+    ta.addEventListener('input', function() {
+      currentSoulIsCustom = true;
+      updateSoulStatus();
+    });
+    ta._soulCustomListenerAttached = true;
+  }
+  // v3.3.9: companion name input — renaming while the
+  // soul is auto-generated should update the `# Name`
+  // header in the soul preview. The user's name typing
+  // does NOT mark the soul as custom (only direct edits
+  // to the soul textarea do that). We attach once via a
+  // _nameSoulSyncAttached flag so we don't double-fire
+  // on reopens.
+  const nameEl = document.getElementById('editor-name');
+  if (nameEl && !nameEl._nameSoulSyncAttached) {
+    nameEl.addEventListener('input', function() {
+      regenerateSoulFromTraits();
+    });
+    nameEl._nameSoulSyncAttached = true;
+  }
+}
+
 
 window.applySoulPreset = async function() {
   if (!editorAgentId) return;
@@ -4802,6 +4951,11 @@ window.applySoulPreset = async function() {
     const r = await cyberclaw.agents.applySoulPreset(editorAgentId, preset);
     if (!r.ok) { alert('Could not apply preset: ' + (r.error || 'unknown')); return; }
     ta.value = r.content || '';
+    // v3.3.9: a preset is a clean regeneration, so the
+    // soul is back in sync with the trait toggle list.
+    // Future trait changes should once again regenerate
+    // the preview — flip the flag back to false.
+    currentSoulIsCustom = false;
     updateSoulStatus();
     discordLog('🎭', 'Soul preset applied', preset + ' → ' + editorAgentId);
   } catch (e) {

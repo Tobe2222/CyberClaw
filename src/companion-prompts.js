@@ -317,6 +317,12 @@ module.exports = {
   assembleContext,
   // Constants for the renderer
   SAFETY_PREAMBLE, DEFAULT_SYSTEM_PROMPT, SOUL_PRESETS,
+  // v3.3.9: trait-to-sentence map. Exposed so the desktop
+  // forge can rebuild the soul preview live when the user
+  // toggles trait checkboxes. Previously the map lived only
+  // inside the migration helper, so the renderer had no way
+  // to do the rebuild without duplicating the table.
+  TRAIT_TO_SOUL,
   // Paths (for the renderer to show file locations in tooltips)
   SYSTEM_PROMPT_FILE,
   companionDir: getCompanionDir,
