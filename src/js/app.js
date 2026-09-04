@@ -4811,18 +4811,38 @@ async function loadCompanionSoulEditor(agentId) {
       currentTraitSoulMap = r.traitToSoul;
     }
     presetSel.value = 'custom'; // don't auto-select a preset
-    // v3.3.9: detect if the loaded soul matches what
-    // we'd auto-generate from the current trait checkboxes.
-    // If so, mark the soul as NOT custom so future trait
-    // toggles regenerate it. If the user hand-edited the
-    // soul previously (so it differs from the auto-gen),
-    // keep currentSoulIsCustom = true so we don't clobber
-    // their words when they toggle a trait.
     const traits = getCheckedForgeTraits();
     const nameEl = document.getElementById('editor-name');
     const name = nameEl ? nameEl.value.trim() : '';
     const auto = buildSoulFromTraits(traits, name);
-    currentSoulIsCustom = (ta.value.trim() !== auto.trim()) && ta.value.trim().length > 0;
+    const loaded = (ta.value || '').trim();
+    // v3.3.9: STALE-SOUL DETECTION. If the loaded soul
+    // exists, is not empty, but doesn't match what we'd
+    // generate from the current traits, there are two
+    // possible reasons:
+    //   (a) the user hand-edited the soul (custom — keep)
+    //   (b) the soul is stale — written by an older
+    //       version of the forge that didn't regenerate
+    //       on trait toggle. Multi-paragraph soul text
+    //       with more than one blank line, or soul length
+    //       dramatically different from the auto-gen, is
+    //       a strong signal of (b) — the new auto-gen is
+    //       always a single short paragraph joined by
+    //       spaces (per the v3.2.63 tightening). When we
+    //       detect this, regenerate the textarea to match
+    //       the current traits and surface a toast so the
+    //       user knows it happened.
+    const looksStale = looksLikeStaleSoul(loaded, auto);
+    if (loaded && loaded !== auto.trim() && looksStale) {
+      const regenerated = buildSoulFromTraits(traits, name);
+      ta.value = regenerated;
+      currentSoulIsCustom = false;
+      if (typeof addChatMsg === 'function') {
+        addChatMsg('system', '🔄 Soul.md was out of sync with traits — regenerated. Edit the textarea if you want a custom soul instead.');
+      }
+    } else {
+      currentSoulIsCustom = (loaded !== auto.trim()) && loaded.length > 0;
+    }
     updateSoulStatus();
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
@@ -4860,6 +4880,32 @@ function updateSoulStatus() {
 // forge's checkbox grid and return them as an array of
 // bare trait ids (stripping the `trait-` prefix). Cheap;
 // the grid has at most ~9 checkboxes.
+// v3.3.9: heuristic for 'is this soul.md from an older
+// desktop forge that didn't regenerate on trait toggle?'.
+// The v3.2.63 tightening set the auto-gen format to a
+// single short paragraph (no blank lines, sentences joined
+// with spaces). Older souls are multi-paragraph with
+// blank lines and elaborate prose — when we see one of
+// those against traits that should produce a different
+// short paragraph, we know it's stale.
+//
+// Two heuristics, either of which is enough:
+//   - The loaded soul contains 2+ blank-line paragraph
+//     breaks. The new auto-gen never has them.
+//   - The loaded soul length is more than 2x the auto-gen
+//     length AND differs by at least 200 chars (so short
+//     custom souls for tiny trait sets aren't false-
+//     positive flagged).
+//
+// Returns true if BOTH conditions are likely stale.
+function looksLikeStaleSoul(loaded, auto) {
+  if (!loaded) return false;
+  const blankLines = (loaded.match(/\n\s*\n/g) || []).length;
+  if (blankLines >= 2) return true; // multi-paragraph
+  if (auto && loaded.length > Math.max(400, auto.length * 2 + 200)) return true;
+  return false;
+}
+
 function getCheckedForgeTraits() {
   const out = [];
   document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
