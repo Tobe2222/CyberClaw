@@ -242,9 +242,22 @@ async function loadAgents() {
     // hardcode a per-user home dir — the OpenClaw gateway already
     // expands '~' for us, so any user's default workspace is filtered
     // the same way regardless of their home directory.
+    // v3.3.7: also drop agents with id === 'main' regardless of
+    // workspace. The OpenClaw default config ships a stub `main`
+    // agent (no binding, no explicit workspace) that the gateway
+    // resolves to the default `~/workspace` — but the literal
+    // string the gateway returns is the post-expansion path
+    // (e.g. `/home/humpsuu/workspace`), which the v3.3.2 filter
+    // compared against `~/workspace` and missed. Result: a ghost
+    // `main` companion was leaking into the agents_list broadcast,
+    // getting cached on the sync-server, and replayed to every
+    // mobile reconnect. The arena `initArenaCompanions` then
+    // assigned it a pixel sprite, making the duplicate visible.
+    const isDefaultWorkspace = (ws) => !ws || ws === '~/workspace' || /\/workspace$/.test(ws);
     const filtered = result.agents.filter(a => {
+      if (a.id === 'main') return false; // OpenClaw default stub — always skip
       if (a.channel !== 'None') return true; // has a binding
-      if (a.workspace && a.workspace !== '~/workspace') return true;
+      if (a.workspace && !isDefaultWorkspace(a.workspace)) return true;
       return false; // unbound + default workspace = skip
     });
 
