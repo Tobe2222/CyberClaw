@@ -35,7 +35,7 @@ class PixelArena {
 
     // Background image + horizon
     this.bgImage = null;
-    this.horizonLine = 0.5; // fraction of canvas height — companions stay below this
+    this.horizonLine = 0.7; // v3.1.17: fraction of canvas height — companions stay below this. Was 0.5; Tobe: 'the background allows them to go a bit too high up.' 0.7 keeps companions in the lower 30% of the arena.
 
     // Ground (fallback when no bg image)
     this.groundColor = '#1a2a1a';
@@ -63,6 +63,7 @@ class PixelArena {
     this._initResize();
     this._initClick();
     this._initToyDrag();
+    this._initCompanionDrag(); // v3.1.17: drag-and-drop companions for posing pictures
     this._animate();
   }
 
@@ -161,6 +162,25 @@ class PixelArena {
       images[animName] = { img, frames: animData.frames, cols: animData.cols || animData.frames };
     }
 
+    // v3.1.17: per-companion chase personality so they don't all
+    // converge on the same toy at the same speed. Tobe: 'I noticed
+    // they sync up when chasing the ball. They need a hitbox or
+    // something which the others crash in. And some variation
+    // when chasing the ball.' Three axes of variation:
+    //   - speedMult (0.75–1.30): scales chase speeds (some lazy,
+    //     some eager)
+    //   - reactRadius (60–180 px): some companions only chase
+    //     close toys, others spot them from far away
+    //   - reactionDelay (0–800 ms): some react instantly, some
+    //     have a small lag before they commit to chasing
+    // Together these break the lockstep behavior so each
+    // companion feels distinct.
+    const chasePersonality = {
+      speedMult: 0.75 + Math.random() * 0.55,
+      reactRadius: 60 + Math.random() * 120,
+      reactionDelay: Math.random() * 800,
+    };
+
     return {
       id: agentId,
       name: name || 'Companion',
@@ -180,6 +200,14 @@ class PixelArena {
       stateTimer: 3000 + Math.random() * 3000,
       scale: (typeof scale === 'number' && scale >= 1 && scale <= 8) ? scale : 5,
       sleepState: 'awake', // v3.1.4: 'awake' | 'sleeping' — set by app.js toggle
+      // v3.1.17: chase personality + collision body. See the
+      // chasePersonality block above for the meaning of each axis.
+      chasePersonality,
+      // Cylindrical collision body for companion↔companion repulsion.
+      // radius scales with sprite width so big companions don't
+      // overlap less than small ones. bodyRadius is set after the
+      // sprite dimensions are known below.
+      bodyRadius: 0,
     };
   }
 
@@ -437,6 +465,129 @@ class PixelArena {
     this.canvas.addEventListener('mouseleave', stopDrag);
   }
 
+  // v3.1.17: drag-and-drop companions for picture-taking. Mirrors
+  // _initToyDrag but with companion-specific handling:
+  //   - Hit-test uses the sprite bounding box.
+  //   - While dragging, freeze autonomous behavior
+  //     (state='idle', vx/vy=0, stateTimer pushed far into the
+  //     future so the AI loop won't re-arm).
+  //   - On release, give a small throw velocity from the drag
+  //     motion (so a flick scatters the companion), then let it
+  //     resume normal AI from idle after a short delay.
+  //   - Cursor switches to 'grab' over a companion and
+  //     'grabbing' while one is being dragged.
+  //   - Click-to-select still works (separate listener); the
+  //     mousedown here stops propagation only when it actually
+  //     grabbed a companion.
+  _initCompanionDrag() {
+    const arena = this;
+    let dragging = null;
+    let dragOffX = 0, dragOffY = 0;
+    let lastMX = 0, lastMY = 0;
+    let lastDragTime = 0;
+
+    function canvasCoord(e) {
+      const rect = arena.canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (arena.width / rect.width),
+        y: (e.clientY - rect.top) * (arena.height / rect.height),
+      };
+    }
+
+    function findCompanionAt(mx, my) {
+      // Iterate in reverse so the topmost companion gets picked
+      // (later in this.companions array = drawn last = on top).
+      for (let i = arena.companions.length - 1; i >= 0; i--) {
+        const c = arena.companions[i];
+        const dw = (c.data.frameSize[0] || 32) * c.scale;
+        const dh = (c.data.frameSize[1] || 32) * c.scale;
+        if (mx >= c.x && mx <= c.x + dw && my >= c.y && my <= c.y + dh) {
+          return c;
+        }
+      }
+      return null;
+    }
+
+    this.canvas.addEventListener('mousedown', function(e) {
+      // If a toy grab already started, don't double-handle.
+      if (arena._draggedToy) return;
+      const pos = canvasCoord(e);
+      const comp = findCompanionAt(pos.x, pos.y);
+      if (!comp) return;
+
+      dragging = comp;
+      arena._draggedCompanion = comp;
+      dragOffX = pos.x - comp.x;
+      dragOffY = pos.y - comp.y;
+      lastMX = pos.x; lastMY = pos.y;
+      lastDragTime = performance.now();
+      // Freeze autonomous behavior. stateTimer pushed far into the
+      // future so the AI loop won't re-arm while the user drags.
+      comp.state = 'idle';
+      comp.animation = 'idle';
+      comp.vx = 0; comp.vy = 0;
+      comp.stateTimer = 60000; // 60s — well beyond a typical drag
+      arena.canvas.style.cursor = 'grabbing';
+      e.stopPropagation();
+      e.preventDefault();
+    });
+
+    this.canvas.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      const pos = canvasCoord(e);
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastDragTime);
+      // Track velocity from drag motion for a small throw on release.
+      dragging._dragVx = (pos.x - lastMX) / elapsed * 0.8;
+      dragging._dragVy = (pos.y - lastMY) / elapsed * 0.8;
+      dragging.x = pos.x - dragOffX;
+      dragging.y = pos.y - dragOffY;
+      lastMX = pos.x; lastMY = pos.y;
+      lastDragTime = now;
+      e.preventDefault();
+    });
+
+    const stopDrag = function() {
+      if (dragging) {
+        // Throw velocity from drag motion — clamp like toys do so
+        // a wild flick doesn't yeet the companion off-screen.
+        const maxV = 0.35;
+        let vx = dragging._dragVx || 0;
+        let vy = dragging._dragVy || 0;
+        if (vx >  maxV) vx =  maxV;
+        if (vx < -maxV) vx = -maxV;
+        if (vy >  maxV) vy =  maxV;
+        if (vy < -maxV) vy = -maxV;
+        dragging.vx = vx;
+        dragging.vy = vy;
+        // After the throw, let the companion idle for a moment
+        // before re-arming its AI. This stops it from instantly
+        // re-engaging a chase the moment the user releases.
+        dragging.stateTimer = 1200 + Math.random() * 800;
+        dragging.state = 'idle';
+        dragging.animation = 'idle';
+        dragging._dragVx = undefined;
+        dragging._dragVy = undefined;
+      }
+      dragging = null;
+      arena._draggedCompanion = null;
+      arena.canvas.style.cursor = 'pointer';
+    };
+    this.canvas.addEventListener('mouseup', stopDrag);
+    this.canvas.addEventListener('mouseleave', stopDrag);
+
+    // v3.1.17: hover cursor — 'grab' over a companion so the user
+    // knows it's draggable, back to 'pointer' (set by _initClick)
+    // when not hovering one. mousemove fires for every pixel so
+    // this is cheap.
+    this.canvas.addEventListener('mousemove', function(e) {
+      if (arena._draggedCompanion) return;
+      const pos = canvasCoord(e);
+      const c = findCompanionAt(pos.x, pos.y);
+      arena.canvas.style.cursor = c ? 'grab' : 'pointer';
+    });
+  }
+
   // ── TOY PHYSICS ─────────────────────────────────────────────
 
   _updateToys(dt) {
@@ -575,19 +726,33 @@ class PixelArena {
 
     }
 
-    // Remove toys idle for 20 seconds (not moving + not touched)
+    // Remove toys idle for 15 seconds (not moving + not touched).
+    // v3.1.17: was 60000ms (60s); Tobe: 'make the toys disappear faster.'
     const now = performance.now();
     for (let i = this.toys.length - 1; i >= 0; i--) {
       const toy = this.toys[i];
       if (!toy.lastTouched) toy.lastTouched = now;
       const idleTime = now - toy.lastTouched;
-      if (idleTime > 60000) this.toys.splice(i, 1);
+      if (idleTime > 15000) this.toys.splice(i, 1);
     }
   }
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
   _updateCompanion(comp, dt) {
+    // v3.1.17: while the user is dragging this companion, skip
+    // the entire AI loop. The drag handler (in _initCompanionDrag)
+    // writes comp.x/comp.y directly each mousemove, so we just
+    // animate the frame and bail.
+    if (this._draggedCompanion === comp) {
+      comp.frameTimer += dt;
+      const animData = comp.images[comp.animation];
+      if (animData && comp.frameTimer >= comp.frameSpeed) {
+        comp.frameTimer = 0;
+        comp.frame = (comp.frame + 1) % animData.frames;
+      }
+      return;
+    }
     // ── SLEEP MODE ────────────────────────────────────────────
     // v3.1.4: two sources of sleep:
     //   1. Manual: comp.sleepState === 'sleeping' (set via the inspect
@@ -697,15 +862,31 @@ class PixelArena {
       const fh2 = (comp.data.frameSize[1] || 32) * comp.scale;
       const compCX2 = comp.x + fw2 / 2;
       const compCY2 = comp.y + fh2 / 2;
+      // v3.1.17: lazily set the companion's body radius from sprite
+      // width on first update. Used by the companion↔companion
+      // hitbox collision below.
+      if (!comp.bodyRadius) comp.bodyRadius = fw2 * 0.45;
+
+      // v3.1.17: per-companion chase personality. reactRadius
+      // limits which toys this companion notices — some only
+      // chase toys within 60px, others spot toys up to 180px away.
+      // reactionDelay adds a small lag before the companion commits
+      // to a chase, so two companions seeing the same toy don't
+      // both arrive at the exact same instant.
+      const cp = comp.chasePersonality;
+      const reactionLag = cp.reactionDelay;
 
       // Find nearest stopped or slow-moving toy
       let nearToy = null;
       let nearToyDist = Infinity;
       for (const toy of this.toys) {
         if (toy === this._draggedToy) continue;
+        // Skip toys outside this companion's reaction radius —
+        // some companions are short-sighted, others eagle-eyed.
         const dx = (toy.x + toy.radius) - compCX2;
         const dy = (toy.y + toy.radius) - compCY2;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > cp.reactRadius) continue;
         if (dist < nearToyDist) { nearToy = toy; nearToyDist = dist; }
       }
 
@@ -758,11 +939,11 @@ class PixelArena {
             // Run faster when far away, slow down when close
             var chaseSpeed;
             if (nearToyDist > 200) {
-              chaseSpeed = 0.09 + Math.random() * 0.03; // sprint
+              chaseSpeed = (0.09 + Math.random() * 0.03) * cp.speedMult; // sprint
             } else if (nearToyDist > 80) {
-              chaseSpeed = 0.055 + Math.random() * 0.02; // run
+              chaseSpeed = (0.055 + Math.random() * 0.02) * cp.speedMult; // run
             } else {
-              chaseSpeed = 0.035; // approach carefully
+              chaseSpeed = 0.035 * cp.speedMult; // approach carefully
             }
             comp.vx = (dx / nearToyDist) * chaseSpeed;
             comp.vy = (dy / nearToyDist) * chaseSpeed;
@@ -771,7 +952,11 @@ class PixelArena {
             } else {
               comp.direction = dy < 0 ? 1 : 0;
             }
-            comp.stateTimer = 150;
+            // v3.1.17: reactionDelay adds a small lag before this
+            // companion commits to the chase — so two companions
+            // seeing the same toy don't both arrive at the exact
+            // same instant.
+            comp.stateTimer = 150 + (cp.reactionDelay || 0);
           }
         }
       }
@@ -899,6 +1084,65 @@ class PixelArena {
     if (comp.x + halfW > this.width) { comp.x = this.width - halfW; comp.vx = -Math.abs(comp.vx); }
     if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); }
     if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); }
+
+    // v3.1.17: companion↔companion hitbox collision. Iterates
+    // every other companion and applies a soft-body push when
+    // their bodies overlap. Tobe: 'I noticed the background
+    // allows them to go a bit too high up... They need a hitbox
+    // or something which the others crash in.' Each push:
+    //   1. Compute center-to-center distance d.
+    //   2. Required min distance = sum of body radii.
+    //   3. If d < required, push each companion along the
+    //      separation axis by half the overlap.
+    //   4. Reflect their velocity component along the axis so
+    //      they actually bounce away instead of just sliding
+    //      through each other.
+    // Cylindrical body so the bounce doesn't care about which
+    // sprite frame they're on.
+    if (!comp.bodyRadius) comp.bodyRadius = halfW * 0.9;
+    const compCX = comp.x + halfW;
+    const compCY = comp.y + halfH;
+    for (const other of this.companions) {
+      if (other === comp) continue;
+      const oFw = (other.data.frameSize[0] || 32) * other.scale;
+      const oFh = (other.data.frameSize[1] || 32) * other.scale;
+      const oHalfW = oFw / 2;
+      const oHalfH = oFh / 2;
+      if (!other.bodyRadius) other.bodyRadius = oHalfW * 0.9;
+      const oCX = other.x + oHalfW;
+      const oCY = other.y + oHalfH;
+      const dx = compCX - oCX;
+      const dy = compCY - oCY;
+      const d2 = dx * dx + dy * dy;
+      const minD = comp.bodyRadius + other.bodyRadius;
+      if (d2 >= minD * minD || d2 < 0.0001) continue;
+      const d = Math.sqrt(d2);
+      const overlap = (minD - d) * 0.5;
+      const nx = dx / d;
+      const ny = dy / d;
+      // Position separation (split the overlap between the two
+      // companions so neither one teleports through the other).
+      comp.x += nx * overlap;
+      comp.y += ny * overlap;
+      other.x -= nx * overlap;
+      other.y -= ny * overlap;
+      // Velocity separation along the contact normal. Damp the
+      // component of velocity pointing INTO the other companion
+      // and add a small bounce-away component.
+      const compVN = comp.vx * nx + comp.vy * ny;
+      const otherVN = other.vx * nx + other.vy * ny;
+      // If both are moving toward each other (or one is), bounce
+      // the relative-velocity component back. Use a soft restitution
+      // so they don't ping-pong violently.
+      const restitution = 0.35;
+      if (compVN - otherVN < 0) {
+        const impulse = -(1 + restitution) * (compVN - otherVN) * 0.5;
+        comp.vx += impulse * nx;
+        comp.vy += impulse * ny;
+        other.vx -= impulse * nx;
+        other.vy -= impulse * ny;
+      }
+    }
   }
 
   // ── DRAW ────────────────────────────────────────────────────
