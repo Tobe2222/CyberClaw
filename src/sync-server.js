@@ -1375,6 +1375,45 @@ class SyncServer extends EventEmitter {
         break;
       }
 
+      case 'provider_save': {
+        // v3.3.10: mobile sends an API key for a
+        // provider. The mobile's CompanionEditScreen
+        // Models panel lets the user paste a key + pick
+        // a provider; on unmount the mobile ships the
+        // key to the desktop so the desktop's
+        // providers.json registry stays in sync.
+        // We forward to the same IPC the desktop's
+        // forge uses (providers:save), so the existing
+        // sanitization + persistence apply.
+        if (!client.authenticated) return;
+        const provider = msg.provider;
+        if (!provider || typeof provider !== 'object') {
+          this._send(ws, { type: 'provider_save_failed', reason: 'missing_provider', error: 'provider object required', ts: Date.now() });
+          return;
+        }
+        if (!provider.apiKey || typeof provider.apiKey !== 'string') {
+          this._send(ws, { type: 'provider_save_failed', reason: 'missing_apiKey', error: 'apiKey required', ts: Date.now() });
+          return;
+        }
+        if (!this.onSaveProvider) {
+          console.warn('[SyncServer] provider_save: no onSaveProvider callback wired');
+          this._send(ws, { type: 'provider_save_failed', reason: 'no_callback', error: 'provider_save not supported on this desktop version', ts: Date.now() });
+          return;
+        }
+        try {
+          const result = this.onSaveProvider(provider);
+          if (result && result.ok !== false) {
+            this._send(ws, { type: 'provider_save_ok', providerId: provider.id, ts: Date.now() });
+          } else {
+            this._send(ws, { type: 'provider_save_failed', reason: result?.reason || 'unknown', error: result?.error || 'save failed', ts: Date.now() });
+          }
+        } catch (e) {
+          console.warn('[SyncServer] provider_save failed:', e?.message);
+          this._send(ws, { type: 'provider_save_failed', reason: 'exception', error: e?.message, ts: Date.now() });
+        }
+        break;
+      }
+
       case 'remote_tool_result': {
         if (!client.authenticated) return;
         // Emit so the remote-tool-bridge can resolve the pending promise

@@ -149,12 +149,43 @@ function formatModelName(modelId) {
   if (!modelId) return 'Unknown';
   const parts = modelId.split('/');
   const name = parts[parts.length - 1];
-  // Pretty-print common models
+  // v3.3.10: refreshed for the new catalog. The table is
+  // a pretty-print fallback; the generic regex below
+  // produces reasonable output for any other id, so this
+  // list is just for the most common ones the user
+  // actually sees.
   const pretty = {
-    'claude-opus-4-6': 'Claude Opus 4',
-    'claude-sonnet-4-6': 'Claude Sonnet 4',
+    // Anthropic
+    'claude-opus-4-8': 'Claude Opus 4.8',
+    'claude-opus-4-6': 'Claude Opus 4.6',
+    'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+    'claude-haiku-3.5': 'Claude Haiku 3.5',
     'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
     'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+    // OpenAI
+    'gpt-5.5': 'GPT-5.5',
+    'gpt-5.4': 'GPT-5.4',
+    'gpt-5.4-mini': 'GPT-5.4 Mini',
+    'gpt-5-mini': 'GPT-5 Mini',
+    'gpt-4o': 'GPT-4o',
+    'gpt-4o-mini': 'GPT-4o Mini',
+    // Google
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-3-flash-preview': 'Gemini 3 Flash Preview',
+    'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
+    // MiniMax
+    'MiniMax-M3': 'MiniMax M3',
+    'MiniMax-M2.7': 'MiniMax M2.7',
+    // OpenRouter
+    'auto': 'OpenRouter (auto)',
+    // Ollama
+    'llama3': 'Llama 3',
+    'llama3.1': 'Llama 3.1',
+    'llama3.2': 'Llama 3.2',
+    'mistral': 'Mistral',
+    'codellama': 'CodeLlama',
+    'qwen2.5-coder': 'Qwen 2.5 Coder',
     'qwen2.5:7b': 'Qwen 2.5 7B',
     'qwen2.5:14b': 'Qwen 2.5 14B',
     'llama3.3': 'Llama 3.3',
@@ -4558,12 +4589,11 @@ window.createNewCompanion = function() {
   // Open the picker so the user MUST pick a sprite before saving
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.remove('hidden');
-  // Reset model selections to defaults
-  refreshForgeModelDropdowns().catch(() => {});
-  const modelEl = document.getElementById('forge-model-primary');
-  if (modelEl) modelEl.value = baseline.primaryModel || 'anthropic/claude-opus-4-6';
-  const modelEl2 = document.getElementById('forge-model-secondary');
-  if (modelEl2) modelEl2.value = '';
+  // v3.3.10: reset the new model panel to empty so the
+  // user starts fresh on a new companion. They pick a
+  // provider + type a model id (or fall back to the
+  // desktop default if they leave it empty).
+  hydrateForgeModelPanel('');
 
   // Patch saveCompanion briefly so it refuses to save without a sprite
   // and creates a real openclaw agent on success.
@@ -4583,7 +4613,10 @@ window.createNewCompanion = function() {
     const baseId = newName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'companion';
     let id = baseId; let n = 2;
     while (agents[id]) id = baseId + '-' + (n++);
-    const primaryModel = document.getElementById('forge-model-primary')?.value || baseline.primaryModel || 'anthropic/claude-opus-4-6';
+    // v3.3.10: read primaryModel from the new panel
+    // (provider + free-text model). Falls back to the
+    // desktop default if the user left the panel empty.
+    const primaryModel = readForgePrimaryModel() || baseline.primaryModel || '';
     const tools = (baseline.tools && typeof baseline.tools === 'object') ? baseline.tools : { allow: [] };
     let res = null;
     try {
@@ -4725,7 +4758,13 @@ function openCompanionForge(agentId) {
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.add('hidden');
 
-  // Refresh the model dropdowns to include any custom providers the user added
+  // v3.3.10: hydrate the new provider-first model panel.
+  // The old refreshForgeModelDropdowns() is gone — the
+  // new panel reads/writes primaryModel directly. We still
+  // call refreshForgeModelDropdowns() once for
+  // backward-compat with any external code that watches
+  // the (now-hidden) #forge-model-primary hidden input.
+  hydrateForgeModelPanel(agent.primaryModel || '');
   refreshForgeModelDropdowns().catch(e => console.warn('refreshForgeModelDropdowns:', e));
 
   // Load saved config and show companion preview
@@ -4761,22 +4800,15 @@ function openCompanionForge(agentId) {
     // (openCompanionForge called twice for the same companion
     // after edits) doesn't accumulate stale handlers.
     attachTraitSoulListeners();
-    // Load models — prefer saved config, fall back to agent's stored model
-    const modelEl = document.getElementById('forge-model-primary');
-    if (modelEl) {
-      const desired = (config && config.primaryModel) || agent.primaryModel || 'anthropic/claude-opus-4-6';
-      // If the saved value isn't a current option (e.g. the provider was deleted),
-      // keep it as a custom option so the user can see what's configured.
-      if (![...modelEl.options].some(o => o.value === desired)) {
-        const opt = document.createElement('option');
-        opt.value = desired; opt.textContent = desired + ' (custom / missing)'; opt.selected = true;
-        modelEl.insertBefore(opt, modelEl.firstChild);
-      } else {
-        modelEl.value = desired;
-      }
-    }
-    const modelEl2 = document.getElementById('forge-model-secondary');
-    if (modelEl2) modelEl2.value = agent.secondaryModel || '';
+    // Load models — prefer saved config, fall back to agent's stored model.
+    // v3.3.10: the old <select>-based dropdown is gone; the new
+    // provider-first panel was hydrated at the top of openCompanionForge
+    // with agent.primaryModel. Re-hydrate here too in case the saved
+    // spriteConfig has a different primaryModel than the agent record
+    // (e.g. user edited on mobile then opened desktop forge before the
+    // agents_list broadcast landed).
+    const desiredPrimary = (config && config.primaryModel) || agent.primaryModel;
+    if (desiredPrimary) hydrateForgeModelPanel(desiredPrimary);
   });
 
   // v3.2.32: load soul.md + memory.md into the editor and viewer.
@@ -5093,8 +5125,15 @@ window.saveCompanion = async function() {
       customName: newName || undefined,
       focusSkills: agent.focusSkills || [],
       traits: getCheckedTraits(),
-      primaryModel: document.getElementById('forge-model-primary')?.value || agent.primaryModel,
-      secondaryModel: document.getElementById('forge-model-secondary')?.value || '',
+      // v3.3.10: read primaryModel from the new
+      // provider-first panel. Tobe 2026-09-07: drop
+      // the secondary model entirely. One model per
+      // companion — the chat pipeline uses OpenClaw's
+      // gateway fallback chain (configured via
+      // models.providers.<id>.fallbacks) if the
+      // primary is down, so a per-companion
+      // secondary isn't needed.
+      primaryModel: readForgePrimaryModel() || agent.primaryModel,
       scale: currentForgeScale, // v3.1.6: persist the size slider value
       chattiness: currentForgeChattiness, // v3.2.26: persist the chattiness slider value
     });
@@ -5407,15 +5446,38 @@ const DEFAULT_SETTINGS = {
 // refreshDefaultModelDropdown() and refreshForgeModelDropdowns() with
 // subtle drift (forge omitted the Ollama entry). Both call sites now
 // derive their options from this single list.
+// v3.3.10: well-known model catalog. Used by the global
+// "Default Model" dropdown in Settings (not the forge —
+// the forge has a generic free-text input). This list is
+// a curated subset; users can type any provider/model id
+// they want in the forge's free-text field, but the global
+// default dropdown benefits from having a few safe picks.
+//
+// Tobe 2026-09-07: "the catalog is not up to date. There
+// have been several releases lately." Refreshed to:
+//   - Anthropic Claude Opus 4.8 (current top — replaces
+//     4.6)
+//   - Anthropic Claude Sonnet 4.6 (kept — current mid)
+//   - OpenAI GPT-5.5 + GPT-5.4-mini (replaces GPT-4o line
+//     which is now legacy)
+//   - Google Gemini 2.5 Pro / Flash (kept — current
+//     stable; Gemini 3.x is still preview-only)
+//   - MiniMax MiniMax-M3 (added — Tobe explicitly named
+//     this provider; gateway supports it via MINIMAX_API_KEY)
+//   - OpenRouter `openrouter/auto` (added — generic router
+//     entry; users can pick specific models in the forge)
+//   - Ollama Llama 3 (kept — only entry that means
+//     something without an endpoint probe)
 const WELL_KNOWN_MODELS = [
-  { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-6',   label: 'Claude Opus 4' },
-  { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
-  { provider: 'Anthropic',  model: 'anthropic/claude-haiku-3.5',  label: 'Claude Haiku 3.5' },
-  { provider: 'OpenAI',     model: 'openai/gpt-4o',              label: 'GPT-4o' },
-  { provider: 'OpenAI',     model: 'openai/gpt-4o-mini',         label: 'GPT-4o Mini' },
-  { provider: 'Google',     model: 'google/gemini-2.5-pro',      label: 'Gemini 2.5 Pro' },
-  { provider: 'Google',     model: 'google/gemini-2.5-flash',    label: 'Gemini 2.5 Flash' },
-  { provider: 'Local',      model: 'ollama/llama3',              label: 'Ollama — Llama 3' },
+  { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-8',     label: 'Claude Opus 4.8' },
+  { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6',   label: 'Claude Sonnet 4.6' },
+  { provider: 'OpenAI',     model: 'openai/gpt-5.5',                label: 'GPT-5.5' },
+  { provider: 'OpenAI',     model: 'openai/gpt-5.4-mini',           label: 'GPT-5.4 Mini' },
+  { provider: 'Google',     model: 'google/gemini-2.5-pro',        label: 'Gemini 2.5 Pro' },
+  { provider: 'Google',     model: 'google/gemini-2.5-flash',      label: 'Gemini 2.5 Flash' },
+  { provider: 'MiniMax',    model: 'minimax/MiniMax-M3',            label: 'MiniMax M3' },
+  { provider: 'OpenRouter', model: 'openrouter/auto',               label: 'OpenRouter (auto)' },
+  { provider: 'Local',      model: 'ollama/llama3',                 label: 'Ollama — Llama 3' },
 ];
 
 function loadSettings() {
@@ -6105,6 +6167,300 @@ async function refreshForgeModelDropdowns() {
 function escapeAttr(s) { return String(s == null ? '' : s).replace(/[&"'<>]/g, c => ({'&':'&amp;','"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'})[c]); }
 
 // ── Mobile Companion ──
+let pairingTimerInterval = null;
+
+// ───────────────────────────────────────────────────────────────
+// v3.3.10: New forge model panel (provider-first + free-text
+// model). Replaces refreshForgeModelDropdowns() + the
+// forge-model-primary/secondary <select> dropdowns. Catalog
+// drift was a constant problem (new models shipped faster
+// than we updated the list) and the user couldn't use
+// OpenRouter / MiniMax / Mistral / Kimi / etc. without editing
+// the source. New flow: pick a provider, paste a key, type any
+// model id. Tobe 2026-09-07: "lets remove fallbacks and update
+// the catalog, and make it easy for the user so it just needs
+// to select a provider and then their keys or similar. Do
+// this for both desktop and mobile. ... Could we add a generic
+// input also? Where the user can input Whatever he has? As
+// user friendly as possible. Or just one good setup for
+// generic so we dont have to update them constantly with new
+// releases."
+//
+// Wire model: the panel writes a single `primaryModel` string
+// of the form `provider/model` (e.g. `anthropic/claude-opus-4-8`).
+// The desktop's sprite_config_sync handler accepts it
+// verbatim. No model catalog lives in the desktop anymore —
+// the desktop just routes whatever string the user typed to
+// the OpenClaw gateway, which validates against its own
+// configured provider registry.
+
+// v3.3.10: provider metadata. Maps the curated provider id
+// (matches the <option value=""> of #forge-model-provider)
+// to:
+//   prefix  — the `provider/` prefix shown in the model
+//             input prefix badge
+//   keyEnv  — the env var name we surface as a hint to the
+//             user ("Set MINIMAX_API_KEY in your shell OR
+//             paste it here"). The desktop doesn't read the
+//             env var directly — it uses whatever's in the
+//             providers.json registry. The hint just helps
+//             the user know "this is the standard name for
+//             this provider".
+//   placeholder — sensible model id hint shown in the input.
+//             User can type anything; this is just a hint.
+const FORGE_PROVIDERS = {
+  anthropic:  { prefix: 'anthropic',  keyEnv: 'ANTHROPIC_API_KEY',  placeholder: 'claude-opus-4-8' },
+  openai:     { prefix: 'openai',     keyEnv: 'OPENAI_API_KEY',     placeholder: 'gpt-5.5' },
+  google:     { prefix: 'google',     keyEnv: 'GOOGLE_API_KEY',     placeholder: 'gemini-2.5-pro' },
+  minimax:    { prefix: 'minimax',    keyEnv: 'MINIMAX_API_KEY',    placeholder: 'MiniMax-M3' },
+  openrouter: { prefix: 'openrouter', keyEnv: 'OPENROUTER_API_KEY', placeholder: 'anthropic/claude-sonnet-4-6' },
+  mistral:    { prefix: 'mistral',    keyEnv: 'MISTRAL_API_KEY',    placeholder: 'mistral-large-latest' },
+  groq:       { prefix: 'groq',       keyEnv: 'GROQ_API_KEY',       placeholder: 'llama-3.3-70b-versatile' },
+  // 'custom' is special: no prefix, no keyEnv. The user types
+  // whatever they want and the baseUrl field below provides
+  // the routing hint.
+  custom:     { prefix: '',           keyEnv: '',                   placeholder: 'my-model-id' },
+};
+
+// v3.3.10: hydrate the forge model panel from a saved
+// primaryModel string (e.g. 'anthropic/claude-opus-4-8').
+// Splits provider from model, picks the matching provider
+// from the curated list, falls back to 'custom' for unknown
+// providers. Called on forge open (openCompanionForge) and
+// after each save.
+function hydrateForgeModelPanel(primaryModel) {
+  const pm = (primaryModel || '').trim();
+  const providerEl = document.getElementById('forge-model-provider');
+  const idEl = document.getElementById('forge-model-id');
+  const prefixEl = document.getElementById('forge-model-prefix');
+  const keyEl = document.getElementById('forge-model-key');
+  const keyRowEl = document.getElementById('forge-model-key-row');
+  const baseUrlRowEl = document.getElementById('forge-model-baseurl-row');
+  const baseUrlEl = document.getElementById('forge-model-baseurl');
+  const statusEl = document.getElementById('forge-model-status');
+
+  if (!providerEl || !idEl) return;
+
+  if (!pm) {
+    // Empty config — clear everything.
+    providerEl.value = '';
+    idEl.value = '';
+    if (prefixEl) prefixEl.textContent = 'provider/';
+    if (keyEl) keyEl.value = '';
+    if (baseUrlEl) baseUrlEl.value = '';
+    if (keyRowEl) keyRowEl.style.display = '';
+    if (baseUrlRowEl) baseUrlRowEl.style.display = 'none';
+    if (statusEl) statusEl.textContent = 'Pick a provider, then type any model id your provider supports.';
+    return;
+  }
+
+  // Split "provider/model" on the first slash. Handles
+  // values like 'openrouter/anthropic/claude-sonnet-4-6'
+  // by treating everything after the FIRST slash as the
+  // model id — openrouter's model ids are themselves
+  // namespaced.
+  const idx = pm.indexOf('/');
+  const provider = idx > 0 ? pm.slice(0, idx) : '';
+  const modelId = idx > 0 ? pm.slice(idx + 1) : pm;
+
+  if (provider && FORGE_PROVIDERS[provider]) {
+    providerEl.value = provider;
+    idEl.value = modelId;
+    if (prefixEl) prefixEl.textContent = provider + '/';
+    if (keyRowEl) keyRowEl.style.display = '';
+    if (baseUrlRowEl) baseUrlRowEl.style.display = 'none';
+    // Pull the saved key for this provider (if any) so
+    // the user sees what's configured. The user can
+    // overwrite or clear it.
+    hydrateForgeProviderKey(provider);
+    if (statusEl) {
+      const hint = FORGE_PROVIDERS[provider].keyEnv;
+      statusEl.textContent = `Hint: ${hint} env var works too.`;
+    }
+  } else if (provider) {
+    // Unknown provider (e.g. user typed a fully-custom
+    // value into the free-text field). Treat as Custom
+    // so the user can adjust the baseUrl if needed.
+    providerEl.value = 'custom';
+    idEl.value = pm;
+    if (prefixEl) prefixEl.textContent = '';
+    if (keyRowEl) keyRowEl.style.display = '';
+    if (baseUrlRowEl) baseUrlRowEl.style.display = '';
+    if (statusEl) statusEl.textContent = `Custom provider: ${provider}. Add baseUrl below if needed.`;
+  } else {
+    // No provider prefix at all (e.g. legacy 'claude-opus-4-6').
+    // Treat as bare custom; user can pick a provider to route it.
+    providerEl.value = '';
+    idEl.value = pm;
+    if (prefixEl) prefixEl.textContent = 'provider/';
+    if (statusEl) statusEl.textContent = 'Pick a provider to route this model.';
+  }
+}
+
+// v3.3.10: hydrate the API key field from the saved
+// providers.json entry for the given provider id.
+// The desktop's existing providers:list IPC returns the
+// full provider object including apiKey (if saved). We
+// display it masked (••••) so the user can see a key
+// is saved without leaking it; they can click 👁 to
+// toggle visibility.
+async function hydrateForgeProviderKey(providerId) {
+  const keyEl = document.getElementById('forge-model-key');
+  if (!keyEl) return;
+  if (!providerId || providerId === 'custom') { keyEl.value = ''; return; }
+  try {
+    const providers = await fetchProviders();
+    const p = providers.find(x => (x.id || '').toLowerCase() === providerId.toLowerCase());
+    keyEl.value = p && p.apiKey ? '••••••••' : '';
+  } catch (e) {
+    console.warn('hydrateForgeProviderKey:', e?.message);
+  }
+}
+
+// v3.3.10: onChange handler for #forge-model-provider.
+// Updates the prefix badge + placeholder + visibility of
+// the custom baseUrl row + status text. Bound in markup
+// via onchange="onForgeProviderChange()".
+window.onForgeProviderChange = function() {
+  const providerEl = document.getElementById('forge-model-provider');
+  const provider = providerEl?.value || '';
+  const prefixEl = document.getElementById('forge-model-prefix');
+  const idEl = document.getElementById('forge-model-id');
+  const baseUrlRowEl = document.getElementById('forge-model-baseurl-row');
+  const statusEl = document.getElementById('forge-model-status');
+
+  const meta = FORGE_PROVIDERS[provider];
+  if (meta) {
+    if (prefixEl) prefixEl.textContent = provider === 'custom' ? '' : (provider + '/');
+    if (idEl && !idEl.value && meta.placeholder) idEl.placeholder = meta.placeholder;
+    if (baseUrlRowEl) baseUrlRowEl.style.display = provider === 'custom' ? '' : 'none';
+    if (statusEl) {
+      if (provider === 'custom') {
+        statusEl.textContent = 'Custom provider: enter baseUrl + any model id.';
+      } else if (meta.keyEnv) {
+        statusEl.textContent = `Hint: ${meta.keyEnv} env var works too.`;
+      }
+    }
+    hydrateForgeProviderKey(provider);
+  } else {
+    if (prefixEl) prefixEl.textContent = 'provider/';
+    if (baseUrlRowEl) baseUrlRowEl.style.display = 'none';
+    if (statusEl) statusEl.textContent = 'Pick a provider, then type any model id your provider supports.';
+  }
+};
+
+// v3.3.10: toggle key field between masked + visible.
+// Bound in markup via onclick="toggleForgeKeyVisibility()".
+window.toggleForgeKeyVisibility = function() {
+  const keyEl = document.getElementById('forge-model-key');
+  if (!keyEl) return;
+  if (keyEl.type === 'password') {
+    keyEl.type = 'text';
+    // If the field shows the masked placeholder, clear it
+    // so the user can type a real key instead of editing
+    // the masked dots.
+    if (keyEl.value === '••••••••') keyEl.value = '';
+  } else {
+    keyEl.type = 'password';
+  }
+};
+
+// v3.3.10: save the API key for the chosen provider.
+// Writes/updates the providers.json entry via the existing
+// providers:save IPC. The desktop's IPC already sanitizes
+// + persists; we just send the right shape. Falls back to
+// fetching the existing entry to preserve name + baseUrl.
+window.saveForgeProviderKey = async function() {
+  const providerEl = document.getElementById('forge-model-provider');
+  const keyEl = document.getElementById('forge-model-key');
+  const statusEl = document.getElementById('forge-model-status');
+  const provider = providerEl?.value || '';
+  const key = (keyEl?.value || '').trim();
+  if (!provider || provider === 'custom') {
+    if (statusEl) statusEl.textContent = 'Pick a provider first.';
+    return;
+  }
+  // Don't write the masked placeholder as the key.
+  if (!key || key === '••••••••') {
+    if (statusEl) statusEl.textContent = 'Type a key first (or leave blank to use the env var).';
+    return;
+  }
+  try {
+    // Fetch existing entry (if any) to preserve name +
+    // baseUrl + api style. New providers get sensible
+    // defaults.
+    const existing = await fetchProviders();
+    const prior = existing.find(x => (x.id || '').toLowerCase() === provider.toLowerCase()) || {};
+    const meta = FORGE_PROVIDERS[provider] || {};
+    const result = await cyberclaw.providers.save({
+      id: prior.id || provider,
+      name: prior.name || provider.charAt(0).toUpperCase() + provider.slice(1),
+      baseUrl: prior.baseUrl || (provider === 'openrouter' ? 'https://openrouter.ai/api/v1'
+                                : provider === 'minimax' ? 'https://api.minimax.chat/v1'
+                                : provider === 'groq' ? 'https://api.groq.com/openai/v1'
+                                : ''),
+      apiKey: key,
+      defaultModel: prior.defaultModel || '',
+      api: prior.api || 'openai-completions',
+    });
+    if (result?.ok) {
+      if (statusEl) statusEl.textContent = '✓ API key saved for ' + provider;
+      // Mask the key back so it doesn't sit in plaintext
+      // in the DOM.
+      keyEl.value = '••••••••';
+      keyEl.type = 'password';
+      renderProvidersList(); // refresh Settings → LLM Providers list
+    } else {
+      if (statusEl) statusEl.textContent = '⚠️ Save failed: ' + (result?.error || 'unknown');
+    }
+  } catch (e) {
+    console.warn('saveForgeProviderKey:', e?.message);
+    if (statusEl) statusEl.textContent = '⚠️ Save failed: ' + (e?.message || 'unknown');
+  }
+};
+
+// v3.3.10: read the current panel state and return the
+// final primaryModel string. Empty if nothing usable is
+// filled in. Used by the save path below.
+function readForgePrimaryModel() {
+  const providerEl = document.getElementById('forge-model-provider');
+  const idEl = document.getElementById('forge-model-id');
+  const baseUrlEl = document.getElementById('forge-model-baseurl');
+  const provider = providerEl?.value || '';
+  const modelId = (idEl?.value || '').trim();
+  if (!modelId) return '';
+  if (provider === 'custom') {
+    // Custom provider: write "baseUrl/modelId" so the
+    // runtime can route. If no baseUrl is set, just
+    // write "custom/modelId" (the user typed the full
+    // value into the model field themselves in that
+    // case, since they didn't fill baseUrl).
+    const baseUrl = (baseUrlEl?.value || '').trim();
+    if (baseUrl) {
+      // Convert baseUrl to a safe provider id (host
+      // part, no scheme).
+      const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/[^a-z0-9.-]/gi, '-');
+      if (host) return host + '/' + modelId;
+    }
+    return 'custom/' + modelId;
+  }
+  if (!provider) return modelId; // no provider picked — pass through as bare id
+  return provider + '/' + modelId;
+}
+
+// v3.3.10: scroll to the Settings → LLM Endpoints section.
+// Bound in markup via onclick="openLocalEndpointsSection()".
+window.openLocalEndpointsSection = function() {
+  // Close the forge, open Settings, scroll to endpoints.
+  closeCompanionEditor();
+  if (typeof openSettings === 'function') openSettings();
+  setTimeout(() => {
+    const sec = document.getElementById('llm-endpoints-section')
+              || document.querySelector('[data-section="llm-endpoints"]');
+    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 200);
+};
+
 let pairingTimerInterval = null;
 
 window.generatePairingCode = async function() {

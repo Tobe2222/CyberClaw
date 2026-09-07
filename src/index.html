@@ -791,52 +791,138 @@
           <div id="pixel-gallery" class="pixel-companion-grid"></div>
         </div>
 
-        <!-- Model Selection -->
-        <div class="forge-traits-section">
-          <div class="forge-traits-title">🧠 Models</div>
+        <!-- v3.3.10: Model Selection (provider-first + free-text model).
+             Replaces the v3.2.26 <select>-with-optgroups design that hard-
+             coded a model catalog. Catalog drift was a constant headache
+             (new models shipped faster than we updated the list), and the
+             user couldn't use OpenRouter / MiniMax / Mistral / Kimi / etc.
+             without editing the source.
+
+             New flow:
+             1. Pick a provider from a curated list (Anthropic / OpenAI /
+                Google / MiniMax / OpenRouter / Mistral / Groq / Custom).
+                The provider drives the suggested key env var.
+             2. Enter or paste an API key (optional — uses the OpenClaw
+                gateway's env-var fallback if blank).
+             3. Type any model id you want. No catalog restriction. The
+                wire value is `<provider>/<model>` so the gateway routes
+                it. Local endpoints bypass this panel (use Settings → LLM
+                Endpoints instead).
+
+             Secondary / fallback dropdown is gone — Tobe 2026-09-07:
+             "remove fallbacks". One model per companion. The
+             `secondaryModel` field still exists in sprites.json for
+             backward-compat (so older saved values aren't lost), but the
+             forge never writes or reads it. -->
+        <div class="forge-traits-section forge-model-section">
+          <div class="forge-traits-title">🧠 Model</div>
+
+          <!-- Row 1: provider picker. Curated list, not a free-text field.
+               The provider drives the suggested key env var AND the
+               `provider/` prefix on the wire. Picking "Custom" reveals
+               baseUrl + api-style fields so the user can wire up anything
+               OpenClaw supports. -->
           <div class="settings-row" style="margin-bottom:6px;">
-            <span class="settings-label">Primary</span>
-            <select id="forge-model-primary" class="settings-select">
-              <optgroup label="Anthropic">
-                <option value="anthropic/claude-opus-4-6">Claude Opus 4</option>
-                <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4</option>
-                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
+            <span class="settings-label">Provider</span>
+            <select id="forge-model-provider" class="settings-select" onchange="onForgeProviderChange()">
+              <option value="">— Choose a provider —</option>
+              <optgroup label="Curated">
+                <option value="anthropic">🅰️ Anthropic</option>
+                <option value="openai">🅾️ OpenAI</option>
+                <option value="google">🇬 Google</option>
+                <option value="minimax">🐱 MiniMax</option>
+                <option value="openrouter">🌐 OpenRouter</option>
+                <option value="mistral">🌫️ Mistral</option>
+                <option value="groq">⚡ Groq</option>
               </optgroup>
-              <optgroup label="OpenAI">
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              </optgroup>
-              <optgroup label="Google">
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              </optgroup>
-              <optgroup label="Local">
-                <option value="ollama/llama3">Ollama — Llama 3</option>
+              <optgroup label="Custom">
+                <option value="custom">🛠️ Custom (baseUrl + API key)</option>
               </optgroup>
             </select>
           </div>
-          <div class="settings-row" style="margin-bottom:6px;">
-            <span class="settings-label">Secondary</span>
-            <select id="forge-model-secondary" class="settings-select">
-              <option value="">None (primary only)</option>
-              <optgroup label="Anthropic">
-                <option value="anthropic/claude-opus-4-6">Claude Opus 4</option>
-                <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4</option>
-                <option value="anthropic/claude-haiku-3.5">Claude Haiku 3.5</option>
-              </optgroup>
-              <optgroup label="OpenAI">
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              </optgroup>
-              <optgroup label="Google">
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              </optgroup>
-              <optgroup label="Local">
-                <option value="ollama/llama3">Ollama — Llama 3</option>
-              </optgroup>
-            </select>
+
+          <!-- Row 2: API key (cloud providers only). For local providers
+               this row is hidden — endpoints handle auth via their own
+               config. The Save button writes the key to the providers.json
+               registry (already exists from v3.1.33), so subsequent
+               companions on the same desktop pick it up automatically. -->
+          <div class="settings-row" id="forge-model-key-row" style="margin-bottom:6px;">
+            <span class="settings-label">API Key</span>
+            <div style="display:flex;gap:4px;flex:1;align-items:center;">
+              <input
+                type="password"
+                id="forge-model-key"
+                class="settings-input"
+                placeholder="paste your API key"
+                autocomplete="off"
+                spellcheck="false"
+                style="flex:1;"
+              />
+              <button type="button" class="btn-sm btn-muted" onclick="toggleForgeKeyVisibility()" title="Show / hide key" style="padding:4px 8px;">👁</button>
+              <button type="button" class="btn-sm btn-primary" onclick="saveForgeProviderKey()" title="Save key for this provider" style="padding:4px 8px;">💾</button>
+            </div>
           </div>
+
+          <!-- Row 2b: Custom provider baseUrl. Revealed only when
+               provider === 'custom'. -->
+          <div class="settings-row" id="forge-model-baseurl-row" style="margin-bottom:6px;display:none;">
+            <span class="settings-label">Base URL</span>
+            <input
+              type="text"
+              id="forge-model-baseurl"
+              class="settings-input"
+              placeholder="https://api.example.com/v1"
+              autocomplete="off"
+              spellcheck="false"
+              style="flex:1;"
+            />
+          </div>
+
+          <!-- Row 3: free-text model input. No catalog restriction.
+               Placeholder rotates based on the chosen provider so the
+               user sees a sensible hint, but they can type anything.
+               Combined with the provider, the wire value is
+               `<provider>/<model>`. -->
+          <div class="settings-row" style="margin-bottom:6px;">
+            <span class="settings-label">Model</span>
+            <div style="flex:1;display:flex;gap:4px;align-items:center;">
+              <span id="forge-model-prefix" style="color:var(--text-muted);font-family:monospace;font-size:12px;">provider/</span>
+              <input
+                type="text"
+                id="forge-model-id"
+                class="settings-input"
+                placeholder="claude-opus-4-8"
+                autocomplete="off"
+                spellcheck="false"
+                style="flex:1;"
+              />
+            </div>
+          </div>
+
+          <!-- Row 4: live status row. Shows whether the chosen model is
+               reachable. Updated on every keystroke (debounced) via the
+               desktop's LLM status pill infrastructure (already exists in
+               app.js — window.refreshLlmStatusPill + IPC cyberclaw.llm.ollama.status).
+               For non-local providers this hits the gateway's HTTP route
+               instead. -->
+          <div class="settings-info" id="forge-model-status" style="font-size:10px;color:var(--text-muted);margin:4px 0 0;">
+            Pick a provider, then type any model id your provider supports.
+          </div>
+
+          <!-- Row 5: link out to Local endpoints for self-hosted models.
+               Tobe's v3.10.191 already added the mobile-side Local
+               section; mirror it here with a link instead of an inline
+               picker (the full endpoint list lives in Settings → LLM
+               Endpoints and is too heavy for the forge). -->
+          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin:4px 0 0;">
+            Self-hosted / local? Use <a href="#" onclick="event.preventDefault(); openLocalEndpointsSection();" style="color:#a855f7;">Settings → LLM Endpoints</a> instead.
+          </div>
+
+          <!-- Legacy hidden inputs. Removed IDs (forge-model-primary,
+               forge-model-secondary) so any stale JS that still references
+               them gets a clean null. The save path reads the new IDs. -->
+          <input type="hidden" id="forge-model-primary" value="" />
+          <input type="hidden" id="forge-model-secondary" value="" />
         </div>
 
         <!-- Behaviour Traits -->

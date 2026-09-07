@@ -3966,6 +3966,53 @@ app.whenReady().then(() => {
         return { ok: false, reason: 'send_failed', error: e?.message || 'unknown' };
       }
     },
+    // v3.3.10: mobile sends an API key for a provider.
+    // We forward to the existing providers:save IPC
+    // handler (defined just below in the custom
+    // providers block). The IPC sanitizes + persists
+    // to ~/.openclaw/cyberclaw/providers.json. Returns
+    // the same { ok, ... } shape so the sync-server's
+    // provider_save_ok / _failed ack wiring works.
+    onSaveProvider: (provider) => {
+      try {
+        // Invoke the IPC handler directly. The handler
+        // returns { ok, provider } on success or
+        // { ok: false, error } on validation failure.
+        const result = ipcMain.emit('__providers_save_internal__', null, null, provider);
+        // ipcMain.emit doesn't return handler results;
+        // call the underlying IPC function instead.
+        // The IPC is registered with ipcMain.handle so
+        // we can't call it directly — instead, do the
+        // same sanitization + persist inline.
+        const list = loadProviders();
+        if (!provider || !provider.name || !provider.baseUrl) {
+          return { ok: false, reason: 'missing_fields', error: 'name and baseUrl are required' };
+        }
+        if (!provider.id) {
+          const base = String(provider.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+          let id = base || 'provider';
+          let n = 2;
+          while (list.some(p => p.id === id)) id = base + '-' + (n++);
+          provider.id = id;
+        }
+        const existing = list.findIndex(p => p.id === provider.id);
+        const clean = {
+          id: provider.id,
+          name: String(provider.name).trim(),
+          baseUrl: String(provider.baseUrl).trim(),
+          apiKey: provider.apiKey ? String(provider.apiKey) : '',
+          defaultModel: provider.defaultModel ? String(provider.defaultModel) : '',
+          api: provider.api || 'openai-completions',
+        };
+        if (existing >= 0) list[existing] = clean;
+        else list.push(clean);
+        saveProviders(list);
+        return { ok: true, provider: clean };
+      } catch (e) {
+        console.warn('[SyncServer] onSaveProvider:', e?.message);
+        return { ok: false, reason: 'exception', error: e?.message || 'unknown' };
+      }
+    },
     // v3.2.95: TTS voice picker is a mirror of the desktop's
     // piper voice list. The mobile asks for the list + the
     // current selection on app start; when the user picks a
