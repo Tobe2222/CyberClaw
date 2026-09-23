@@ -4141,7 +4141,33 @@ function addChatMsg(type, text, name, emoji) {
       const qk = questKeyForStorage(activeQuestId);
       if (!chatHistoryByAgentAndQuest[agentId]) chatHistoryByAgentAndQuest[agentId] = {};
       if (!chatHistoryByAgentAndQuest[agentId][qk]) chatHistoryByAgentAndQuest[agentId][qk] = [];
-      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: (quests.find(q => q.id === activeQuestId) || {}).name || null });
+      // v3.3.13: drop the `activeQuestName` enrichment.
+      // v3.3.11 added it with a bare `quests` reference
+      // that was never declared in this function's scope,
+      // so addChatMsg threw `ReferenceError: quests is
+      // not defined` on every chat message and crashed
+      // the renderer's chat pipeline before the message
+      // could reach the agent. Tobe 2026-09-23 18:09:
+      // "I sent the message but no clawsuu thinking etc
+      // and no response." — the renderer died at line
+      // 4144 before the LLM call even started.
+      //
+      // We can't load `quests` here without making
+      // addChatMsg async (it's called from many sync
+      // fire-and-forget paths — agent reply handlers,
+      // typing-bubble inserts, system message pushes,
+      // mobile echoes, etc.). Making it async would
+      // require touching all of those call sites for
+      // ordering guarantees they don't currently need.
+      //
+      // Drop the enrichment. The activeQuestId is
+      // still stamped below, so per-quest bucket
+      // routing continues to work (which was the
+      // whole point of v3.3.11). The quest NAME can
+      // be looked up at render time via
+      // `cyberclaw.quests.list()` if a future UI
+      // feature needs to display it.
+      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: null });
       if (chatHistoryByAgentAndQuest[agentId][qk].length > 200) {
         chatHistoryByAgentAndQuest[agentId][qk] = chatHistoryByAgentAndQuest[agentId][qk].slice(-200);
       }
