@@ -158,8 +158,25 @@ class OpenClawSessionTail {
       return;
     }
     for (const s of entries) {
-      if (s.sessionId) {
-        const fp = path.join(this.sessionsDir, `${s.sessionId}.jsonl`);
+      // v3.3.12: prefer s.sessionFile (basename) over
+      // s.sessionId for the JSONL filename. Tobe's
+      // 2026-09-23 17:55 report: "the desktop is bugged,
+      // its not loading anything". The desktop tailer
+      // was logging every chat-pipeline tool call as
+      // `sessionKey=unknown` because the disk filename
+      // (e.g. `7633a997-a2de-41ac-8aeb-34fc9d05f027.jsonl`)
+      // no longer matches s.sessionId (e.g.
+      // `c3508d4a-30c1-4400-98df-c6abeddc0b7b`) — OpenClaw
+      // now stores the JSONL path under `sessionFile` and
+      // the sessionId is a separate identifier.
+      //
+      // Fall back to sessionId if sessionFile is missing
+      // (older sessions.json entries predate the rename).
+      const fname = s.sessionFile
+        ? path.basename(s.sessionFile)
+        : (s.sessionId ? `${s.sessionId}.jsonl` : null);
+      if (fname) {
+        const fp = path.join(this.sessionsDir, fname);
         this.fileToKey.set(fp, s.key || '');
       }
     }

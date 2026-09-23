@@ -6799,8 +6799,6 @@ window.openLocalEndpointsSection = function() {
   }, 200);
 };
 
-let pairingTimerInterval = null;
-
 window.generatePairingCode = async function() {
   try {
     const { ipcRenderer } = require('electron');
