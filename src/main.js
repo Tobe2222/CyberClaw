@@ -4760,16 +4760,46 @@ app.whenReady().then(() => {
     // intentionally short (Tobe asked for "short and
     // concise") — the mobile cycles the text based on
     // the tool name.
-    onToolCall: ({ tool }) => {
-      // v3.2.25: tool-call broadcasts are also suppressed
-      // for Discord-routed runs. The mobile's chat panel
-      // should not react to activity from conversations the
-      // user isn't having in the app. The chat pipeline
-      // path (mobile-typed / voice-typed) handles its own
-      // typing/tool-call visuals internally — no need for
-      // the OpenClaw tailer to broadcast anything for
-      // Discord-routed runs.
-      console.log(`[openclaw-tail] ignoring tool call tool=${tool} for Discord session (no mobile broadcast)`);
+    onToolCall: ({ tool, sessionKey }) => {
+      // v3.3.12: broadcast tool-call events to mobile so
+      // the thinking bar can show the action log (Tobe's
+      // 2026-09-23 16:24 ask: "claude-style actions"
+      // in the thinking bar).
+      //
+      // The tailer's v3.3.12 gate inverted the v3.2.21
+      // bug — onToolCall now fires for CHAT-PIPELINE
+      // sessions (mobile-typed / voice-typed / desktop
+      // typed chat) and is suppressed for Discord-routed
+      // sessions. We can assume every call here is
+      // non-Discord (the tailer filters before
+      // dispatching). This callback only maps the raw
+      // tool name to a friendly text and sends it to
+      // mobile via syncServer.sendToMobile.
+      //
+      // The mobile (v3.11.1 HomeScreen onAgentTool
+      // handler) listens for 'agent_tool' events with
+      // a 'friendly' string and pushes them into the
+      // rolling chatActions list under the pulsing
+      // spinner. No mobile change is needed beyond
+      // already-landed v3.11.1.
+      const friendly = toolFriendlyName(tool);
+      try {
+        if (syncServer) {
+          syncServer.sendToMobile({
+            type: 'agent_tool',
+            tool,
+            friendly,
+            sessionKey: sessionKey || '',
+            ts: Date.now(),
+          });
+        }
+      } catch (e) {
+        // Best-effort broadcast. A failure here
+        // shouldn't take down the desktop or stall
+        // the agent — the user just won't see the
+        // action log for this turn.
+        console.warn(`[openclaw-tail] agent_tool broadcast failed: ${e?.message ?? e}`);
+      }
     },
     onLog: (level, msg) => {
       discordLog('📡', 'OpenClaw tail', msg, level);

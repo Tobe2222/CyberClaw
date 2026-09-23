@@ -241,23 +241,67 @@ class OpenClawSessionTail {
     // Only handle messages with text content (skip
     // toolCall-only and toolResult-only messages).
     if (!Array.isArray(msg.content)) return;
-    // v3.2.21: tool-call detection. If the assistant
+    // v3.3.12: tool-call detection. If the assistant
     // message contains a tool call (not just text),
     // emit a tool-call event so the mobile can show
-    // "💭 Running command..." or similar. We only emit
-    // for Discord-routed sessions to match the chat
-    // pipeline scope (the desktop's own pipeline
-    // already shows progress via the renderer's
-    // typing bubble).
+    // "💭 Running command..." or similar.
+    //
+    // The gate was inverted by accident in v3.2.21 and
+    // left that way through v3.2.25. Original intent
+    // (per the v3.2.21 commit message and the file-
+    // header comment): the chat pipeline on the desktop
+    // shows its own progress via the renderer's typing
+    // bubble, so Discord-routed sessions needed help
+    // reaching the mobile ("Discord replies reach
+    // mobile chat + better thinking indicator").
+    // That's the CHAT MESSAGE concern — v3.2.25 fixed
+    // it correctly by suppressing onChatMessage for
+    // Discord (so Discord noise doesn't pollute the
+    // mobile chat panel).
+    //
+    // The TOOL-CALL concern is the inverse. The chat
+    // pipeline (mobile-typed, voice-typed, desktop
+    // typed chat) does NOT broadcast tool calls to
+    // mobile — it only emits the FINAL reply via
+    // addChatMsg. Tool calls happen inside the
+    // gateway and never surface as IPC events on the
+    // chat pipeline side. So if the user is actively
+    // chatting on the mobile, they get
+    // "💭 Clawsuu is thinking..." and nothing else for
+    // the entire tool-use round-trip, even if the
+    // agent runs a 6-step research loop. Tobe's
+    // 2026-09-23 16:24 ask: "it would be cool to have
+    // it like claude has its web interface where you
+    // see the actions more or less also."
+    //
+    // Fix: emit onToolCall for chat-pipeline sessions
+    // (the user is engaging via mobile/voice/desktop
+    // chat) and SUPPRESS for Discord-routed sessions
+    // (per v3.2.25 — mobile shouldn't react to
+    // activity from conversations the user isn't
+    // having in the app).
     const sessionKey = this.fileToKey.get(filePath) || '';
     const isDiscord = this.isDiscordSessionKey(sessionKey);
-    if (isDiscord) {
+    if (!isDiscord && sessionKey) {
+      // Chat-pipeline session (or cron/webchat, all
+      // classified as non-Discord). Emit each tool
+      // call. main.js's onToolCall handler maps the
+      // raw tool name to a friendly text and
+      // broadcasts via syncServer.sendToMobile.
       for (const part of msg.content) {
         if (part && part.type === 'toolCall' && part.name) {
           this.onLog('debug', `SessionTail: tool call detected: ${part.name} in session ${path.basename(filePath)}`);
           this.onToolCall({ tool: part.name, sessionKey });
         }
       }
+    } else if (isDiscord) {
+      // v3.2.25: explicitly suppress tool events for
+      // Discord-routed runs. The chat-pipeline message
+      // suppression above prevents the user's mobile
+      // chat panel from filling with Discord noise;
+      // tool events follow the same rule (mobile
+      // shouldn't react to Discord tool activity).
+      this.onLog('debug', `SessionTail: suppressing tool call from Discord session ${path.basename(filePath)}`);
     } else if (!sessionKey) {
       // sessionKey is empty — sessions.json hasn't been
       // populated yet for this file. This is the
