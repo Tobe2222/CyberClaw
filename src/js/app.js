@@ -3284,7 +3284,33 @@ window.sendChat = async function() {
       // Award XP to the best-matching companion based on task type
       await awardXpForReply(result, mainAgentId);
     } else {
-      addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
+      // v3.3.17: surface the verbose stderr / output from
+      // the failed agent run so the user can see what
+      // actually went wrong. Previously the renderer only
+      // showed `result.error` (the friendly summary like
+      // "agent CLI exited with code 1") and dropped
+      // `result.cliStderr` / `result.output` on the floor,
+      // leaving the user with no clue. Tobe 2026-09-24:
+      // "this error dont say much ... I remember we had a
+      // fancier error earlier at some point."
+      //
+      // The verbose output is appended in a collapsible
+      // block under the friendly summary. Truncated to
+      // ~600 chars to keep the bubble readable; full output
+      // is still available in the desktop log via the
+      // `[chat:send/cli] child failed:` log line.
+      const friendly = result.error || 'Failed to get response';
+      const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
+        || (typeof result.output === 'string' && result.output)
+        || '';
+      const trimmed = verbose.length > 600
+        ? verbose.slice(0, 600) + '\n… (truncated; full output in desktop log)'
+        : verbose;
+      if (trimmed) {
+        addChatMsg('error', `Error: ${friendly}\n\n\`\`\`\n${trimmed}\n\`\`\``);
+      } else {
+        addChatMsg('error', `Error: ${friendly}`);
+      }
     }
   } catch (err) {
     clearEscalation();
@@ -3642,7 +3668,23 @@ const __sendChatMessageImpl = async function(message, attachments) {
       // added in v3.2.51 without the v3.2.84 XP block.
       await awardXpForReply(result, mainAgentId);
     } else {
-      addChatMsg('error', `Error: ${result.error || 'Failed to get response'}`);
+      // v3.3.17: surface the verbose stderr / output from
+      // the failed agent run (mirrors the v3.3.17 fix in
+      // the desktop sendChatMessage path above). Tobe
+      // 2026-09-24: "this error dont say much" — the
+      // friendly summary alone leaves the user guessing.
+      const friendly = result.error || 'Failed to get response';
+      const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
+        || (typeof result.output === 'string' && result.output)
+        || '';
+      const trimmed = verbose.length > 600
+        ? verbose.slice(0, 600) + '\n… (truncated; full output in desktop log)'
+        : verbose;
+      if (trimmed) {
+        addChatMsg('error', `Error: ${friendly}\n\n\`\`\`\n${trimmed}\n\`\`\``);
+      } else {
+        addChatMsg('error', `Error: ${friendly}`);
+      }
     }
   } catch (err) {
     addChatMsg('error', `Error: ${err.message}`);
