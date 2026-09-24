@@ -3703,6 +3703,14 @@ const __sendChatMessageImpl = async function(message, attachments) {
 
 let chatMsgId = 0;
 let chatHistory = []; // Backwards-compat flat history (also kept in sync for mobile)
+// v3.3.18: module-scope cache of the last quests list
+// received via the `quests-updated` IPC. Used by
+// addChatMsg (a sync function that can't await
+// cyberclaw.quests.list()) to stamp activeQuestName
+// onto each chat message for the mobile's bubble
+// header (v3.11.5). Falls back to null name if the
+// cache is cold.
+let cachedQuestsList = [];
 // Each (companion, quest) pair has its own chat history. Keys are
 // agent ids; values are Records keyed by quest id, with the special
 // key `__default__` for the no-quest / default-chat bucket. The view
@@ -4205,11 +4213,25 @@ function addChatMsg(type, text, name, emoji) {
       // Drop the enrichment. The activeQuestId is
       // still stamped below, so per-quest bucket
       // routing continues to work (which was the
-      // whole point of v3.3.11). The quest NAME can
-      // be looked up at render time via
-      // `cyberclaw.quests.list()` if a future UI
-      // feature needs to display it.
-      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: null });
+      // v3.3.18: also stamp the active quest name so the
+      // mobile's chat-bubble header (v3.11.5) can render
+      // the quest label on each bubble without an
+      // additional lookup. The activeQuestName is read
+      // synchronously from the in-memory `activeQuestId`
+      // by looking it up in the quest list cached in
+      // module-scope `cachedQuestsList` (populated by
+      // quests_list broadcasts; falls back to a fresh
+      // cyberclaw.quests.list() if the cache is cold).
+      // This is a sync code path so we use the cached
+      // value to avoid making addChatMsg async.
+      let activeQuestNameAtAppend = null;
+      try {
+        if (typeof activeQuestId === 'string' && activeQuestId && Array.isArray(cachedQuestsList)) {
+          const q = cachedQuestsList.find(qq => qq && qq.id === activeQuestId);
+          if (q && q.name) activeQuestNameAtAppend = q.name;
+        }
+      } catch (_) { /* defensive — fall back to null name */ }
+      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: activeQuestNameAtAppend });
       if (chatHistoryByAgentAndQuest[agentId][qk].length > 200) {
         chatHistoryByAgentAndQuest[agentId][qk] = chatHistoryByAgentAndQuest[agentId][qk].slice(-200);
       }
@@ -4278,11 +4300,29 @@ function addChatMsg(type, text, name, emoji) {
       // v3.1.15: send the resolved agentId (not just the display name)
       // plus the display name separately, so the mobile can label chat
       // messages correctly when multiple companions are present.
+      //
+      // v3.3.18: include the active quest id so the mobile's
+      // chat-bubble header (v3.11.5) can render the quest
+      // label per-bubble. The mobile looks up the name from
+      // its own cached quest list (received via the
+      // quests_list broadcast the QuestsScreen subscribes
+      // to). Sending the name from the renderer would
+      // require an async lookup on every broadcast; the id
+      // is the cheap part and the name is derivable.
+      //
+      // Tobe 2026-09-24 21:33: 'Let us put in the current
+      // quest name at the upper right of each text bubble so
+      // one can see what chat it actually is.'
       ipcRenderer.invoke('sync-broadcast-chat', {
         agentId: agentId || name || 'companion',
         agentName: name || null,
         text: text,
-        isUser: type === 'user'
+        isUser: type === 'user',
+        // v3.3.18: stamp the active quest on the broadcast
+        // so the mobile can label each bubble with its
+        // quest. `null` means "no active quest" (the user
+        // deactivated); mobile renders '— No quest'.
+        activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
       });
     } catch {}
   }
@@ -7277,6 +7317,12 @@ try {
   ipcRenderer.on('quests-updated', (e, list) => {
     try {
       if (!Array.isArray(list)) return;
+      // v3.3.18: cache the full quest list so addChatMsg
+      // (a sync function called from many fire-and-forget
+      // paths) can look up the active quest name when
+      // stamping chat messages for the mobile. The mobile's
+      // bubble header uses the name to label each bubble.
+      cachedQuestsList = list.slice();
       // Update the module-level activeQuestId from the
       // canonical list. renderQuests() also does this,
       // so re-rendering covers the visual side.
