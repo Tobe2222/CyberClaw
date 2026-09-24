@@ -333,6 +333,23 @@ function loadQuests() {
     // Existing pre-v3.2.59 quests get an empty array; the
     // next session on that quest starts populating it.
     if (!Array.isArray(q.conversationLog)) { q.conversationLog = []; mutated = true; }
+    // v3.3.15: per-quest `questFilesDir` — the directory where
+    // the three quest markdown files (INSTRUCTIONS/CONVERSATION/
+    // NOTES) live. Tobe's new quest-creation model (2026-09-23
+    // design discussion): "when a user starts a new quests it
+    // creates the folder with the quest name(which becomes the
+    // project name) and within it a specific folder for that
+    // projects quest specific info, like the chat logs etc." —
+    // the 3 .md files always live in `<quest.directory>/quest/`,
+    // not at the project root. Existing pre-v3.3.15 quests that
+    // have the files at the root get migrated lazily: if
+    // `questFilesDir` is unset, derive it now and persist, then
+    // move legacy files into the new location on the next
+    // scaffold or save call. See `migrateLegacyQuestFiles(q)`.
+    if (typeof q.questFilesDir !== 'string' || !q.questFilesDir.trim()) {
+      q.questFilesDir = deriveQuestFilesDir(q);
+      mutated = true;
+    }
   }
   // v3.1.50: enforce the invariant that at most one quest is
   // `active: true`. If a migration left multiple active (shouldn't
@@ -344,7 +361,107 @@ function loadQuests() {
       else sawActive = true;
     }
   }
+  if (mutated) {
+    // Persist the migration. This is a synchronous write, but it
+    // only fires once per process (after the first call the
+    // migration flags are stable so `mutated` stays false).
+    try { fs.mkdirSync(path.dirname(QUESTS_FILE), { recursive: true }); } catch {}
+    try { fs.writeFileSync(QUESTS_FILE, JSON.stringify(raw, null, 2)); } catch (e) {
+      console.warn('[loadQuests] persist migration failed:', e?.message);
+    }
+  }
   return raw;
+}
+
+// v3.3.15: derive the canonical `questFilesDir` for a quest.
+// Used by loadQuests() migration and by scaffoldQuestDirectory().
+// Always returns `<quest.directory>/quest/` if `quest.directory`
+// is set; falls back to the legacy id-based path inside
+// `~/.openclaw/cyberclaw/quests/<id>/` when no directory is set.
+// Pure function — no filesystem side effects.
+function deriveQuestFilesDir(quest) {
+  if (!quest) return null;
+  if (quest.directory && typeof quest.directory === 'string' && quest.directory.trim()) {
+    return path.join(quest.directory.trim(), 'quest');
+  }
+  if (quest.id) {
+    return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id);
+  }
+  return null;
+}
+
+// v3.3.15: one-time migration of legacy quest files from the
+// project root into `<quest.directory>/quest/`. Idempotent —
+// safe to call from any code path that touches the quest files.
+//
+// Rules:
+//   1. If `<dir>/quest/<file>.md` already exists, do nothing
+//      for that file (the new layout is the source of truth).
+//   2. Else if `<dir>/<file>.md` exists AND `<dir>/quest/` does
+//      NOT yet exist, move the file into the new location.
+//   3. Else if both exist with different content, append the
+//      legacy content (after a divider) to the new file so no
+//      history is lost. Then drop the legacy file.
+//   4. Else if both exist with the same content, drop the
+//      legacy file.
+//
+// Returns `{ migrated: [...], dropped: [...] }` so callers can
+// log what happened. Best-effort — never throws.
+function migrateLegacyQuestFiles(quest) {
+  const result = { migrated: [], dropped: [], appended: [] };
+  if (!quest) return result;
+  const newDir = deriveQuestFilesDir(quest);
+  if (!newDir) return result;
+  const oldDir = (quest.directory && typeof quest.directory === 'string')
+    ? quest.directory.trim() : null;
+  // Don't migrate for the id-based fallback path — there's no
+  // "old" location to migrate from (no project root, just the
+  // ~/.openclaw/cyberclaw/quests/<id>/ dir which IS the new
+  // location in that fallback mode).
+  if (!oldDir || newDir === oldDir) return result;
+  const files = ['INSTRUCTIONS.md', 'CONVERSATION.md', 'NOTES.md'];
+  try { fs.mkdirSync(newDir, { recursive: true }); } catch (e) {
+    console.warn('[migrateLegacyQuestFiles] mkdir failed:', newDir, e?.message);
+    return result;
+  }
+  for (const f of files) {
+    const legacyPath = path.join(oldDir, f);
+    const newPath = path.join(newDir, f);
+    let legacyExists = false; let legacyContent = null;
+    try { legacyExists = fs.existsSync(legacyPath); } catch {}
+    let newExists = false; let newContent = null;
+    try { newExists = fs.existsSync(newPath); } catch {}
+    if (!legacyExists) continue;
+    try { legacyContent = fs.readFileSync(legacyPath, 'utf-8'); } catch {}
+    if (!newExists) {
+      // Rule 2: move legacy → new.
+      try {
+        fs.writeFileSync(newPath, legacyContent || '');
+        fs.unlinkSync(legacyPath);
+        result.migrated.push(f);
+      } catch (e) {
+        console.warn(`[migrateLegacyQuestFiles] move ${f} failed:`, e?.message);
+      }
+      continue;
+    }
+    // Both exist. Compare.
+    try { newContent = fs.readFileSync(newPath, 'utf-8'); } catch {}
+    if ((legacyContent || '') === (newContent || '')) {
+      // Rule 4: identical — drop legacy.
+      try { fs.unlinkSync(legacyPath); result.dropped.push(f); } catch {}
+    } else {
+      // Rule 3: differ — append legacy to new with a divider.
+      try {
+        const sep = `\n\n---\n\n# Migrated legacy ${f}\n\n`;
+        fs.writeFileSync(newPath, (newContent || '') + sep + (legacyContent || ''));
+        fs.unlinkSync(legacyPath);
+        result.appended.push(f);
+      } catch (e) {
+        console.warn(`[migrateLegacyQuestFiles] append ${f} failed:`, e?.message);
+      }
+    }
+  }
+  return result;
 }
 function saveQuests(quests) {
   fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
@@ -1839,18 +1956,31 @@ function questInstructionsFilePath(quest) {
 // The JSON array stays as a fast-read mirror for the LLM
 // context injector (buildActiveQuestContext) but the file
 // is canonical. Both writers update both stores.
+// v3.3.15: prefer the persisted `questFilesDir` (canonical
+// `<quest.directory>/quest/` location). Fall back to deriving
+// it on the fly for quests that haven't been migrated yet —
+// deriveQuestFilesDir is pure and stable, so both paths resolve
+// to the same target after the migration runs in loadQuests().
+function questFilesRoot(quest) {
+  if (!quest) return null;
+  if (typeof quest.questFilesDir === 'string' && quest.questFilesDir.trim()) {
+    return quest.questFilesDir.trim();
+  }
+  return deriveQuestFilesDir(quest);
+}
+
 function questInstructionsFilePathV2(quest) {
   if (!quest) return null;
-  if (quest.directory) {
-    return path.join(quest.directory, 'INSTRUCTIONS.md');
-  }
+  const root = questFilesRoot(quest);
+  if (root) return path.join(root, 'INSTRUCTIONS.md');
+  if (quest.directory) return path.join(quest.directory, 'INSTRUCTIONS.md');
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'INSTRUCTIONS.md');
 }
 function questConversationFilePath(quest) {
   if (!quest) return null;
-  if (quest.directory) {
-    return path.join(quest.directory, 'CONVERSATION.md');
-  }
+  const root = questFilesRoot(quest);
+  if (root) return path.join(root, 'CONVERSATION.md');
+  if (quest.directory) return path.join(quest.directory, 'CONVERSATION.md');
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'CONVERSATION.md');
 }
 
@@ -1860,21 +1990,27 @@ function questConversationFilePath(quest) {
 // directory-relative or id-fallback resolution.
 function questNotesFilePath(quest) {
   if (!quest) return null;
-  if (quest.directory) {
-    return path.join(quest.directory, 'NOTES.md');
-  }
+  const root = questFilesRoot(quest);
+  if (root) return path.join(root, 'NOTES.md');
+  if (quest.directory) return path.join(quest.directory, 'NOTES.md');
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'NOTES.md');
 }
 
 // Prefer the new filename; fall back to the v3.2.30-era
 // `QUEST_QUEST_INSTRUCTIONS.md` so users on the old name
-// don't see their work vanish. Returns the path that
-// exists, or null if neither does.
+// don't see their work vanish. v3.3.15: also fall back to
+// the pre-v3.3.15 location `<quest.directory>/INSTRUCTIONS.md`
+// for legacy projects that haven't been migrated yet. Returns
+// the path that exists, or null if none do.
 function resolveExistingInstructionsPath(quest) {
   const v2 = questInstructionsFilePathV2(quest);
   const v1 = questInstructionsFilePath(quest);
+  const legacyRoot = (quest && quest.directory && typeof quest.directory === 'string')
+    ? path.join(quest.directory, 'INSTRUCTIONS.md')
+    : null;
   try { if (v2 && fs.existsSync(v2)) return v2; } catch {}
   try { if (v1 && fs.existsSync(v1)) return v1; } catch {}
+  try { if (legacyRoot && fs.existsSync(legacyRoot)) return legacyRoot; } catch {}
   return null;
 }
 // v3.2.61: scaffold a newly-created quest's directory with
@@ -1935,7 +2071,39 @@ const DEFAULT_QUEST_DIR =
 function scaffoldQuestDirectory(quest) {
   if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
   try {
+    // v3.3.15: Tobe's quest-creation model — the 3 .md files
+    // (INSTRUCTIONS / CONVERSATION / NOTES) always live in a
+    // `quest/` subfolder under the project directory, so a
+    // brand-new project (which doesn't have package.json yet)
+    // and an existing project (which already has its own files
+    // at the root) both end up with the same clean layout:
+    //   <quest.directory>/                  <- project files
+    //   <quest.directory>/quest/            <- this quest's files
+    //     INSTRUCTIONS.md
+    //     CONVERSATION.md
+    //     NOTES.md
+    // mkdir -p handles "parent already exists with files"
+    // gracefully — it doesn't touch existing files, only creates
+    // the missing `quest/` directory.
+    const filesDir = deriveQuestFilesDir(quest);
     fs.mkdirSync(quest.directory, { recursive: true });
+    if (filesDir) fs.mkdirSync(filesDir, { recursive: true });
+    // v3.3.15: one-time migration of any legacy files that
+    // still live at the project root (pre-v3.3.15 layout).
+    // Idempotent — safe to call on every scaffold.
+    const migration = migrateLegacyQuestFiles(quest);
+    if (migration.migrated.length || migration.appended.length || migration.dropped.length) {
+      console.log(`[scaffoldQuestDirectory] migrated legacy files for ${quest.id}:`, migration);
+    }
+    // Persist questFilesDir so the path helpers always resolve
+    // through the canonical entry point, and so subsequent
+    // loadQuests() calls don't re-derive it.
+    if (filesDir && quest.questFilesDir !== filesDir) {
+      quest.questFilesDir = filesDir;
+      try { saveQuests(loadQuests()); } catch (e) {
+        console.warn('[scaffoldQuestDirectory] persist questFilesDir failed:', e?.message);
+      }
+    }
     const instructions = questInstructionsFilePathV2(quest);
     const conversation = questConversationFilePath(quest);
     const notes = questNotesFilePath(quest);
@@ -1990,7 +2158,7 @@ function scaffoldQuestDirectory(quest) {
         'utf-8',
       );
     }
-    return { ok: true, instructionsPath: instructions, conversationPath: conversation, notesPath: notes, mkdirOk: true };
+    return { ok: true, instructionsPath: instructions, conversationPath: conversation, notesPath: notes, mkdirOk: true, filesDir: filesDir || null, migration };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }
@@ -2025,9 +2193,19 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
   // happy by writing both files — but only the first time
   // we migrate, and only if the legacy file already has
   // content we don't want to lose.
+  //
+  // v3.3.15: under Tobe's new quest-creation model,
+  // `newFile` now resolves to `<quest.directory>/quest/INSTRUCTIONS.md`.
+  // For pre-v3.3.15 projects that still have the file at the
+  // project root, run the legacy-file migration FIRST so the
+  // write lands where the existing file is (no orphaned
+  // duplicates).
   const newFile = questInstructionsFilePathV2(quest);
   const legacyFile = questInstructionsFilePath(quest);
   try {
+    // v3.3.15: migrate any pre-v3.3.15 root-level files into
+    // `<dir>/quest/` before writing. Idempotent.
+    migrateLegacyQuestFiles(quest);
     const parent = path.dirname(newFile);
     fs.mkdirSync(parent, { recursive: true });
     fs.writeFileSync(newFile, content || '', 'utf-8');
@@ -2094,12 +2272,23 @@ ipcMain.handle('quests:append-quest-instructions', (event, questId, text) => {
   // the legacy content into the v2 file first so the new
   // notes land alongside the user's existing notes (instead
   // of leaving them stranded in the old filename).
+  //
+  // v3.3.15: under Tobe's new quest-creation model, `v2File`
+  // now resolves to `<quest.directory>/quest/INSTRUCTIONS.md`.
+  // Migrate any pre-v3.3.15 root-level files into the new
+  // `quest/` subfolder first so the append lands where the
+  // existing notes live. Idempotent.
   const v2File = questInstructionsFilePathV2(quest);
   const legacyFile = questInstructionsFilePath(quest);
   // Legacy port: best-effort, must happen BEFORE the main
   // try so the read of `file` sees the ported content if
   // needed.
   try {
+    // v3.3.15: migrate root-level files (pre-v3.3.15 layout)
+    // into `<dir>/quest/` before the legacy v1 → v2 port.
+    // Idempotent — safe to call even when nothing needs
+    // migrating.
+    migrateLegacyQuestFiles(quest);
     if (fs.existsSync(legacyFile) && !fs.existsSync(v2File)) {
       const legacyContent = fs.readFileSync(legacyFile, 'utf-8');
       fs.writeFileSync(v2File, legacyContent);
