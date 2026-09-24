@@ -704,7 +704,14 @@ class SyncServer extends EventEmitter {
         if (this.onRequestQuestsList) {
           try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
         } else if (this._lastQuestsList) {
-          this._send(ws, this._lastQuestsList.payload);
+          // Cache fallback path — tag the replay so the
+          // mobile can distinguish it from a fresh
+          // broadcast (see v3.3.16).
+          const replayPayload = {
+            ...this._lastQuestsList.payload,
+            source: 'cache_replay',
+          };
+          this._send(ws, replayPayload);
         }
         break;
       }
@@ -2143,12 +2150,46 @@ class SyncServer extends EventEmitter {
     // AsyncStorage on the mobile side too, but replay means the
     // mobile is consistent with the desktop within ~1 RTT after
     // auth completes.
-    if (this._lastQuestsList) {
-      console.log(`[SyncServer] Replaying recent quests_list (${this._lastQuestsList.payload.quests.length} quest(s)) to reconnected client`);
+    if (this.onRequestQuestsList) {
+      // v3.3.16: always ask main.js for a fresh read on
+      // full-state replay, instead of using the cached
+      // `_lastQuestsList` payload. The cache can carry a
+      // stale `q.active` if the broadcast state drifted
+      // from disk (e.g. the desktop restarted while the
+      // cache held a transient value, or the mobile
+      // connected before any saveQuests fired in this
+      // process boot). Re-reading disk is cheap (O(n)
+      // over typically <20 quests, and runs once per
+      // mobile connect), and eliminates a class of
+      // mobile-side chat-flash bugs where the replay
+      // anchors the mobile on the wrong active quest.
+      //
+      // The cache is still used by the broadcast path
+      // (every saveQuests updates it before broadcasting,
+      // so within a single process boot the cache is
+      // authoritative). Only the replay-on-reconnect
+      // path goes through this fresh-read.
+      try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed in _sendFullState:', e?.message); }
+      // Belt-and-braces: also send the cache immediately
+      // so the mobile doesn't have to wait for the
+      // fresh-broadcast round-trip. The fresh broadcast
+      // (if it differs) will overwrite this on the next
+      // tick. The cache replay is tagged
+      // `source: 'cache_replay'` so the mobile can
+      // distinguish it from fresh broadcasts and prefer
+      // the fresh one when both arrive.
+      if (this._lastQuestsList) {
+        const replayPayload = {
+          ...this._lastQuestsList.payload,
+          source: 'cache_replay',
+        };
+        this._send(ws, replayPayload);
+      }
+    } else if (this._lastQuestsList) {
+      // No fresh-read callback wired (defensive — main.js
+      // always registers it). Fall back to the cache.
+      console.log(`[SyncServer] Replaying recent quests_list (${this._lastQuestsList.payload.quests.length} quest(s)) to reconnected client (cache only — no onRequestQuestsList)`);
       this._send(ws, this._lastQuestsList.payload);
-    } else if (this.onRequestQuestsList) {
-      console.log('[SyncServer] No cached quests_list — asking main process to refresh');
-      try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed:', e?.message); }
     }
     // v3.2.23: replay the recent AI messages buffer so a
     // reconnecting mobile catches up on messages that landed
@@ -2248,7 +2289,19 @@ class SyncServer extends EventEmitter {
   // the current list even if it disconnected after the initial
   // broadcast.
   broadcastQuestsList(quests) {
-    const payload = { type: 'quests_list', quests: Array.isArray(quests) ? quests : [], ts: Date.now() };
+    // v3.3.16: tag fresh broadcasts with `source: 'broadcast'`
+    // so the mobile can distinguish them from cached replays
+    // (which carry `source: 'cache_replay'`). The mobile uses
+    // this to decide whether to seed the per-device
+    // active-quest anchor — replays are suspect because the
+    // cache can drift relative to disk, while broadcasts
+    // always carry the just-saved state.
+    const payload = {
+      type: 'quests_list',
+      quests: Array.isArray(quests) ? quests : [],
+      ts: Date.now(),
+      source: 'broadcast',
+    };
     this._lastQuestsList = { payload, ts: Date.now() };
     console.log(`[SyncServer] Broadcasting quests_list with ${payload.quests.length} quest(s)`);
     this._broadcast(payload);
