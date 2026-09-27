@@ -2229,8 +2229,26 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'state_sync', ...state, ts: Date.now() });
   }
 
-  broadcastChatMessage(agentId, text, isUser = false, agentName = null) {
-    const payload = { type: 'chat_message', agentId, agentName, text, isUser, ts: Date.now() };
+  broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null) {
+    // v3.3.19: include activeQuestId + activeQuestName on
+    // the realtime chat_message broadcast so the mobile's
+    // appendAgentMessage can route incoming messages into
+    // the correct per-quest bucket. v3.3.18 stripped these
+    // fields — see the audit table in CHANGES_3.3.19.md
+    // for the full layer breakdown. The legacy renderer
+    // (pre-v3.3.18) didn't stamp on the IPC call either,
+    // so old builds still work: undefined → null on the
+    // payload, which is what old mobile builds expected.
+    const payload = {
+      type: 'chat_message',
+      agentId,
+      agentName,
+      text,
+      isUser,
+      activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
+      activeQuestName: activeQuestName || null,
+      ts: Date.now(),
+    };
     // v3.2.23: cache recent AI messages for reconnect replay.
     // The previous version cached only ONE message with a 60s
     // window — so a mobile that disconnected for >60s (the

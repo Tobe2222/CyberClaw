@@ -5888,13 +5888,26 @@ async function ollamaStartImpl() {
   }
 }
 
-ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser }) => {
-  console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser });
+ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName }) => {
+  // v3.3.19: forward activeQuestId/activeQuestName to the
+  // sync-server's broadcastChatMessage so the realtime
+  // mobile broadcast carries quest attribution. v3.3.18
+  // destructured these OUT of the IPC payload, dropping
+  // the field. The mobile's appendAgentMessage needs the
+  // attribution to route incoming messages into the
+  // correct per-quest bucket on the mobile side. Without
+  // this, realtime messages landed in the mobile's
+  // DEFAULT bucket even when sent under an active quest
+  // — meaning the user's active-quest chat and the
+  // realtime arrival always disagreed, and on cold start
+  // the active-quest view would briefly flash DEFAULT
+  // content until the projection effect reconciled.
+  console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser, activeQuestId: activeQuestId ?? '(none)' });
   const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
   console.log('[IPC] _voiceReplyWs state:', wsState);
   discordLog('📡', 'Chat broadcast', `isUser=${isUser} voiceWs=${wsState}`);
   if (syncServer) {
-    syncServer.broadcastChatMessage(agentId, text, isUser, agentName);
+    syncServer.broadcastChatMessage(agentId, text, isUser, agentName, activeQuestId ?? null, activeQuestName ?? null);
     console.log('[IPC] Message broadcast to mobile clients');
   }
   // If this AI reply follows a voice input, synthesize TTS and send audio back
