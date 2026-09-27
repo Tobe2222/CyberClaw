@@ -4166,11 +4166,36 @@ function addChatMsg(type, text, name, emoji) {
 
   // Keep in-memory chat history for mobile sync
   if (type === 'agent' || type === 'user') {
+    // v3.3.19: stamp activeQuestId and activeQuestName on
+    // the flat mirror so the mobile can route each message
+    // to the correct per-quest bucket on history fetch (the
+    // chat_history response is now per-quest-aware on the
+    // mobile side; this stamping is what makes that
+    // routing possible). Without this, every message in
+    // chat_history lands in the legacy DEFAULT bucket and
+    // the user's active-quest view stays empty after a
+    // cold start even though the desktop has the right
+    // per-quest history.
+    //
+    // activeQuestName is read sync from cachedQuestsList
+    // (same lookup pattern as the per-quest bucket push
+    // below — we can't go async here without touching
+    // every addChatMsg call site, and the v3.3.13 lesson
+    // is "don't make addChatMsg async").
+    let activeQuestNameAtAppendForMirror = null;
+    try {
+      if (typeof activeQuestId === 'string' && activeQuestId && Array.isArray(cachedQuestsList)) {
+        const q = cachedQuestsList.find(qq => qq && qq.id === activeQuestId);
+        if (q && q.name) activeQuestNameAtAppendForMirror = q.name;
+      }
+    } catch (_) { /* defensive */ }
     chatHistory.push({
       text: text,
       isUser: type === 'user',
       agentId: name || 'companion',
-      ts: Date.now()
+      ts: Date.now(),
+      activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
+      activeQuestName: activeQuestNameAtAppendForMirror,
     });
     // Keep only last 100 messages
     if (chatHistory.length > 100) {
@@ -7246,24 +7271,63 @@ try {
     // attribution), so we always send the default bucket.
     // Pre-attribution messages from before this version
     // all live there too.
+    //
+    // v3.3.19: BREAKING CHANGE. Send ALL quest buckets
+    // for the agent, not just DEFAULT. Previously the
+    // mobile's per-quest bucket design assumed the
+    // history fetches would bring over per-quest
+    // messages, but in practice only the DEFAULT bucket
+    // reached the mobile. That meant after a cold start,
+    // the user's active-quest view was empty (no
+    // history) and the DEFAULT-bucket content showed up
+    // under "— No quest" pills because the mobile had
+    // no way to know the active quest without the
+    // attributions.
+    //
+    // Response shape change: the `messages` field is
+    // replaced by `buckets`. Each key is a questKeyForStorage
+    // value (DEFAULT_QUEST_KEY for no-active-quest,
+    // questId for active). The mobile's onAgentHistory
+    // (v3.11.12) stores each bucket into its
+    // corresponding messageByAgentAndQuest slot.
+    //
+    // Backwards compat: mobile builds before v3.11.12
+    // expect `messages`. The sync-server's sendAgentHistory
+    // now accepts EITHER `messages` or `buckets` and tags
+    // the response so old mobile builds fall back to
+    // the legacy flat-bucket path. v3.3.19 sending
+    // `buckets` is additive on the wire.
+    //
+    // The 50-message per-bucket cap from v3.2.63 is also
+    // raised here — per-bucket, so the user can have 50
+    // messages in 5 different quests. The total is still
+    // bounded by the existing 200-message cap on the
+    // desktop's `chatHistoryByAgentAndQuest` push.
     const agentBuckets = chatHistoryByAgentAndQuest[agentId] || {};
-    const raw = (agentBuckets[DEFAULT_QUEST_KEY] || []).slice(-50);
-    // v3.2.63 (Tobe 2026-08-04 21:16): strip quest tags
-    // before sending. Same rationale as the chat_history
-    // path — historical entries from pre-v3.2.36 still
-    // have raw tag text in localStorage, and we want
-    // the mobile to show clean bubbles regardless of
-    // when each message was created. Idempotent on
-    // already-stripped text.
-    const hist = raw.map((m) => ({
-      text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
-      isUser: m.type === 'user',
-      agentId: m.name || agentId,
-      agentName: m.name || null,
-      ts: m.ts,
-    }));
-    console.log(`[App] Mobile requesting agent history for ${agentId}, sending ${hist.length} messages`);
-    ipcRenderer.invoke('sync-send-agent-history', { agentId, messages: hist })
+    const buckets = {};
+    for (const [bucketKey, msgs] of Object.entries(agentBuckets)) {
+      if (!Array.isArray(msgs) || msgs.length === 0) continue;
+      // v3.2.63 strip + v3.3.11 normalize + v3.3.19
+      // quest attribution. The questId is encoded in the
+      // bucket key itself; we reverse it back to a real id
+      // for the mobile to route on.
+      buckets[bucketKey] = msgs.slice(-50).map((m) => ({
+        text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
+        isUser: m.type === 'user',
+        agentId: m.name || agentId,
+        agentName: m.name || null,
+        ts: m.ts,
+        // v3.3.19: stamp the quest on each message so the
+        // mobile can route to the right bucket even if
+        // the bucket key is ever lost in a future IPC
+        // shape change. Null when the bucket is
+        // DEFAULT_QUEST_KEY (no active quest at append).
+        activeQuestId: questKeyFromStorage(bucketKey),
+        activeQuestName: m.activeQuestName ?? null,
+      }));
+    }
+    console.log(`[App] Mobile requesting agent history for ${agentId}, sending ${Object.keys(buckets).length} bucket(s)`);
+    ipcRenderer.invoke('sync-send-agent-history', { agentId, buckets })
       .then(() => console.log(`[App] Agent history sent for ${agentId}`))
       .catch(err => console.log(`[App] Error sending agent history for ${agentId}:`, err));
   });

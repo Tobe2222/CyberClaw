@@ -5969,13 +5969,18 @@ ipcMain.handle('sync-send-chat-history', (e, { messages }) => {
 });
 
 // v3.1.17: per-agent chat history for the mobile companion tab bar.
-ipcMain.handle('sync-send-agent-history', (e, { agentId, messages }) => {
+ipcMain.handle('sync-send-agent-history', (e, { agentId, buckets, messages }) => {
   if (!syncServer || !syncServer._pendingAgentHistoryWs) return;
   // Drain the FIFO of ws requests for this specific agent
   const pending = syncServer._pendingAgentHistoryWs.filter(p => p.agentId === agentId);
   syncServer._pendingAgentHistoryWs = syncServer._pendingAgentHistoryWs.filter(p => p.agentId !== agentId);
+  // v3.3.19: prefer `buckets` (the v3.3.19+ per-quest shape).
+  // Fall back to `messages` for backwards compat with
+  // v3.1.17-v3.3.18 IPC call sites that haven't been
+  // updated. The sync-server sendAgentHistory signature
+  // handles both shapes.
   for (const p of pending) {
-    syncServer.sendAgentHistory(p.ws, agentId, messages);
+    syncServer.sendAgentHistory(p.ws, agentId, buckets || messages);
   }
 });
 

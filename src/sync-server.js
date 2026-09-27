@@ -2399,8 +2399,36 @@ class SyncServer extends EventEmitter {
   // Each tab on the mobile shows only the chat history for the
   // selected companion. The desktop stores chatHistoryByAgent[id]
   // so we just look up and send the requested agent's history.
-  sendAgentHistory(ws, agentId, messages) {
-    this._send(ws, { type: 'agent_history', agentId, messages, ts: Date.now() });
+  //
+  // v3.3.19: third arg can be either a flat `messages` array
+  // (legacy v3.1.17-v3.3.18 shape, only the DEFAULT bucket)
+  // or a `buckets` map keyed by questKeyForStorage(qid)
+  // (v3.3.19+ per-quest shape). The mobile's onAgentHistory
+  // handler (v3.11.12+) reads `buckets`; older mobile builds
+  // (v3.11.11 and prior) read `messages` — the response
+  // includes BOTH when the source has `buckets` so old
+  // builds keep working as a fallback. (Old builds ignore
+  // extra fields, so adding `buckets` is non-breaking.)
+  sendAgentHistory(ws, agentId, source) {
+    const payload = { type: 'agent_history', agentId, ts: Date.now() };
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      // Map shape (v3.3.19+). Send `buckets` for the mobile's
+      // per-quest routing; ALSO derive a flat `messages`
+      // from the DEFAULT bucket (or the first non-empty
+      // bucket) so old builds don't show a blank chat
+      // panel after their `messages` field goes missing.
+      payload.buckets = source;
+      const defaultBucket = source[Object.keys(source).find(k => k === '__default__') || '__default__']
+        || Object.values(source)[0]
+        || [];
+      if (Array.isArray(defaultBucket)) {
+        payload.messages = defaultBucket;
+      }
+    } else {
+      // Legacy flat array.
+      payload.messages = Array.isArray(source) ? source : [];
+    }
+    this._send(ws, payload);
   }
 
   broadcastArenaEvent(event) {
