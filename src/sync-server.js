@@ -44,6 +44,39 @@ class SyncServer extends EventEmitter {
     this.onChatMessage = options.onChatMessage || null;
     this.onVoiceTranscript = options.onVoiceTranscript || null;
     this.onAudioInput = options.onAudioInput || null;
+    // v3.1.17: per-agent chat history. The case-dispatch
+    // in _handleMessage (request_agent_history) calls
+    // `this.onRequestAgentHistory(ws, aid)`, but the
+    // constructor NEVER copied this option from
+    // `options`. Result: callback was always undefined,
+    // every agent_history request silently no-op'd, the
+    // mobile's per-companion history sync was broken from
+    // day 1 of v3.1.17. Tobe's UI was getting DEFAULT
+    // bucket content from chat_history (which still works
+    // because it goes through _notifyMainWindow, not via
+    // a callback) and missing the per-agent buckets
+    // entirely. Confirmed 2026-09-27 16:58 via debug
+    // logging: `[SyncServer DEBUG] request_agent_history
+    // raw msg: ... auth=true hasCb=false`.
+    //
+    // Same bug class as v3.2.77 (mobile_wake_agent etc.)
+    // and v3.10.79 (quest callbacks). Both of those got
+    // caught and fixed; this one slipped through because
+    // it was added before that lesson was written, and
+    // nobody re-audited the constructor when the later
+    // fixes landed.
+    //
+    // Lesson reinforced (third occurrence of this bug):
+    // the constructor's `this.onXyz = options.onXyz ||
+    // null;` binding is the ONE place every callback
+    // option has to land. The case-dispatch guards
+    // (`if (this.onXyz)`) silently no-op when binding is
+    // missing — no error, no log, just silent dropout.
+    // The audit pattern: for every `this.onX` check in
+    // _handleMessage, find the corresponding `this.onX =
+    // options.onX` in the constructor. If one is
+    // missing, that's a latent no-op bug.
+    this.onRequestAgentHistory = options.onRequestAgentHistory || null;
     // v3.2.8: image / file attachment upload handler.
     // Tobe's v3.10.20 follow-up: handle the desktop side
     // with the image handling. Previously the mobile was
@@ -111,6 +144,13 @@ class SyncServer extends EventEmitter {
     // mobiles.
     this.onGetTtsSettings = options.onGetTtsSettings || null;
     this.onSetTtsVoice = options.onSetTtsVoice || null;
+    // v3.3.19: same bug class as onRequestAgentHistory above.
+    // Bind the callback for symmetry / future migration away
+    // from the _notifyMainWindow path. Currently chat_history
+    // works because _notifyMainWindow fires the IPC directly,
+    // but adding the binding here ensures the constructor's
+    // callback table stays complete.
+    this.onRequestChatHistory = options.onRequestChatHistory || null;
     // v3.2.33: per-quest project instructions file read. Mobile calls
     // request_quest_instructions and main.js answers with the
     // file content via the same IPC the desktop's renderer
@@ -654,10 +694,14 @@ class SyncServer extends EventEmitter {
       }
 
       case 'request_agent_history': {
-        if (!client.authenticated) return;
+        // DEBUG: temporary instrumentation to find why the
+        // desktop log never shows 'Mobile requested history
+        // for agent' when this case fires.
+        console.log(`[SyncServer DEBUG] request_agent_history raw msg:`, JSON.stringify(msg), `auth=${client.authenticated} hasCb=${!!this.onRequestAgentHistory}`);
+        if (!client.authenticated) { console.log('[SyncServer DEBUG] bailing: not auth'); return; }
         const aid = msg.agentId;
-        if (!aid) return;
-        if (this.onRequestAgentHistory) this.onRequestAgentHistory(ws, aid);
+        if (!aid) { console.log('[SyncServer DEBUG] bailing: no aid'); return; }
+        if (this.onRequestAgentHistory) { console.log('[SyncServer DEBUG] calling onRequestAgentHistory'); this.onRequestAgentHistory(ws, aid); }
         break;
       }
 
