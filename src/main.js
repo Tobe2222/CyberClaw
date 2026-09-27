@@ -4027,7 +4027,6 @@ app.whenReady().then(() => {
     onRequestAgentHistory: (ws, agentId) => {
       // v3.1.17: per-agent chat history for the mobile companion tab bar.
       console.log(`[SyncServer] Mobile requested history for agent: ${agentId}`);
-      console.log(`[DEBUG-onRequestAgentHistory] called with agentId=${agentId} mainWindowAlive=${mainWindow && !mainWindow.isDestroyed()}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-request-agent-history', { agentId });
         if (!syncServer._pendingAgentHistoryWs) syncServer._pendingAgentHistoryWs = [];

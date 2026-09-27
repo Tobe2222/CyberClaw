@@ -7210,8 +7210,6 @@ try {
   });
 
   ipcRenderer.on('mobile-request-chat-history', () => {
-    // DEBUG
-    console.log('[DEBUG-chat-history-mirror] sending', chatHistory.length, 'messages; first sample:', JSON.stringify(chatHistory[0] || null).substring(0, 200));
     // Send current chat history to mobile. v3.2.63
     // (Tobe 2026-08-04 21:16): strip quest tags on the
     // way out. Pre-v3.2.36 entries in chatHistory

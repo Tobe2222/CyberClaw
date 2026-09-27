@@ -694,14 +694,10 @@ class SyncServer extends EventEmitter {
       }
 
       case 'request_agent_history': {
-        // DEBUG: temporary instrumentation to find why the
-        // desktop log never shows 'Mobile requested history
-        // for agent' when this case fires.
-        console.log(`[SyncServer DEBUG] request_agent_history raw msg:`, JSON.stringify(msg), `auth=${client.authenticated} hasCb=${!!this.onRequestAgentHistory}`);
-        if (!client.authenticated) { console.log('[SyncServer DEBUG] bailing: not auth'); return; }
+        if (!client.authenticated) return;
         const aid = msg.agentId;
-        if (!aid) { console.log('[SyncServer DEBUG] bailing: no aid'); return; }
-        if (this.onRequestAgentHistory) { console.log('[SyncServer DEBUG] calling onRequestAgentHistory'); this.onRequestAgentHistory(ws, aid); }
+        if (!aid) return;
+        if (this.onRequestAgentHistory) this.onRequestAgentHistory(ws, aid);
         break;
       }
 
