@@ -276,7 +276,22 @@
 
         <!-- Active view (fills the rest of the strip) -->
         <div id="view-chat" class="term-view active">
-          <div id="chat-header">
+          <!-- v3.3.22: dropped the chat-header bar (avatar +
+               name + online-status line). Tobe 2026-09-29
+               22:10: 'There is also an unnecessary line
+               right under the channel tab of clawsuu, a
+               line with its emoji and online status. Just
+               have a green dot beside it on the channel
+               tab.' The channel tab already shows the
+               emoji (avatar); the green dot replaces the
+               status text. The chat-header-status logic
+               is still updated by updateChatHeader in
+               app.js (so the data is there), but we
+               no longer render the bar. The
+               chat-header DOM nodes are kept (not
+               removed) so existing JS references don't
+               break. -->
+          <div id="chat-header" style="display:none">
             <span id="chat-header-avatar"></span>
             <span id="chat-header-name">No companion</span>
             <span id="chat-header-status" class="chat-header-status"></span>

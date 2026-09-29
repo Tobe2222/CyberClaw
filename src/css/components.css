@@ -453,29 +453,48 @@
 }
 
 /* ----- Chat Messages ----- */
+/* v3.3.22: clearer user vs agent bubble distinction. User
+   bubbles align right with a stronger cyan accent border and
+   a tinted background; agent bubbles align left with a
+   gold accent. The previous styling was a faint tint on both
+   sides that blurred the conversation sides. Tobe 2026-09-29
+   22:10: 'a bit hard to distinguish the text bubble from
+   each side should be clearer.' */
 .chat-msg {
-  margin-bottom: 8px;
-  padding: 5px 10px;
-  border-radius: 4px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
   font-size: 14px;
   line-height: 1.6;
+  max-width: 78%;
+  display: inline-block;
+  word-wrap: break-word;
 }
-
 .chat-msg.system {
   background: rgba(255,107,53,0.1);
   border-left: 2px solid var(--purple);
+  display: block;
+  max-width: 100%;
 }
 .chat-msg.user {
-  background: rgba(255,107,53,0.08);
-  border-left: 2px solid var(--cyan);
+  background: rgba(34,211,238,0.18);
+  border-left: 3px solid var(--cyan);
+  float: right;
+  clear: both;
 }
 .chat-msg.agent {
-  background: rgba(251,191,36,0.08);
-  border-left: 2px solid var(--gold);
+  background: rgba(251,191,36,0.14);
+  border-left: 3px solid var(--gold);
+  float: left;
+  clear: both;
 }
 .chat-msg.typing {
   background: transparent;
   border-left: 2px solid var(--border-mid);
+  display: block;
+  max-width: 100%;
+  float: left;
+  clear: both;
 }
 .chat-msg.error {
   background: rgba(239,68,68,0.08);
@@ -487,6 +506,29 @@
   font-weight: 700;
   margin-right: 6px;
   font-size: 10px;
+}
+
+/* v3.3.22: per-bubble quest pill (matches the mobile's
+   v3.11.5 activeQuestName pill). Tobe 2026-09-29 22:13:
+   'the chat does not say either. But the text is the same
+   as the hive control chat on mobile so it seems like thats
+   the chat active. It should say in the text bubble like it
+   does in on mobile also.' Small, dim line above the
+   bubble content showing the quest name (or "No quest" if
+   the message was sent with no active quest). */
+.msg-quest-header {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  padding-left: 2px;
+}
+.msg-quest-header.no-quest {
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 /* v3.2.47: chat messages must be selectable so the user can

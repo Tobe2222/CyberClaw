@@ -2514,6 +2514,15 @@ function updateChatHeader(agentId) {
     headerStatus.textContent = sleeping ? '💤 sleeping' : 'online';
     headerStatus.className = 'chat-header-status ' + (sleeping ? 'sleeping' : 'online');
   }
+  // v3.3.22: drive the channel tab's green-dot indicator
+  // from the same sleepState check. Online (awake + recent
+  // activity) = full green; sleeping / dead = dim grey.
+  // Tobe 2026-09-29 22:10: 'Just have a green dot beside
+  // it on the channel tab.'
+  const tab = document.querySelector(`.channel-tab-companion[data-agent-id="${agentId}"]`);
+  if (tab) {
+    tab.classList.toggle('online', !sleeping);
+  }
   // v3.3.4: refresh the local-LLM status pill for this companion.
   // The pill only shows up when the agent's model.primary is a
   // local Ollama model (e.g. "ollama/qwen2.5-coder:32b").
@@ -2805,6 +2814,15 @@ function renderCompanionChannelTabs() {
     name.className = 'companion-tab-name';
     name.textContent = agent.name;
     tab.appendChild(name);
+    // v3.3.22: green-dot online indicator on the channel
+    // tab. Tobe 2026-09-29 22:10: 'Just have a green dot
+    // beside it on the channel tab.' The dot's color is
+    // driven by the `.online` class on the tab itself
+    // (toggled in updateCompanionChannelTabsOnline
+    // below). Online = awake + recent activity.
+    const status = document.createElement('span');
+    status.className = 'companion-tab-status';
+    tab.appendChild(status);
     if (id === activeChatAgentId) tab.classList.add('active');
     // v3.3.11: per-quest bucketing — the unread badge
     // should reflect the active quest's bucket only,
@@ -4141,7 +4159,7 @@ function postAgentReplyWithScreenshots(result, name, emoji) {
   }
 }
 
-function addChatMsg(type, text, name, emoji) {
+function addChatMsg(type, text, name, emoji, attachments) {
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
@@ -4222,7 +4240,36 @@ function addChatMsg(type, text, name, emoji) {
   // the bubble a durable artifact, not a transient
   // network event.
   let attachmentsForPersistence = null;
-  if (type === 'agent-image' && text && typeof text === 'object' && text.dataUri) {
+  // v3.3.22: also accept attachments passed via the 5th arg
+  // (user-attachment send path from the desktop's image-send
+  // button, where text is the user's typed message and
+  // attachments is the array of images). For type==='user'
+  // and type==='agent', attachments may be the array; for
+  // type==='agent-image', text is an object with dataUri
+  // (legacy path, still works).
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    // Normalize desktop's image-send attachment shape to the
+    // same `{ uri, data, type, name, size }` shape the mobile
+    // already understands. Input may be either the mobile
+    // shape `{ dataUri, mimeType, fileName, size }` or the
+    // simpler `{ uri, type, name, size, data }` — accept both.
+    attachmentsForPersistence = attachments.map((a) => {
+      const dataUri = a.dataUri || a.uri || null;
+      const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
+      // Same size guard as agent-image: cap at 200KB base64
+      // for the persisted copy; the realtime broadcast
+      // carries the full dataUri.
+      const trimmed = base64.length > 200 * 1024 ? base64.slice(0, 50 * 1024) : base64;
+      return {
+        uri: dataUri,
+        data: trimmed,
+        type: a.type || a.mimeType || (dataUri ? (dataUri.match(/^data:([^;]+);/) || [])[1] : null) || 'image/png',
+        name: a.name || a.fileName || 'attachment',
+        size: base64.length,
+        thumbOnly: base64.length > 200 * 1024,
+      };
+    });
+  } else if (type === 'agent-image' && text && typeof text === 'object' && text.dataUri) {
     // Cap the persisted attachment size so a single
     // screenshot doesn't blow the bucket cap. Screenshots
     // over 200KB base64 (the common case for a 1024x768+
@@ -4476,6 +4523,32 @@ function addChatMsg(type, text, name, emoji) {
       let broadcastText = text;
       let broadcastAttachments = null;
       let broadcastIsUser = type === 'user';
+      // v3.3.22: forward user-side attachments (desktop
+      // image-send) on the chat_message broadcast. The
+      // user bubble carries an `attachments` array; the
+      // mobile already renders it for inbound user
+      // messages, but the WS broadcast previously
+      // dropped the field. Tobe 2026-09-29 22:10: 'The
+      // text i sent on the desktop also did not appear
+      // on the phone end for some reason' — partly
+      // because the desktop's image-send path skipped
+      // addChatMsg entirely (rendered DOM-directly),
+      // which means no chat_message broadcast fired.
+      // Now that addChatMsg accepts attachments, the
+      // broadcast below carries them.
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        broadcastAttachments = attachments.map((a) => {
+          const dataUri = a.dataUri || a.uri || null;
+          const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
+          return {
+            uri: dataUri,
+            data: base64,
+            type: a.type || a.mimeType || (dataUri ? (dataUri.match(/^data:([^;]+);/) || [])[1] : null) || 'image/png',
+            name: a.name || a.fileName || 'attachment',
+            size: base64.length,
+          };
+        });
+      }
       if (type === 'agent-image') {
         const img = text || {};
         const dataUri = img.dataUri || null;
@@ -4544,16 +4617,57 @@ function addChatMsg(type, text, name, emoji) {
   div.id = id;
   div.className = `chat-msg ${type}`;
 
+  // v3.3.22: per-bubble quest pill (matches the mobile's
+  // v3.11.5 activeQuestName pill). Tobe 2026-09-29 22:13:
+  // 'the chat does not say either. But the text is the
+  // same as the hive control chat on mobile so it seems
+  // like thats the chat active. It should say in the text
+  // bubble like it does in on mobile also.' We render a
+  // small dim header above each bubble showing the quest
+  // name (or "— No quest" if the message was sent with
+  // no active quest). Reads from the in-memory `quests`
+  // list by id; falls back to "(unknown quest)" if the
+  // id is stale.
+  const activeQuestNameForBubble = (() => {
+    const qid = activeQuestId;
+    if (!qid) return null;
+    const q = (typeof quests !== 'undefined' && Array.isArray(quests)) ? quests.find(qq => qq && qq.id === qid) : null;
+    return q ? q.name : null;
+  })();
+  const questHeaderHtml = activeQuestNameForBubble
+    ? `<span class="msg-quest-header">📜 ${escHtml(activeQuestNameForBubble)}</span>`
+    : `<span class="msg-quest-header no-quest">— No quest</span>`;
+
   switch (type) {
     case 'user':
-      div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(text)}</span>`;
+      // v3.3.22: render user-side attachments inline. Same
+      // shape as the agent-image bubble: tap-to-expand
+      // thumbnail with optional caption. The attachments
+      // come from the desktop image-send path (paperclip
+      // button) or from the mobile's image-pick flow
+      // forwarded via `mobile-chat-with-attachments`.
+      // Both shapes normalize to `{dataUri, mimeType,
+      // fileName, size}` upstream.
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        let html = questHeaderHtml + `<span class="msg-prefix">[You]</span>`;
+        if (text) html += `<span class="msg-text">${escHtml(text)}</span>`;
+        for (const att of attachments) {
+          const dataUri = att.dataUri || (att.data ? `data:${att.mimeType || 'image/png'};base64,${att.data}` : null);
+          if (!dataUri) continue;
+          const safeName = escAttr(att.fileName || att.name || 'image');
+          html += `<br><img class="chat-msg-image" src="${escAttr(dataUri)}" alt="${safeName}" />`;
+        }
+        div.innerHTML = html;
+      } else {
+        div.innerHTML = questHeaderHtml + `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(text)}</span>`;
+      }
       break;
     case 'agent':
       // v3.1.96: same fix as the other render site — don't
       // show the prefix emoji if it's the desktop's 🤖 default.
       // Show just [name] in that case (matches the user-style
       // prefix shape).
-      div.innerHTML = `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
@@ -4585,6 +4699,7 @@ function addChatMsg(type, text, name, emoji) {
       if (text && text.width && text.height) meta.push(`${text.width}×${text.height}`);
       if (text && text.filePath) meta.push(escHtml(text.filePath.split('/').pop()));
       div.innerHTML = `
+        ${questHeaderHtml}
         <span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span>
         <span class="msg-text">
           <img class="chat-image-thumb" src="${img}" alt="${escHtml((text && text.target) || 'screenshot')}" loading="lazy"
@@ -8414,16 +8529,27 @@ window.sendChat = async function() {
     const agent = agents[agentOrder[focusIndex]];
     if (!agent) return;
 
-    // Show user message with image
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'chat-msg user';
-    let html = '<div class="msg-bubble">';
-    if (message) html += '<span class="msg-text">' + message + '</span>';
-    html += '<br><img class="chat-msg-image" src="' + imgData.dataUrl + '" alt="' + imgData.filename + '" />';
-    html += '</div>';
-    msgDiv.innerHTML = html;
-    document.getElementById('chat-messages').appendChild(msgDiv);
-    document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+    // v3.3.22: route through addChatMsg so the bubble is
+    // persisted to chatHistoryByAgentAndQuest AND broadcast
+    // to the mobile. Previously the image-send path
+    // rendered the user bubble directly via DOM
+    // (msgDiv.appendChild) which skipped the chat pipeline,
+    // so the bubble never reached the mobile and never
+    // landed in the bucket for history sync. Tobe 2026-09-29
+    // 22:10: 'The text i sent on the desktop also did not
+    // appear on the phone end for some reason.'
+    //
+    // addChatMsg now accepts an optional 5th arg
+    // `attachments` (the same array shape
+    // sendChatMessageViaHttp expects). We build that array
+    // here from the desktop-internal {dataUrl, filename}.
+    const userAttachments = [{
+      data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
+      mimeType: (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png',
+      fileName: imgData.filename,
+      dataUri: imgData.dataUrl,
+    }];
+    addChatMsg('user', message || '', agent.name, agent && (agent.emoji === '🤖' ? null : (agent.emoji || null)), userAttachments);
     input.value = '';
 
     // Send to agent with image context
@@ -8455,7 +8581,29 @@ window.sendChat = async function() {
       let result;
       try {
         result = await Promise.race([
-          cyberclaw.chat.sendMessage(mainAgentId, fullMessage, { image: imgData.dataUrl }),
+          // v3.3.22: pass attachments as a proper array
+          // shape that main.js / sendChatMessageViaHttp
+          // understands. The previous code passed
+          //   { image: imgData.dataUrl }
+          // which `Array.isArray(attachments)` rejects
+          // (object, not array), so the image was
+          // silently dropped — clawsuu got the text
+          // "Describe this image" with no actual image
+          // data, hence no reaction. Tobe 2026-09-29
+          // 22:10: 'He did not react it seems, no
+          // clawsuu is working etc text there.' Now
+          // we build the array that
+          // `sendChatMessageViaHttp` (main.js ~1218)
+          // expects: `{ data: base64, mimeType, fileName,
+          // dataUri }` per attachment.
+          cyberclaw.chat.sendMessage(mainAgentId, fullMessage, [
+            {
+              data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
+              mimeType: (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png',
+              fileName: imgData.filename,
+              dataUri: imgData.dataUrl,
+            },
+          ]),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('agent call timed out after 600s (image path)')), AGENT_TIMEOUT_MS)
           ),

@@ -223,7 +223,14 @@
 
 /* === ARENA === */
 #party-arena {
-  flex: 1.5; position: relative; overflow: hidden; min-height: 180px;
+  /* v3.3.22: arena height reduced to ~10% of the chat
+     area. Tobe 2026-09-29 22:10: 'The arena can be a bit
+     smaller also compared to the chat Height. More chat
+     Height, less arena Height, 10% should be good.'
+     flex: 0.111 ~= 1 : 9 ratio (arena : terminal-strip).
+     min-height kept at 180px so the sprite always has
+     room to render. */
+  flex: 0.111; position: relative; overflow: hidden; min-height: 180px;
   display: flex; align-items: center; justify-content: center;
   /* Sky gradient background */
   background: linear-gradient(to bottom,
@@ -645,6 +652,23 @@
   border-color: var(--cyan); box-shadow: 0 0 4px rgba(0,255,200,0.4);
 }
 .channel-tab-companion .companion-tab-name { font-weight: 500; }
+/* v3.3.22: green-dot online indicator on the channel tab.
+   Tobe 2026-09-29 22:10: 'Just have a green dot beside it
+   on the channel tab.' The dot sits to the left of the
+   companion name, glows when active. Channels without the
+   .online class show no dot (offline / sleeping / dead). */
+.channel-tab-companion .companion-tab-status {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green, #4ade80);
+  box-shadow: 0 0 4px var(--green, #4ade80);
+  flex-shrink: 0;
+  display: inline-block;
+}
+.channel-tab-companion:not(.online) .companion-tab-status {
+  background: var(--text-muted);
+  box-shadow: none;
+  opacity: 0.4;
+}
 .channel-tab-companion.has-unread::after {
   content: ''; position: absolute; top: 4px; right: 4px;
   width: 7px; height: 7px; border-radius: 50%;
