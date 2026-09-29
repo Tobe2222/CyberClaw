@@ -60,34 +60,6 @@
         </div>
       </div>
 
-      <!-- v3.3.0: Skills library. Browse, create, edit process
-           skills that companions can be equipped with. -->
-      <div class="panel-header">
-        <span class="rune-icon">📚</span> SKILLS LIBRARY
-        <button class="quest-add-btn" onclick="showSkillForm()" title="New skill">+</button>
-      </div>
-      <div class="skill-form hidden" id="skill-form">
-        <input type="text" id="skill-name-input" placeholder="Skill name (e.g. Send Screenshots to User)" maxlength="80" />
-        <textarea id="skill-desc-input" placeholder="Short description (one line)" rows="2" maxlength="240"></textarea>
-        <textarea id="skill-triggers-input" placeholder="When to use (one phrase per line, e.g. 'user asks for a picture')" rows="3"></textarea>
-        <textarea id="skill-body-input" placeholder="Process — write the steps the companion should follow. Use headings and numbered/bulleted lists." rows="10"></textarea>
-        <div id="skill-validation-msg" class="skill-validation-msg"></div>
-        <div class="skill-form-actions">
-          <button class="quest-form-btn save" onclick="createSkill()">Create</button>
-          <button class="quest-form-btn cancel" onclick="hideSkillForm()">Cancel</button>
-        </div>
-      </div>
-      <div class="skill-section" id="skill-list">
-        <!-- Skills populated dynamically -->
-        <div class="skill-empty" id="skill-empty">
-          <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">
-            <div style="font-size:20px;margin-bottom:6px">📚</div>
-            No skills yet.<br>Click + to create your first skill,<br>or seed the starter set below.
-          </div>
-          <button class="skill-seed-btn" onclick="seedStarterSkills()">Seed Starter Skills</button>
-        </div>
-      </div>
-
       <!-- Session -->
       <div class="panel-header system-hdr">
         <span class="rune-icon">📡</span> SESSION
@@ -382,6 +354,41 @@
         <div class="inspect-section">
           <div class="section-title">Skill Categories</div>
           <div id="inspect-skills"></div>
+        </div>
+
+        <!-- v3.3.22: Skills library moved here from the left
+             panel (was under QUEST LOG). Tobe 2026-09-29 22:29:
+             'move that library position.' The library lists all
+             available skills (process-specific markdown files),
+             lets the user create/edit/delete, and shows which
+             companion has each one enabled. Placed above
+             Enabled Skills because the library IS the source
+             of which toggles below are enabled. -->
+        <div class="inspect-section">
+          <div class="section-title">📚 Skills Library
+            <button class="quest-add-btn" onclick="showSkillForm()" title="New skill">+</button>
+          </div>
+          <div class="skill-form hidden" id="skill-form">
+            <input type="text" id="skill-name-input" placeholder="Skill name (e.g. Send Screenshots to User)" maxlength="80" />
+            <textarea id="skill-desc-input" placeholder="Short description (one line)" rows="2" maxlength="240"></textarea>
+            <textarea id="skill-triggers-input" placeholder="When to use (one phrase per line, e.g. 'user asks for a picture')" rows="3"></textarea>
+            <textarea id="skill-body-input" placeholder="Process — write the steps the companion should follow. Use headings and numbered/bulleted lists." rows="10"></textarea>
+            <div id="skill-validation-msg" class="skill-validation-msg"></div>
+            <div class="skill-form-actions">
+              <button class="quest-form-btn save" onclick="createSkill()">Create</button>
+              <button class="quest-form-btn cancel" onclick="hideSkillForm()">Cancel</button>
+            </div>
+          </div>
+          <div class="skill-section" id="skill-list">
+            <!-- Skills populated dynamically -->
+            <div class="skill-empty" id="skill-empty">
+              <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">
+                <div style="font-size:20px;margin-bottom:6px">📚</div>
+                No skills yet.<br>Click + to create your first skill,<br>or seed the starter set below.
+              </div>
+              <button class="skill-seed-btn" onclick="seedStarterSkills()">Seed Starter Skills</button>
+            </div>
+          </div>
         </div>
 
         <!-- v3.3.0: Per-companion enabled-skills toggles. Each row

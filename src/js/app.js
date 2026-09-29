@@ -2961,6 +2961,21 @@ async function awardXpForReply(result, fallbackAgentId) {
     // as chatty updates — broadcastAgentsListToMobile
     // picks up the fresh getStats() in the next tick.
     try { broadcastAgentsListToMobile(); } catch (_) {}
+    // v3.3.22: also refresh the desktop's inspect panel
+    // so the Skills Categories list updates without the
+    // user having to click away and back to the tab.
+    // Previously, the inspect panel only refreshed when
+    // the user switched to a companion tab; if XP was
+    // awarded while the user was sitting on the same
+    // tab, the panel showed stale data and looked
+    // "stuck". Tobe 2026-09-29 22:29: 'it also seemed
+    // like he should have had some xp on more categories
+    // also, it had so few but it might be correct' —
+    // the XP was accumulating on disk but the panel
+    // wasn't re-reading. Now we re-read.
+    if (xpTarget === activeChatAgentId) {
+      try { updateInspect(xpTarget); } catch (_) {}
+    }
   } catch (e) {
     console.warn('[XP] awardXpForReply failed:', e?.message);
   }
