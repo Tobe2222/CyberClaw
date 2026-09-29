@@ -5888,7 +5888,7 @@ async function ollamaStartImpl() {
   }
 }
 
-ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName }) => {
+ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName, attachments }) => {
   // v3.3.19: forward activeQuestId/activeQuestName to the
   // sync-server's broadcastChatMessage so the realtime
   // mobile broadcast carries quest attribution. v3.3.18
@@ -5902,12 +5902,20 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUs
   // realtime arrival always disagreed, and on cold start
   // the active-quest view would briefly flash DEFAULT
   // content until the projection effect reconciled.
-  console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser, activeQuestId: activeQuestId ?? '(none)' });
+  //
+  // v3.3.20: also forward `attachments`. The renderer
+  // attaches an attachments array to image bubbles (the
+  // [SCREENSHOT target=...] directive flow — see app.js
+  // addChatMsg('agent-image', ...)). The mobile renders
+  // `attachments` inline on the chat bubble (HomeScreen.tsx
+  // renderMessage, v3.10.20). Without forwarding it here,
+  // the mobile sees the chat_message but no image preview.
+  console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser, activeQuestId: activeQuestId ?? '(none)', attachments: Array.isArray(attachments) ? attachments.length : 0 });
   const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
   console.log('[IPC] _voiceReplyWs state:', wsState);
   discordLog('📡', 'Chat broadcast', `isUser=${isUser} voiceWs=${wsState}`);
   if (syncServer) {
-    syncServer.broadcastChatMessage(agentId, text, isUser, agentName, activeQuestId ?? null, activeQuestName ?? null);
+    syncServer.broadcastChatMessage(agentId, text, isUser, agentName, activeQuestId ?? null, activeQuestName ?? null, attachments || null);
     console.log('[IPC] Message broadcast to mobile clients');
   }
   // If this AI reply follows a voice input, synthesize TTS and send audio back

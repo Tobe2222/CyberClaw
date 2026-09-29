@@ -2269,7 +2269,7 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'state_sync', ...state, ts: Date.now() });
   }
 
-  broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null) {
+  broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null, attachments = null) {
     // v3.3.19: include activeQuestId + activeQuestName on
     // the realtime chat_message broadcast so the mobile's
     // appendAgentMessage can route incoming messages into
@@ -2279,6 +2279,16 @@ class SyncServer extends EventEmitter {
     // (pre-v3.3.18) didn't stamp on the IPC call either,
     // so old builds still work: undefined → null on the
     // payload, which is what old mobile builds expected.
+    //
+    // v3.3.20: include `attachments` for image bubbles
+    // (the [SCREENSHOT target=...] directive flow). The
+    // mobile's renderMessage already accepts attachments
+    // for outbound user-attachment sends — see
+    // HomeScreen.tsx around line 6190. Reusing the same
+    // shape here means the mobile can show the screenshot
+    // thumbnail without a new bubble component. `null`
+    // (or non-array) for text bubbles — the mobile
+    // ignores that case.
     const payload = {
       type: 'chat_message',
       agentId,
@@ -2287,6 +2297,10 @@ class SyncServer extends EventEmitter {
       isUser,
       activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
       activeQuestName: activeQuestName || null,
+      // v3.3.20: forward attachments for image bubbles.
+      // Shape: [{ uri, data, type, name, size }]. Same
+      // shape the mobile renders for outbound attachments.
+      attachments: (Array.isArray(attachments) && attachments.length > 0) ? attachments : null,
       ts: Date.now(),
     };
     // v3.2.23: cache recent AI messages for reconnect replay.

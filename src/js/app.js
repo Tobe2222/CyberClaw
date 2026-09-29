@@ -4319,7 +4319,37 @@ function addChatMsg(type, text, name, emoji) {
   // have done the task so fast.' The agent hadn't done
   // anything — the IPC had timed out and the error message
   // only went to the renderer's chat, not the mobile.
-  if (type === 'agent' || type === 'user' || type === 'error') {
+  //
+  // v3.3.20: also broadcast 'agent-image' bubbles (and any
+  // future visual-only bubble type). Previously these were
+  // rendered into the desktop chat but never sent to the
+  // mobile — the mobile stayed blank while the desktop
+  // showed screenshot thumbnails. Tobe 2026-09-29 11:38:
+  // 'clawsuu is posting pictures in the desktop app but
+  // they dont come through to the mobile end. They
+  // should.' Root cause: the type guard below only matched
+  // 'agent' / 'user' / 'error' — the renderer-side
+  // addChatMsg('agent-image', {dataUri, target, ...}) call
+  // hit the early return at the broadcast block and the
+  // mobile's WS never saw the event. We pass the image
+  // through as an `attachments` array (same shape the
+  // mobile already understands for outbound user
+  // attachments) so the mobile's renderMessage bubble
+  // shows the thumbnail without a new bubble component.
+  //
+  // Persistence: agent-image bubbles are NOT written to
+  // the per-quest bucket (no addChatMsg('agent'/'user')
+  // branch fires) and therefore won't survive a desktop
+  // restart or appear in mobile history sync. That
+  // matches the desktop's current behavior — the
+  // screenshot file is written to /tmp/clawsuu-shot-*.png
+  // and the in-memory bubble shows once. Mobile history
+  // sync is unchanged. If we later want images to
+  // survive restarts, we'll persist a reference (file
+  // path) and re-resolve on demand — out of scope here
+  // because base64-encoded screenshots are 50KB-500KB
+  // each and would blow out localStorage's 5-10MB cap.
+  if (type === 'agent' || type === 'user' || type === 'error' || type === 'agent-image') {
     try {
       const { ipcRenderer } = require('electron');
       // v3.1.15: send the resolved agentId (not just the display name)
@@ -4338,16 +4368,65 @@ function addChatMsg(type, text, name, emoji) {
       // Tobe 2026-09-24 21:33: 'Let us put in the current
       // quest name at the upper right of each text bubble so
       // one can see what chat it actually is.'
+      //
+      // v3.3.20: for agent-image, the second arg to
+      // addChatMsg is an object { dataUri, target, width,
+      // height, filePath }. The mobile doesn't render that
+      // shape, so translate to the standard `attachments`
+      // array used by the user-attachment path. The mobile
+      // bubble renderer (HomeScreen.tsx renderMessage,
+      // v3.10.20) already accepts `attachments: [{uri,
+      // type, name, data}]` and renders a tap-to-expand
+      // image preview. We re-use that.
+      let broadcastText = text;
+      let broadcastAttachments = null;
+      let broadcastIsUser = type === 'user';
+      if (type === 'agent-image') {
+        const img = text || {};
+        const dataUri = img.dataUri || null;
+        if (dataUri) {
+          // Strip the `data:<mime>;base64,` prefix into the
+          // shape the mobile's AttachmentItem expects. The
+          // mobile renders `data:${type};base64,${data}`
+          // (see HomeScreen.tsx around line 6210) — same
+          // convention.
+          const m = /^data:([^;]+);base64,(.*)$/.exec(dataUri);
+          const mime = (m && m[1]) || 'image/png';
+          const data = (m && m[2]) || dataUri;
+          broadcastAttachments = [{
+            uri: dataUri,            // for any code that reads uri directly
+            data,                    // raw base64 — used by the bubble renderer
+            type: mime,
+            name: (img.target ? `screenshot-${img.target}` : 'screenshot'),
+            // size is bytes of the base64 string (rough
+            // proxy — the mobile doesn't actually use it for
+            // images, only for non-image file cards).
+            size: data.length,
+          }];
+        }
+        // Image bubbles are agent-side. Don't put anything
+        // in `text` — the mobile bubble already shows the
+        // image preview, an empty caption keeps the bubble
+        // layout consistent with user-attachment sends
+        // (which also send `text: ''`).
+        broadcastText = '';
+        broadcastIsUser = false;
+      }
       ipcRenderer.invoke('sync-broadcast-chat', {
         agentId: agentId || name || 'companion',
         agentName: name || null,
-        text: text,
-        isUser: type === 'user',
+        text: broadcastText,
+        isUser: broadcastIsUser,
         // v3.3.18: stamp the active quest on the broadcast
         // so the mobile can label each bubble with its
         // quest. `null` means "no active quest" (the user
         // deactivated); mobile renders '— No quest'.
         activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
+        // v3.3.20: include attachments for image bubbles
+        // so the mobile's renderMessage can show the
+        // thumbnail. `null` for text bubbles — the mobile
+        // already handles that case.
+        attachments: broadcastAttachments,
       });
     } catch {}
   }
