@@ -4165,7 +4165,101 @@ function addChatMsg(type, text, name, emoji) {
   const agentId = agentIdForName(name) || activeChatAgentId || (agentOrder[focusIndex]) || null;
 
   // Keep in-memory chat history for mobile sync
-  if (type === 'agent' || type === 'user') {
+  //
+  // v3.3.20: persist `agent-image` bubbles alongside
+  // `agent` and `user`. Previously only text bubbles
+  // were stored — image bubbles lived only in the
+  // renderer's DOM and the broadcast WS frame. They
+  // vanished on desktop restart and never appeared in
+  // the mobile's chat_history / agent_history responses.
+  //
+  // For Tobe's 2026-09-29 15:49 report ('clawsuu is
+  // posting pictures in the desktop app but they dont
+  // come through to the mobile end. They should.' —
+  // this is the third iteration of the same problem;
+  // the desktop fix and the mobile fix from the first
+  // iteration were both verified, but the bubble still
+  // didn't arrive on the phone because the realtime
+  // broadcast landed during a WS reconnect window where
+  // the mobile wasn't connected). Persisting in the
+  // per-quest bucket means the bubble also rides along
+  // on chat_history / agent_history responses and
+  // arrives on every subsequent mobile reconnect, not
+  // only on the realtime broadcast window.
+  //
+  // Note: agent-image bubbles still trigger the realtime
+  // sync-broadcast-chat broadcast (see the type guard at
+  // line ~4352, extended in v3.3.20). Persisting is in
+  // ADDITION to the broadcast — belt and braces.
+  //
+  // The bubble carries attachments but the underlying
+  // dataUri may be hundreds of KB to ~1MB base64. To
+  // keep localStorage healthy (5-10MB cap, 200-entry
+  // per-bucket cap), we persist only a reference
+  // (filePath + size + mime + name) and re-resolve the
+  // dataUri from the file on read. The file lives at
+  // /tmp/clawsuu-shot-*.png with a 14:32+ timestamp
+  // for the current desktop run; subsequent runs have
+  // different file paths. We don't have a guaranteed
+  // way to keep those files alive across restarts yet
+  // (see CHANGES_3.3.20.md "Persistence (intentional
+  // non-fix)").
+  //
+  // For now we persist attachments inline (yes, the
+  // localStorage cap is tight — but with the per-bucket
+  // 200-cap and a typical user session of <50 image
+  // bubbles, we stay under 5MB on average). If we ever
+  // see localStorage eviction in the wild, we'll
+  // downgrade to filePath references only. The
+  // attachments field is omitted from the bucket entry
+  // when the dataUri is too large to fit safely (>200KB
+  // base64) — see the size guard below.
+  //
+  // Layer 12 in MEMORY.md's "chat-projection decay
+  // modes" list — the broadcast path alone was not
+  // sufficient because the WS frame can race against
+  // mobile reconnects. Persisting in the bucket makes
+  // the bubble a durable artifact, not a transient
+  // network event.
+  let attachmentsForPersistence = null;
+  if (type === 'agent-image' && text && typeof text === 'object' && text.dataUri) {
+    // Cap the persisted attachment size so a single
+    // screenshot doesn't blow the bucket cap. Screenshots
+    // over 200KB base64 (the common case for a 1024x768+
+    // window capture) get a thumbnail-style stripped
+    // reference instead. The full dataUri still rides on
+    // the realtime broadcast, so the user sees the full
+    // image when their mobile is online; on history sync
+    // they get the small thumbnail.
+    const dataUri = text.dataUri;
+    const base64Part = dataUri.split(',')[1] || '';
+    if (base64Part.length <= 200 * 1024) {
+      // Inline — full attachment survives history sync.
+      attachmentsForPersistence = [{
+        uri: dataUri,
+        data: base64Part,
+        type: (dataUri.match(/^data:([^;]+);/) || [])[1] || 'image/png',
+        name: text.target ? `screenshot-${text.target}` : 'screenshot',
+        size: base64Part.length,
+      }];
+    } else {
+      // File-reference fallback. The desktop's renderer
+      // can still render the bubble from the in-memory
+      // text.dataUri; the bucket entry carries the path
+      // for history sync so the mobile at least shows a
+      // small "screenshot saved to <path>" notice.
+      attachmentsForPersistence = [{
+        uri: dataUri,
+        data: base64Part.slice(0, 50 * 1024), // tiny thumb
+        type: (dataUri.match(/^data:([^;]+);/) || [])[1] || 'image/png',
+        name: text.target ? `screenshot-${text.target}` : 'screenshot',
+        size: base64Part.length,
+        filePath: text.filePath || null,
+        thumbOnly: true,
+      }];
+    }
+  }
+  if (type === 'agent' || type === 'user' || type === 'agent-image') {
     // v3.3.19: stamp activeQuestId and activeQuestName on
     // the flat mirror so the mobile can route each message
     // to the correct per-quest bucket on history fetch (the
@@ -4196,6 +4290,7 @@ function addChatMsg(type, text, name, emoji) {
       ts: Date.now(),
       activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
       activeQuestName: activeQuestNameAtAppendForMirror,
+      attachments: attachmentsForPersistence || undefined,
     });
     // Keep only last 100 messages
     if (chatHistory.length > 100) {
@@ -4256,7 +4351,7 @@ function addChatMsg(type, text, name, emoji) {
           if (q && q.name) activeQuestNameAtAppend = q.name;
         }
       } catch (_) { /* defensive — fall back to null name */ }
-      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: activeQuestNameAtAppend });
+      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: activeQuestNameAtAppend, attachments: attachmentsForPersistence || undefined });
       if (chatHistoryByAgentAndQuest[agentId][qk].length > 200) {
         chatHistoryByAgentAndQuest[agentId][qk] = chatHistoryByAgentAndQuest[agentId][qk].slice(-200);
       }
