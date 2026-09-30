@@ -1973,7 +1973,6 @@ async function renderQuests() {
     // the inline onclick). The button replaces the "tap the card"
     // flow that v3.1.50 is deprecating in favor of an explicit
     // affordance.
-    const starBtn = `<button class="quest-star-btn ${isActive ? 'is-active' : ''}" onclick="event.stopPropagation(); selectQuest(this.closest('.quest-item'), '${q.id}')" title="${isActive ? 'Active quest — tap to deactivate' : 'Set as active quest'}">${isActive ? '⭐' : '☆'}</button>`;
     const activeBadge = isActive ? `<span class="quest-active-badge" title="This is the quest the companion is currently working on">⚡ ACTIVE</span>` : '';
 
     div.innerHTML = `
@@ -1981,7 +1980,6 @@ async function renderQuests() {
         <div class="quest-name">${isComplete ? '✅' : '⚔️'} ${escapeHtml(q.name)}</div>
         <div class="quest-top-actions">
           ${activeBadge}
-          ${starBtn}
           <button class="quest-edit-btn" onclick="openQuestEditor(event,'${q.id}')" title="Edit">✏️</button>
           <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
         </div>
@@ -2062,7 +2060,30 @@ function escapeHtml(str) {
 }
 
 // Load quests on startup
-renderQuests();
+//
+// v3.3.28: also seed cachedQuestsList on startup so the
+// per-bubble quest header has a sync source to read from
+// before any quests-updated IPC fires. Pre-v3.3.28 the
+// cache was only populated by the IPC handler at line
+// 7785, which only fires on saveQuests() — so a fresh
+// desktop startup loaded renderQuests() (visible UI),
+// updated activeQuestId, but left cachedQuestsList empty.
+// addChatMsg's `cachedQuestsList.find(...)` lookup
+// returned nothing → activeQuestNameForBubble stayed
+// null → every chat bubble rendered '— No quest' even
+// when the active quest was set on disk. Tobe 2026-09-30
+// 15:18: 'the desktop chat still says no quest but it is
+// the hive control chat.' Read the same source-of-truth
+// renderQuests uses (cyberclaw.quests.list()), seed the
+// cache, then render. Both code paths now agree from
+// tick 1.
+(async () => {
+  try {
+    const list = await cyberclaw.quests.list();
+    if (Array.isArray(list)) cachedQuestsList = list.slice();
+  } catch (_) { /* defensive — cache stays empty if load fails */ }
+  renderQuests();
+})();
 // v3.3.0: load skills library on startup
 refreshSkillsList().then(() => {
   // Once the skill library is loaded, refresh the per-companion
@@ -2504,7 +2525,16 @@ function updateChatQuestIndicator() {
     el.title = '';
     return;
   }
-  const q = (typeof quests !== 'undefined' ? quests : []).find(qq => qq.id === activeQuestId);
+  // v3.3.28 BUGFIX: read from module-scope cachedQuestsList
+  // (populated by quests_list broadcasts at line 7765). The
+  // previous `typeof quests !== 'undefined'` guard looked
+  // defensive but `quests` is never declared at module
+  // scope — it's only a function-local `const` inside other
+  // functions. So the lookup always resolved to `[]` and
+  // every quest chip rendered '(unknown quest)' even when
+  // the active quest was set. Matches the v3.3.28 fix in
+  // addChatMsg's per-bubble quest header.
+  const q = (Array.isArray(cachedQuestsList) ? cachedQuestsList : []).find(qq => qq && qq.id === activeQuestId);
   const name = q ? q.name : '(unknown quest)';
   const dir = q && q.directory ? q.directory : '';
   el.textContent = `📜 ${name}`;
@@ -4708,13 +4738,33 @@ function addChatMsg(type, text, name, emoji, attachments) {
   // bubble like it does in on mobile also.' We render a
   // small dim header above each bubble showing the quest
   // name (or "— No quest" if the message was sent with
-  // no active quest). Reads from the in-memory `quests`
-  // list by id; falls back to "(unknown quest)" if the
-  // id is stale.
+  // no active quest). Reads from the in-memory
+  // `cachedQuestsList` by id; falls back to "(unknown
+  // quest)" if the id is stale.
+  //
+  // v3.3.28: BUGFIX — pre-v3.3.28 this lookup used
+  // `typeof quests !== 'undefined'` to defend against the
+  // quest list not being loaded yet, but there is NO
+  // module-scope `quests` variable at all — `quests` is
+  // always declared as a function-local `const` inside
+  // other functions. The `typeof` guard returned
+  // 'undefined' (correct), but then `Array.isArray(quests)`
+  // is `false` because `quests` is genuinely undefined in
+  // module scope, so `activeQuestNameForBubble` ALWAYS
+  // returned null, which is why EVERY desktop chat bubble
+  // rendered '— No quest' even when an active quest was
+  // set. Tobe 2026-09-30 15:18 report: 'the desktop chat
+  // still says no quest but it is the hive control chat.'
+  // Switched to the existing module-scope
+  // `cachedQuestsList` (populated by quests_list
+  // broadcasts at line 7765), which is the correct source
+  // for sync lookups inside addChatMsg. Matches the
+  // pattern already used at line 4410 / 4478 for the
+  // bucket-stamp `activeQuestNameAtAppend`.
   const activeQuestNameForBubble = (() => {
     const qid = activeQuestId;
     if (!qid) return null;
-    const q = (typeof quests !== 'undefined' && Array.isArray(quests)) ? quests.find(qq => qq && qq.id === qid) : null;
+    const q = (Array.isArray(cachedQuestsList) ? cachedQuestsList : []).find(qq => qq && qq.id === qid);
     return q ? q.name : null;
   })();
   const questHeaderHtml = activeQuestNameForBubble

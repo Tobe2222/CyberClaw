@@ -519,12 +519,17 @@
 .msg-quest-header {
   display: block;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent, #ff8c1a);
-  margin-bottom: 3px;
-  padding-left: 2px;
+  margin-bottom: 4px;
+  /* v3.3.28: pin to the right side of the bubble. Tobe
+     2026-09-30 15:18: 'That text is still on the left
+     side of the chat bubble, should be on the right.' */
+  text-align: right;
+  padding-right: 2px;
 }
 .msg-quest-header.no-quest {
   color: var(--text-muted);
