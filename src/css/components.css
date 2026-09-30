@@ -1352,6 +1352,42 @@ body.theme-light .provider-add { background: rgba(0,0,0,0.03); }
   opacity: 0.85;
 }
 
+/* v3.3.27: collapsed quest item — hidden when the quest log
+   is in 'active only' mode. The renderQuests loop adds the
+   .quest-item-collapsed class to non-active quests (when more
+   than one exists), and removes it on Switch-Quest click.
+   display:none so the layout reflows cleanly and the Switch
+   Quest button lands right under the active quest card. */
+.quest-item.quest-item-collapsed {
+  display: none !important;
+}
+
+/* v3.3.27: 'Switch quest' button rendered at the bottom of
+   the quest list when there's more than one quest and at
+   least one is collapsed. Looks like a flat action button —
+   not a quest card — so it's clearly the affordance to
+   expand the list, not another quest item. */
+.quest-switcher-btn {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--bg-secondary, #0e0e1a);
+  border: 1px solid var(--border-mid, #2a2a3a);
+  border-radius: 6px;
+  color: var(--text-secondary, #aaaacc);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.quest-switcher-btn:hover {
+  background: var(--bg-tertiary, #14142a);
+  border-color: var(--gold, #f7931a);
+  color: var(--text-primary, #ffffff);
+}
+
 .quest-companions {
   display: flex;
   gap: 4px;

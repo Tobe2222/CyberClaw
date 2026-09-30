@@ -1920,7 +1920,23 @@ async function renderQuests() {
   empty.style.display = 'none';
 
   // Active first, then completed
+  //
+  // v3.3.27: sort by the `active: true` flag first (the
+  // single quest currently in use), then by status
+  // (active status ahead of completed). Tobe 2026-09-30
+  // 14:41 report: 'on the desktop the current quest is
+  // highlighted now, but its not at the top of the quest
+  // log, it should be.' The pre-v3.3.27 sort only
+  // ranked by `status`, and most quests have status
+  // 'active', so the order was arbitrary — the quest with
+  // `active: true` (the in-use one) didn't reliably land
+  // first. Adding the `q.active` check moves it to the
+  // top consistently.
   const sorted = [...quests].sort((a, b) => {
+    // The currently-active quest goes to the very top.
+    if (!!a.active && !b.active) return -1;
+    if (!a.active && !!b.active) return 1;
+    // Then active status ahead of completed.
     if (a.status === 'active' && b.status !== 'active') return -1;
     if (a.status !== 'active' && b.status === 'active') return 1;
     return 0;
@@ -1986,6 +2002,58 @@ async function renderQuests() {
       </div>
     `;
     list.appendChild(div);
+  }
+
+  // v3.3.27: collapse the quest log to show only the active
+  // quest by default. Tobe 2026-09-30 14:41 report: 'it should
+  // only be the current quest visible, there should be an button
+  // under it to open the full quest log where one can change
+  // quests.' The previous behaviour listed all 8 quests in the
+  // left panel which Tobe found visually cluttered. Now we
+  //   1. Hide every quest that's NOT currently active.
+  //   2. Render a single "📜 Switch quest (N more)" button at
+  //      the bottom of the quest list. Clicking it expands the
+  //      hidden quests back into view (and changes the button
+  //      to "📜 Hide other quests").
+  // The collapse state is per-render (not persisted) so it
+  // always resets to collapsed on reload — matches the
+  // 'collapsed by default, expand on demand' mental model.
+  const allItems = list.querySelectorAll('.quest-item');
+  let activeCount = 0;
+  let hiddenCount = 0;
+  allItems.forEach(item => {
+    if (item.classList.contains('quest-is-active')) {
+      activeCount++;
+    } else if (quests.length > 1) {
+      // Collapse non-active quests when there's more than one.
+      // Single-quest case: nothing to switch to, leave the
+      // button hidden too.
+      item.classList.add('quest-item-collapsed');
+      hiddenCount++;
+    }
+  });
+  // Remove any previous switcher button (re-renders).
+  const existingSwitcher = document.getElementById('quest-switcher-btn');
+  if (existingSwitcher) existingSwitcher.remove();
+  if (hiddenCount > 0) {
+    const switcher = document.createElement('button');
+    switcher.id = 'quest-switcher-btn';
+    switcher.className = 'quest-switcher-btn';
+    switcher.innerHTML = `📜 Switch quest (${hiddenCount} more)`;
+    switcher.title = 'Click to show all quests and switch the active one';
+    switcher.onclick = () => {
+      // Expand all collapsed quests and flip the button to
+      // "Hide other quests".
+      list.querySelectorAll('.quest-item-collapsed').forEach(item => {
+        item.classList.remove('quest-item-collapsed');
+      });
+      switcher.innerHTML = '📜 Hide other quests';
+      switcher.onclick = () => {
+        // Re-collapse on second click.
+        renderQuests();
+      };
+    };
+    list.appendChild(switcher);
   }
 }
 
@@ -7422,19 +7490,25 @@ try {
   ipcRenderer.on('openclaw-session-chat-message', (e, { agentId, agentName, text, isUser, ts }) => {
     try {
       const resolvedAgentId = agentName || agentId || 'companion';
-      // v3.2.22: push directly to chatHistory /
-      // chatHistoryByAgent, bypassing addChatMsg's
-      // broadcast side effect. The sync-server broadcast
-      // already went out from main.js.
-      chatHistory.push({
-        text,
-        isUser: !!isUser,
-        agentId: resolvedAgentId,
-        ts: ts || Date.now(),
-      });
-      if (chatHistory.length > 100) {
-        chatHistory = chatHistory.slice(-100);
-      }
+      // v3.3.25: do NOT push Discord tail messages to the
+      // flat chatHistory mirror. Pre-v3.3.25 this code
+      // pushed WITHOUT an activeQuestId field, which made
+      // the mobile's `every((m) => 'activeQuestId' in m)`
+      // per-quest routing check fail. The fall-through
+      // legacy path then landed EVERYTHING (including
+      // addChatMsg messages from the user's actual quest
+      // chat) in the DEFAULT bucket on the mobile. Tobe
+      // 2026-09-30 09:26: 'The quest chats seems better
+      // but it still randomly jumped to another chat
+      // when i reopened... it had your last message
+      // [Discord content] in it, which is Odd because
+      // that should not be there at all.' The fix is
+      // to leave Discord-routed content out of the
+      // mobile-visible flat mirror entirely — desktop
+      // users see it via the per-quest DEFAULT bucket
+      // (chatHistoryByAgentAndQuest populated below),
+      // but the mobile chat_history sync no longer
+      // leaks it into the active-quest view.
       const bucketedAgentId =
         agentIdForName(resolvedAgentId) ||
         activeChatAgentId ||
@@ -9796,6 +9870,29 @@ function scheduleAutoSleep() {
       const a = agents[id];
       if (!a) continue;
       if (a.sleepState === 'sleeping') continue;
+      // v3.3.27: don't auto-sleep a companion that's
+      // actively processing a chat request. Pre-v3.3.27
+      // the auto-sleep check only saw `lastInteractionTs`,
+      // which resets on user actions (chat send, voice,
+      // treat, mobile ping). While the companion is
+      // generating a reply, no user action fires — so
+      // the timer ran out and the companion fell asleep
+      // mid-task. Tobe 2026-09-30 14:41: 'why is clawsuu
+      // sleeping by default now it seems? Its not even
+      // night time. Random naps could be cool but seems
+      // like there is a bug there.'
+      //
+      // chatBusy is set true on user-send (line ~3119)
+      // and false in the finally block after the agent
+      // reply (or error) lands. As long as chatBusy is
+      // true, the companion is mid-task and shouldn't
+      // sleep. Reset lastInteractionTs to now on every
+      // check while busy — guarantees the timer starts
+      // over fresh after the reply lands.
+      if (chatBusy && id === pickCurrentCompanionId()) {
+        a.lastInteractionTs = now;
+        continue;
+      }
       const last = a.lastInteractionTs || a.bootTs || now;
       if (now - last > AUTO_SLEEP_AFTER_MS) {
         // Auto-sleep this companion
