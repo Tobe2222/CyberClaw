@@ -223,14 +223,12 @@
 
 /* === ARENA === */
 #party-arena {
-  /* v3.3.22: arena height reduced to ~10% of the chat
-     area. Tobe 2026-09-29 22:10: 'The arena can be a bit
-     smaller also compared to the chat Height. More chat
-     Height, less arena Height, 10% should be good.'
-     flex: 0.111 ~= 1 : 9 ratio (arena : terminal-strip).
-     min-height kept at 180px so the sprite always has
-     room to render. */
-  flex: 0.111; position: relative; overflow: hidden; min-height: 180px;
+  /* v3.3.24: arena now 50/50 with terminal-strip. Tobe 2026-09-30
+     06:39: 'Its waaay too small now. Try more like 50/50 of total
+     height shared for both.' flex: 1 on both arena and terminal-
+     strip gives equal split of available height. min-height 180px
+     kept so the sprite always has room to render. */
+  flex: 1; position: relative; overflow: hidden; min-height: 180px;
   display: flex; align-items: center; justify-content: center;
   /* Sky gradient background */
   background: linear-gradient(to bottom,

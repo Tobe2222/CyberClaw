@@ -1057,6 +1057,25 @@ function updateFocused(agentId) {
 function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
+  // v3.3.29: wrap the whole body in try/catch so any
+  // internal error doesn't take down the renderer's
+  // chat pipeline. Pre-v3.3.29 the renderer log showed
+  // 'Uncaught ReferenceError: sleeping is not defined'
+  // after initArenaCompanions, which was a side effect
+  // of updateInspect being called from an unwrapped
+  // site (e.g. inside the focus-change handler). The
+  // ReferenceError crashed the renderer mid-call and
+  // any subsequent state mutations were skipped,
+  // including the agents_list broadcast that drives
+  // the mobile arena. Wrapping the body means the
+  // worst case is a stale inspect panel — the rest of
+  // the renderer keeps running. Tobe 2026-09-30 15:18:
+  // 'clawsuu is still sleeping on startup' — the
+  // ReferenceError was likely blocking the
+  // broadcastAgentsListToMobile() call that flips
+  // clawsuu's sleepState to 'awake' after a renderer
+  // reload.
+  try {
 
   // v3.1.4: the type badge was removed (every companion is just a
   // Companion; the badge was redundant noise).
@@ -1216,6 +1235,13 @@ function updateInspect(agentId) {
   if (chEl) chEl.textContent = agent.channel;
   const wsEl = document.getElementById('inspect-workspace');
   if (wsEl) { wsEl.textContent = agent.workspace; wsEl.title = agent.workspace; }
+  } catch (e) {
+    // v3.3.29: log instead of throwing so a render bug
+    // doesn't take down the chat pipeline or the
+    // agents_list broadcast (which the mobile arena
+    // needs to mirror sleepState and chat history).
+    try { console.warn('[updateInspect] suppressed error:', e?.message); } catch (_) {}
+  }
 }
 
 function setBar(id, [cur, max]) {
@@ -2582,6 +2608,10 @@ function _renderStoredChatMsg(m, container, agentId) {
 }
 
 function updateChatHeader(agentId) {
+  // v3.3.29: wrap in try/catch — see updateInspect above.
+  // A render bug here would skip the sleep-state class
+  // toggle on the channel tab, leaving stale visual state.
+  try {
   const headerName = document.getElementById('chat-header-name');
   const headerAvatar = document.getElementById('chat-header-avatar');
   const headerStatus = document.getElementById('chat-header-status');
@@ -2627,6 +2657,9 @@ function updateChatHeader(agentId) {
   // The renderer's agent object exposes primaryModel as the raw
   // "provider/model" string (formatted name is on agent.model).
   refreshLlmStatusPill(agent);
+  } catch (e) {
+    try { console.warn('[updateChatHeader] suppressed error:', e?.message); } catch (_) {}
+  }
 }
 
 // ─── Local LLM status pill ───────────────────────────────
@@ -4693,6 +4726,16 @@ function addChatMsg(type, text, name, emoji, attachments) {
         broadcastText = '';
         broadcastIsUser = false;
       }
+      // v3.3.29: compute the broadcast quest id with a
+      // fallback before the object literal so we don't
+      // need to use let inside the literal.
+      let broadcastActiveQuestId = (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null;
+      if (!broadcastActiveQuestId && Array.isArray(cachedQuestsList)) {
+        const fallbackQ = cachedQuestsList.find(qq => qq && qq.active === true);
+        if (fallbackQ && fallbackQ.id) {
+          broadcastActiveQuestId = fallbackQ.id;
+        }
+      }
       ipcRenderer.invoke('sync-broadcast-chat', {
         agentId: agentId || name || 'companion',
         agentName: name || null,
@@ -4702,7 +4745,28 @@ function addChatMsg(type, text, name, emoji, attachments) {
         // so the mobile can label each bubble with its
         // quest. `null` means "no active quest" (the user
         // deactivated); mobile renders '— No quest'.
-        activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
+        //
+        // v3.3.29: fallback to the most-recent active
+        // quest from cachedQuestsList if the module-scope
+        // `activeQuestId` is null. Pre-v3.3.29 the
+        // broadcast sent `null` in that case, which on
+        // the mobile routes the message to the DEFAULT
+        // bucket. If the user has an active quest
+        // anchor (e.g. HIVE_CONTROL) on the mobile, the
+        // DEFAULT bucket is invisible to them — so
+        // errors broadcast with null activeQuestId
+        // appeared on the desktop but not on the mobile.
+        // Tobe 2026-09-30 17:29: 'the rate limit error
+        // appears, but again that does not come through
+        // to the mobile, only on desktop for some
+        // reason.' With the fallback, if the user has
+        // ANY active quest on the desktop but the
+        // module-scope activeQuestId is stale/null (e.g.
+        // mid-reload), the broadcast still carries the
+        // right quest id and the mobile routes it to
+        // the visible bucket. Stays null only if no
+        // quest is active anywhere.
+        activeQuestId: broadcastActiveQuestId,
         // v3.3.20: include attachments for image bubbles
         // so the mobile's renderMessage can show the
         // thumbnail. `null` for text bubbles — the mobile
