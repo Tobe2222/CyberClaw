@@ -513,27 +513,54 @@
    'the chat does not say either. But the text is the same
    as the hive control chat on mobile so it seems like thats
    the chat active. It should say in the text bubble like it
-   does in on mobile also.' Small, dim line above the
-   bubble content showing the quest name (or "No quest" if
-   the message was sent with no active quest). */
+   does in on mobile also.'
+
+   v3.3.30: redesigned — was a full-width uppercase mono
+   line above each bubble that ate a row of vertical
+   space. Tobe 2026-10-01 08:06: 'the quest text in the
+   bubble takes up too much space. Perhaps put it in the
+   bottom right so it does not create its own full
+   line. Or something. Make it pretty.'
+
+   New style: absolute-positioned small pill at the
+   bottom-right corner of the bubble, low opacity, no
+   uppercase, no mono font. Reads as context, not as a
+   heading. The chat-msg parent gains `position: relative`
+   so the absolute child anchors correctly. The pill is
+   pointer-events: none so it doesn't block text
+   selection in the bubble below it. */
+.chat-msg {
+  /* v3.3.30: anchor for absolute-positioned quest pill */
+  position: relative;
+}
 .msg-quest-header {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--accent, #ff8c1a);
-  margin-bottom: 4px;
-  /* v3.3.28: pin to the right side of the bubble. Tobe
-     2026-09-30 15:18: 'That text is still on the left
-     side of the chat bubble, should be on the right.' */
-  text-align: right;
-  padding-right: 2px;
+  opacity: 0.55;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 140, 26, 0.08);
+  pointer-events: none;
+  /* Don't widen the bubble or push the text — the pill
+     sits in the bubble's bottom-right corner over the
+     message text. Small enough that it doesn't clash
+     with long messages (the message text is left-aligned
+     and ends well before the bottom-right corner for
+     anything except very long single-line messages). */
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .msg-quest-header.no-quest {
   color: var(--text-muted);
-  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.04);
+  opacity: 0.4;
 }
 
 /* v3.2.47: chat messages must be selectable so the user can
