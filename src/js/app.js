@@ -4305,7 +4305,26 @@ function postAgentReplyWithScreenshots(result, name, emoji) {
   }
 }
 
-function addChatMsg(type, text, name, emoji, attachments) {
+function addChatMsg(type, text, name, emoji, attachments, questOverride = null) {
+  // v3.3.31: optional quest routing override. When truthy,
+  // the message routes to that specific quest bucket
+  // instead of the active quest. Used by toy/snack
+  // companion-reaction paths (see promptCompanionReaction)
+  // to keep the toy chatter in the no-quest chat rather
+  // than cluttering whatever quest the user happens to
+  // be working on. Tobe 2026-10-01 12:20: "I just want
+  // that speech the companion does into the no quest chat,
+  // not any quest so it does not clutter those
+  // conversations."
+  //
+  // When `questOverride` is the string '__no_quest__',
+  // the message routes to the no-quest bucket
+  // (DEFAULT_QUEST_KEY). When null/undefined (default),
+  // the message routes to the active quest (current
+  // behavior — used by every existing call site).
+  //
+  // Effective quest id used everywhere below:
+  const effectiveQuestId = (questOverride === '__no_quest__') ? null : (questOverride || activeQuestId);
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
@@ -4471,8 +4490,8 @@ function addChatMsg(type, text, name, emoji, attachments) {
     // is "don't make addChatMsg async").
     let activeQuestNameAtAppendForMirror = null;
     try {
-      if (typeof activeQuestId === 'string' && activeQuestId && Array.isArray(cachedQuestsList)) {
-        const q = cachedQuestsList.find(qq => qq && qq.id === activeQuestId);
+      if (typeof effectiveQuestId === 'string' && effectiveQuestId && Array.isArray(cachedQuestsList)) {
+        const q = cachedQuestsList.find(qq => qq && qq.id === effectiveQuestId);
         if (q && q.name) activeQuestNameAtAppendForMirror = q.name;
       }
     } catch (_) { /* defensive */ }
@@ -4481,7 +4500,7 @@ function addChatMsg(type, text, name, emoji, attachments) {
       isUser: type === 'user',
       agentId: name || 'companion',
       ts: Date.now(),
-      activeQuestId: (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null,
+      activeQuestId: (typeof effectiveQuestId === 'string' && effectiveQuestId) ? effectiveQuestId : null,
       activeQuestName: activeQuestNameAtAppendForMirror,
       attachments: attachmentsForPersistence || undefined,
     });
@@ -4501,7 +4520,7 @@ function addChatMsg(type, text, name, emoji, attachments) {
     // pre-per-quest and stamps its own quest attribution
     // from its own activeQuestRef.
     if (agentId) {
-      const qk = questKeyForStorage(activeQuestId);
+      const qk = questKeyForStorage(effectiveQuestId);
       if (!chatHistoryByAgentAndQuest[agentId]) chatHistoryByAgentAndQuest[agentId] = {};
       if (!chatHistoryByAgentAndQuest[agentId][qk]) chatHistoryByAgentAndQuest[agentId][qk] = [];
       // v3.3.13: drop the `activeQuestName` enrichment.
@@ -4539,12 +4558,12 @@ function addChatMsg(type, text, name, emoji, attachments) {
       // value to avoid making addChatMsg async.
       let activeQuestNameAtAppend = null;
       try {
-        if (typeof activeQuestId === 'string' && activeQuestId && Array.isArray(cachedQuestsList)) {
-          const q = cachedQuestsList.find(qq => qq && qq.id === activeQuestId);
+        if (typeof effectiveQuestId === 'string' && effectiveQuestId && Array.isArray(cachedQuestsList)) {
+          const q = cachedQuestsList.find(qq => qq && qq.id === effectiveQuestId);
           if (q && q.name) activeQuestNameAtAppend = q.name;
         }
       } catch (_) { /* defensive — fall back to null name */ }
-      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: activeQuestId || null, activeQuestName: activeQuestNameAtAppend, attachments: attachmentsForPersistence || undefined });
+      chatHistoryByAgentAndQuest[agentId][qk].push({ type, text, name, emoji, ts: Date.now(), activeQuestId: effectiveQuestId || null, activeQuestName: activeQuestNameAtAppend, attachments: attachmentsForPersistence || undefined });
       if (chatHistoryByAgentAndQuest[agentId][qk].length > 200) {
         chatHistoryByAgentAndQuest[agentId][qk] = chatHistoryByAgentAndQuest[agentId][qk].slice(-200);
       }
@@ -4579,10 +4598,19 @@ function addChatMsg(type, text, name, emoji, attachments) {
     // deleted mid-write, transient disk error), we just
     // skip — the user-visible chat already updated; only
     // the project memory misses this turn.
-    if (activeQuestId) {
+    //
+    // v3.3.31: use effectiveQuestId for the conversation
+    // log too. Toy/snack companion-reaction paths
+    // (questOverride='__no_quest__') skip the active
+    // quest's conversation log entirely — the toy chatter
+    // shouldn't pollute project memory, and there's no
+    // "no-quest conversation log" to append to (logging
+    // to the active quest would defeat the purpose of
+    // the override).
+    if (effectiveQuestId) {
       try {
         cyberclaw.quests.appendConversationLog(
-          activeQuestId,
+          effectiveQuestId,
           type, // 'user' or 'agent' or 'error'
           text,
           agentId,
@@ -4729,8 +4757,26 @@ function addChatMsg(type, text, name, emoji, attachments) {
       // v3.3.29: compute the broadcast quest id with a
       // fallback before the object literal so we don't
       // need to use let inside the literal.
-      let broadcastActiveQuestId = (typeof activeQuestId === 'string' && activeQuestId) ? activeQuestId : null;
-      if (!broadcastActiveQuestId && Array.isArray(cachedQuestsList)) {
+      //
+      // v3.3.31: when questOverride is set (toy/snack
+      // companion-reaction paths want to route to the
+      // no-quest bucket), use the override's effective
+      // quest id directly — DO NOT fall back to
+      // cachedQuestsList.find(active=true). That fallback
+      // exists to recover from a stale module-scope
+      // activeQuestId at broadcast time, but for an
+      // explicit override (toy reactions) the user's
+      // intent is "this message is no-quest chat",
+      // regardless of whether the desktop happens to
+      // have a quest marked active. Falling back to the
+      // active quest would route the toy bubble back to
+      // a quest bucket on the mobile, defeating the
+      // whole point of the override. Tobe 2026-10-01
+      // 12:20: "I just want that speech the companion
+      // does into the no quest chat, not any quest so it
+      // does not clutter those conversations."
+      let broadcastActiveQuestId = (typeof effectiveQuestId === 'string' && effectiveQuestId) ? effectiveQuestId : null;
+      if (!broadcastActiveQuestId && questOverride == null && Array.isArray(cachedQuestsList)) {
         const fallbackQ = cachedQuestsList.find(qq => qq && qq.active === true);
         if (fallbackQ && fallbackQ.id) {
           broadcastActiveQuestId = fallbackQ.id;
@@ -4767,6 +4813,21 @@ function addChatMsg(type, text, name, emoji, attachments) {
         // the visible bucket. Stays null only if no
         // quest is active anywhere.
         activeQuestId: broadcastActiveQuestId,
+        // v3.3.31: explicit "force to no-quest" flag for
+        // companion-reaction bubbles (toy dropped, snack
+        // eaten, etc.). The mobile's v3.11.26 anchor
+        // fallback normally re-routes null-stamped
+        // messages to the user's active-quest bucket when
+        // the user has an anchor set — but that fallback
+        // would defeat the v3.3.31 intent for toy
+        // reactions (we want them in the no-quest chat,
+        // not the active quest). The mobile checks this
+        // flag and skips its anchor fallback when it's
+        // true. Tobe 2026-10-01 12:20: "I just want that
+        // speech the companion does into the no quest
+        // chat, not any quest so it does not clutter
+        // those conversations."
+        forceNoQuest: questOverride === '__no_quest__',
         // v3.3.20: include attachments for image bubbles
         // so the mobile's renderMessage can show the
         // thumbnail. `null` for text bubbles — the mobile
@@ -4826,7 +4887,13 @@ function addChatMsg(type, text, name, emoji, attachments) {
   // pattern already used at line 4410 / 4478 for the
   // bucket-stamp `activeQuestNameAtAppend`.
   const activeQuestNameForBubble = (() => {
-    const qid = activeQuestId;
+    // v3.3.31: use effectiveQuestId (the questOverride-
+    // aware variant) so the per-bubble quest header
+    // reflects the override. A toy-reaction bubble with
+    // questOverride='__no_quest__' renders '— No quest'
+    // (the no-quest label) even when the user has an
+    // active quest — matching the bucket routing.
+    const qid = effectiveQuestId;
     if (!qid) return null;
     const q = (Array.isArray(cachedQuestsList) ? cachedQuestsList : []).find(qq => qq && qq.id === qid);
     return q ? q.name : null;
@@ -5263,7 +5330,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           var agentId = pickCurrentCompanionId();
           var agent = agentId ? agents[agentId] : null;
           // v3.1.96: strip the desktop's 🤖 default before sending.
-          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)));
+          //
+          // v3.3.31: route this companion-reaction bubble to
+          // the no-quest bucket via the questOverride param
+          // (same reason as promptCompanionReaction below —
+          // it's a system-level reaction, not project
+          // content, and shouldn't clutter whatever quest
+          // the user is working on).
+          if (agent) addChatMsg('agent', msg, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)), null, '__no_quest__');
         }
         typingTimer = null;
       }, 30000);
@@ -9741,7 +9815,21 @@ function promptCompanionReaction(promptText, targetAgentId) {
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
       // v3.1.96: strip the desktop's 🤖 default before sending.
-      addChatMsg('agent', reply, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)));
+      //
+      // v3.3.31: route companion-reaction bubbles (toy
+      // dropped, snack eaten, ball fetched, etc.) to the
+      // no-quest chat bucket via the questOverride param,
+      // not the active quest. Tobe 2026-10-01 12:20:
+      // "I tested the ball toy on the desktop and it
+      // works great. I just want that speech the
+      // companion does into the no quest chat, not any
+      // quest so it does not clutter those conversations."
+      // The active quest at the moment of the toy drop
+      // is whatever project the user happens to be
+      // working on — the toy reaction is system-level
+      // chatter, not project content, so it doesn't
+      // belong in the project chat log.
+      addChatMsg('agent', reply, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)), null, '__no_quest__');
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
         var bubbleText = reply.length > 120 ? reply.substring(0, 117) + '...' : reply;
