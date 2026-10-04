@@ -522,45 +522,75 @@
    bottom right so it does not create its own full
    line. Or something. Make it pretty.'
 
-   New style: absolute-positioned small pill at the
-   bottom-right corner of the bubble, low opacity, no
-   uppercase, no mono font. Reads as context, not as a
-   heading. The chat-msg parent gains `position: relative`
-   so the absolute child anchors correctly. The pill is
-   pointer-events: none so it doesn't block text
-   selection in the bubble below it. */
+   v3.3.32: Tobe 2026-10-02 07:53: 'the desktop chat
+   bubble still looks bad. What if we put the quest name
+   at the bottom right in a way which it overlaps with
+   the lowest text line. Such that it does not has its
+   own which incresses the text bubble Height?' The
+   v3.3.30 pill sat in the bubble's padding-bottom area
+   (8px of reserved space) so for short messages the
+   bubble still had a visible "tail" of empty padding
+   below the text before the pill. Tighter read that does
+   what Tobe asked: anchor the pill at the bottom-right
+   edge of the bubble and shrink the bubble's bottom
+   padding so the pill truly overlaps the last line of
+   text instead of sitting in dead space. The pill is
+   tiny, low-opacity, with a subtle rounded background
+   to keep it readable when it sits ON TOP of message
+   text, and pointer-events: none so text selection
+   passes through to the .msg-text underneath. */
 .chat-msg {
   /* v3.3.30: anchor for absolute-positioned quest pill */
   position: relative;
+  /* v3.3.32: shrink bottom padding so the pill overlaps
+     the last line of text instead of floating in dead
+     padding space. Top padding kept for readability of
+     multi-line messages; right padding kept the same so
+     the pill's right-edge gap matches. */
+  padding: 8px 12px 2px 12px;
 }
 .msg-quest-header {
   position: absolute;
-  right: 8px;
-  bottom: 4px;
-  font-size: 9px;
+  right: 4px;
+  bottom: 0px;
+  font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--accent, #ff8c1a);
-  opacity: 0.55;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(255, 140, 26, 0.08);
+  /* v3.3.32: bump opacity slightly because the pill now
+     sits ON TOP of text, not in empty padding — needs
+     enough contrast to read against arbitrary text. The
+     background panel gives it legibility regardless. */
+  opacity: 0.85;
+  padding: 0px 5px 1px 5px;
+  border-radius: 6px;
+  background: rgba(40, 30, 20, 0.78);
+  /* v3.3.32: tiny accent underline so the pill still
+     reads as a quest marker even when it overlaps text.
+     Sits below the text baseline via padding-bottom: 2px
+     in this rule. */
+  border: 1px solid rgba(255, 140, 26, 0.45);
   pointer-events: none;
   /* Don't widen the bubble or push the text — the pill
      sits in the bubble's bottom-right corner over the
-     message text. Small enough that it doesn't clash
-     with long messages (the message text is left-aligned
-     and ends well before the bottom-right corner for
-     anything except very long single-line messages). */
+     message text. Capped at 60% of the bubble's width
+     so the pill never wraps. */
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.2;
+  /* v3.3.32: lift the pill slightly above the message
+     text so it reads as a tag, not as part of the
+     sentence. Shadow makes the pill "float" without
+     making it loud. */
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
 }
 .msg-quest-header.no-quest {
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  opacity: 0.4;
+  background: rgba(20, 20, 25, 0.72);
+  border-color: rgba(255, 255, 255, 0.12);
+  opacity: 0.65;
 }
 
 /* v3.2.47: chat messages must be selectable so the user can

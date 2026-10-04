@@ -963,6 +963,12 @@ window.toggleCompanionSleep = function() {
   // Refresh the inspect panel and the channel header
   if (window._inspectAgentId === id) updateInspect(id);
   if (activeChatAgentId === id) updateChatHeader(id);
+  // v3.3.32: refresh the green-dot online indicator on
+  // every channel tab — the toggled companion is not
+  // necessarily the active chat companion, and the v3.3.22
+  // path only updated the active tab, leaving the just-
+  // toggled tab stuck on its previous (wrong) colour.
+  refreshChannelTabsOnlineState();
   bumpCompanionInteraction(id); // v3.1.4: manual toggle counts as interaction
   // v3.10.3: push the new sleepState to the mobile via the
   // agents_list broadcast. The mobile renders a sleeping
@@ -2647,10 +2653,17 @@ function updateChatHeader(agentId) {
   // activity) = full green; sleeping / dead = dim grey.
   // Tobe 2026-09-29 22:10: 'Just have a green dot beside
   // it on the channel tab.'
-  const tab = document.querySelector(`.channel-tab-companion[data-agent-id="${agentId}"]`);
-  if (tab) {
-    tab.classList.toggle('online', !sleeping);
-  }
+  //
+  // v3.3.32: BUGFIX — pre-v3.3.32 this only updated the
+  // active chat companion's tab. Every other tab kept its
+  // rendered-without-`.online` state and therefore showed
+  // the dim grey dot regardless of whether that companion
+  // was actually awake. Tobe 2026-10-02 07:53: 'the
+  // live/active indicator for the companion chat tab is
+  // gray while the companions are online.' Fix: refresh
+  // the dot on EVERY tab from each agent's sleepState,
+  // not just the one whose chat was opened.
+  refreshChannelTabsOnlineState();
   // v3.3.4: refresh the local-LLM status pill for this companion.
   // The pill only shows up when the agent's model.primary is a
   // local Ollama model (e.g. "ollama/qwen2.5-coder:32b").
@@ -2659,6 +2672,44 @@ function updateChatHeader(agentId) {
   refreshLlmStatusPill(agent);
   } catch (e) {
     try { console.warn('[updateChatHeader] suppressed error:', e?.message); } catch (_) {}
+  }
+}
+
+// v3.3.32: drive the green-dot online indicator on EVERY
+// companion channel tab based on each companion's actual
+// sleepState. Replaces the v3.3.22 behaviour of only
+// updating the active tab (which left every other tab grey
+// regardless of awake/sleeping). Tobe 2026-10-02 07:53:
+// 'the live/active indicator for the companion chat tab
+// is gray while the companions are online.'
+//
+// Called from:
+//   - updateChatHeader() — when the active chat is opened
+//     (covers the most common user-visible case)
+//   - renderCompanionChannelTabs() — after re-rendering
+//     the tab list (covers agent add/remove and first load)
+//   - the sleep/wake toggle handler in toggleCompanionSleep
+//     (covers live state transitions)
+//
+// Iterates over `agentOrder` + `agents` (the same source
+// the tabs themselves were rendered from), so any tab
+// whose data-agent-id matches a known agent gets the
+// right state. Tabs for stale ids (e.g. just-removed
+// agents) are left alone — renderCompanionChannelTabs
+// already handles tab removal on its own.
+function refreshChannelTabsOnlineState() {
+  try {
+    if (!Array.isArray(agentOrder) || !agents) return;
+    for (const id of agentOrder) {
+      const a = agents[id];
+      if (!a) continue;
+      const tab = document.querySelector(`.channel-tab-companion[data-agent-id="${id}"]`);
+      if (!tab) continue;
+      const sleeping = a.sleepState === 'sleeping';
+      tab.classList.toggle('online', !sleeping);
+    }
+  } catch (e) {
+    try { console.warn('[refreshChannelTabsOnlineState] suppressed error:', e?.message); } catch (_) {}
   }
 }
 
@@ -2949,8 +3000,11 @@ function renderCompanionChannelTabs() {
     // tab. Tobe 2026-09-29 22:10: 'Just have a green dot
     // beside it on the channel tab.' The dot's color is
     // driven by the `.online` class on the tab itself
-    // (toggled in updateCompanionChannelTabsOnline
-    // below). Online = awake + recent activity.
+    // (toggled in refreshChannelTabsOnlineState).
+    // v3.3.32: the initial green/dim state is applied
+    // after appendChild below so every freshly-rendered
+    // tab reflects its companion's current sleepState
+    // rather than starting as the dim default.
     const status = document.createElement('span');
     status.className = 'companion-tab-status';
     tab.appendChild(status);
@@ -2971,6 +3025,11 @@ function renderCompanionChannelTabs() {
     }
     container.appendChild(tab);
   }
+  // v3.3.32: apply each agent's sleepState to its tab now
+  // that all tabs exist in the DOM. Without this, tabs for
+  // awake companions show the dim grey dot until the user
+  // clicks the tab (the v3.3.22 behaviour Tobe flagged).
+  refreshChannelTabsOnlineState();
 }
 
 window.toggleTerminal = function() {
