@@ -273,6 +273,37 @@
             <span class="resizer-grip"></span>
           </div>
           <div id="chat-input-area">
+            <!-- v3.3.34: centered quest toggle pill. Replaces
+                 the v3.3.28 small chat-quest-indicator badge
+                 (kept below as a hidden placeholder so existing
+                 JS references don't break). Shows the user's
+                 current chat context (📜 <quest-name> or 💬
+                 Casual) and a one-tap toggle button to switch
+                 between the active quest and the casual chat.
+
+                 Tobe 2026-10-04 11:05: 'Lets put that in the
+                 middle above that field and add a button for
+                 switch to casual chat. Such that the user can
+                 always toggle between current quest or casual
+                 chat with those two.' The pre-v3.3.34 small
+                 pill was easy to miss; the new toggle is
+                 centered, larger, and carries an explicit
+                 action button. No more 'had to go out and in
+                 to the current quest' gymnastics.
+                 -->
+            <div id="chat-quest-toggle" class="chat-quest-toggle" style="display:none">
+              <span class="chat-quest-toggle-pill" id="chat-quest-toggle-pill">📜 —</span>
+              <button class="chat-quest-toggle-btn" id="chat-quest-toggle-btn" type="button" title="Switch chat context" onclick="toggleChatQuestContext()">↔ Casual</button>
+            </div>
+            <!-- v3.3.34: the small chat-quest-indicator badge
+                 is now superseded by the new toggle above.
+                 Kept hidden (was display:none inline anyway)
+                 so any external JS that still updates
+                 chat-quest-indicator doesn't error. The
+                 `updateChatQuestIndicator()` function is
+                 still called for the in-renderer code paths
+                 that reference it but only the new toggle
+                 is visible to the user. -->
             <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
             <div id="llm-status-pill" class="llm-status-pill" style="display:none" title="">
               <span class="llm-dot"></span>

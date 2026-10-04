@@ -1291,6 +1291,13 @@ function setActiveQuestId(newId) {
   // inside that function.
   if (prev !== activeQuestId) {
     try { window.switchActiveChatQuest(activeQuestId); } catch (e) { console.warn('[Quests] switchActiveChatQuest failed:', e?.message); }
+    // v3.3.34: also refresh the centered quest toggle
+    // pill above the chat input. The toggle reflects
+    // `activeQuestId` directly, so any change to the
+    // active quest (from the quest panel, the new
+    // toggle button itself, or a quests_list broadcast
+    // reconciliation) needs to re-render the pill.
+    try { updateChatQuestToggle(); } catch (e) { console.warn('[setActiveQuestId->toggle] suppressed:', e?.message); }
   }
   return prev;
 }
@@ -2115,6 +2122,15 @@ function escapeHtml(str) {
     if (Array.isArray(list)) cachedQuestsList = list.slice();
   } catch (_) { /* defensive — cache stays empty if load fails */ }
   renderQuests();
+  // v3.3.34: also render the centered quest toggle on
+  // initial load so it appears as soon as the page is
+  // ready. renderQuests() already calls setActiveQuestId,
+  // which refreshes the toggle, but that's a no-op when
+  // activeQuestId is still null and no toggle refresh has
+  // happened yet. Force a refresh here so the pill is
+  // visible from the first paint, not just after the
+  // first quest-list update.
+  try { updateChatQuestToggle(); } catch (_) {}
 })();
 // v3.3.0: load skills library on startup
 refreshSkillsList().then(() => {
@@ -2577,7 +2593,146 @@ function updateChatQuestIndicator() {
   if (typeof updateQuestIndicator === 'function') {
     try { updateQuestIndicator(); } catch (_) {}
   }
+  // v3.3.34: also keep the new centered quest toggle in
+  // sync with the active quest id. The toggle is the
+  // user-visible chat-context marker; the small
+  // chat-quest-indicator badge above is now mostly
+  // vestigial but kept for backwards compat.
+  try { updateChatQuestToggle(); } catch (e) { console.warn('[updateChatQuestIndicator->toggle] suppressed:', e?.message); }
 }
+
+// v3.3.34: render the centered quest-context toggle pill
+// above the chat input. Three states:
+//   - activeQuestId is set:  [ 📜 <quest-name> ] [ ↔ Casual ]
+//   - activeQuestId is null and ≥1 quest exists:
+//                              [ 💬 Casual      ] [ ↔ <first-quest-name> ]
+//   - no quests in the list: hidden entirely
+//
+// The pill + button are wired up in index.html (id
+// `chat-quest-toggle`, `chat-quest-toggle-pill`,
+// `chat-quest-toggle-btn`). The click handler on the
+// button calls `toggleChatQuestContext()` which performs
+// the actual `cyberclaw.quests.setActive(...)` IPC and
+// updates `activeQuestId` via `setActiveQuestId()`.
+//
+// Tobe 2026-10-04 11:05: 'Lets put that in the middle
+// above that field and add a button for switch to casual
+// chat. Such that the user can always toggle between
+// current quest or casual chat with those two, makes
+// sense?' The pre-v3.3.34 UX was 'I have to navigate
+// out and back to the current quest to see the casual
+// chat' (because toy reactions go to casual per v3.3.31
+// and the visible chat panel stayed on the active
+// quest's bucket). The toggle gives the user a 1-tap
+// way to flip between the two views without opening
+// the quest panel.
+function updateChatQuestToggle() {
+  const wrap = document.getElementById('chat-quest-toggle');
+  if (!wrap) return;
+  const pill = document.getElementById('chat-quest-toggle-pill');
+  const btn = document.getElementById('chat-quest-toggle-btn');
+  if (!pill || !btn) return;
+
+  // Resolve the active quest + the first candidate to
+  // switch to. If the user is on a quest, the toggle
+  // target is 'casual' (null). If the user is on
+  // casual, the toggle target is the first non-completed
+  // quest in the list (prefers active, falls back to any
+  // quest in 'active' status, falls back to the first
+  // quest in any status).
+  const quests = Array.isArray(cachedQuestsList) ? cachedQuestsList : [];
+  if (quests.length === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+  const activeQuest = activeQuestId
+    ? quests.find(q => q && q.id === activeQuestId) || null
+    : null;
+  // The 'other side' of the toggle. On a quest, we go to
+  // casual. On casual, we go to the most-relevant active
+  // quest (preferring the one the user has marked
+  // active, then any active-status quest, then any quest
+  // in any status). Mirrors the v3.3.11 chat-panel auto-
+  // jump behavior on quest-list reload.
+  let toggleTarget = null;
+  let toggleLabel = '↔ Casual';
+  let otherName = 'Casual';
+  if (activeQuest) {
+    toggleTarget = null;
+    toggleLabel = '↔ Casual';
+    otherName = 'Casual';
+    pill.classList.remove('casual');
+    pill.textContent = `📜 ${activeQuest.name || '(unnamed quest)'}`;
+    pill.title = activeQuest.directory
+      ? `Currently chatting on quest: ${activeQuest.name}\n${activeQuest.directory}`
+      : `Currently chatting on quest: ${activeQuest.name}`;
+  } else {
+    // Casual: pick the best candidate to switch to.
+    const preferred = quests.find(q => q && q.active)
+      || quests.find(q => q && q.status === 'active')
+      || quests[0];
+    if (preferred) {
+      toggleTarget = preferred.id;
+      toggleLabel = `↔ ${preferred.name || 'quest'}`;
+      otherName = preferred.name || 'quest';
+    } else {
+      // Shouldn't reach here (quests.length > 0 check
+      // above), but defensive: no target means the
+      // button can stay but should be disabled.
+      btn.disabled = true;
+      btn.textContent = 'No quests';
+      btn.title = 'Create a quest in the Quests panel to enable toggle';
+    }
+    pill.classList.add('casual');
+    pill.textContent = '💬 Casual';
+    pill.title = 'Currently chatting without an active quest (casual chat).';
+  }
+  if (toggleTarget !== null || activeQuest) {
+    btn.disabled = false;
+    btn.textContent = toggleLabel;
+    btn.title = toggleTarget === null
+      ? 'Switch to casual chat (no active quest)'
+      : `Switch to quest: ${otherName}`;
+    btn.dataset.target = toggleTarget === null ? '' : toggleTarget;
+  }
+  wrap.style.display = '';
+}
+
+// v3.3.34: click handler for the quest-toggle button.
+// Flips between the active quest and the casual chat
+// (null). Calls the existing `cyberclaw.quests.setActive`
+// IPC (same path as the quest panel's ⚡ button) so the
+// state propagates to the mobile via the next
+// quests_list broadcast.
+//
+// Optimistic: update `activeQuestId` locally first via
+// `setActiveQuestId` for instant UI feedback; if the IPC
+// fails, the next quests_list broadcast will reconcile.
+window.toggleChatQuestContext = async function() {
+  try {
+    const btn = document.getElementById('chat-quest-toggle-btn');
+    if (!btn || btn.disabled) return;
+    const target = (btn.dataset && btn.dataset.target) || '';
+    const targetId = target === '' ? null : target;
+    // Optimistic local update — setActiveQuestId handles
+    // the chat panel auto-jump and re-renders the toggle
+    // pill in the new state.
+    setActiveQuestId(targetId);
+    try {
+      await cyberclaw.quests.setActive(targetId);
+    } catch (e) {
+      console.warn('[toggleChatQuestContext] setActive IPC failed:', e?.message);
+      // Best-effort: re-render the toggle to reflect the
+      // local state. A subsequent quests_list broadcast
+      // will reconcile any drift between the desktop's
+      // optimistic state and the persistent source of
+      // truth.
+      try { updateChatQuestToggle(); } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[toggleChatQuestContext] suppressed error:', e?.message);
+  }
+};
 
 function _renderStoredChatMsg(m, container, agentId) {
   const now = new Date(m.ts || Date.now());

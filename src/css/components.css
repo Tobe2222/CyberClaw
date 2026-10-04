@@ -547,50 +547,55 @@
      padding space. Top padding kept for readability of
      multi-line messages; right padding kept the same so
      the pill's right-edge gap matches. */
-  padding: 8px 12px 2px 12px;
+  /* v3.3.34: bump top padding to 24px so the per-bubble
+     quest stamp has clearance above the text. The stamp
+     is now positioned top-right (was bottom-right) and is
+     bigger / more opaque, so it needs vertical room to
+     not collide with the message text. */
+  padding: 24px 12px 4px 12px;
 }
 .msg-quest-header {
   position: absolute;
-  right: 4px;
-  bottom: 0px;
-  font-size: 8px;
-  font-weight: 600;
+  right: 6px;
+  top: 3px;
+  font-size: 10px;
+  font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--accent, #ff8c1a);
-  /* v3.3.32: bump opacity slightly because the pill now
-     sits ON TOP of text, not in empty padding — needs
-     enough contrast to read against arbitrary text. The
-     background panel gives it legibility regardless. */
-  opacity: 0.85;
-  padding: 0px 5px 1px 5px;
-  border-radius: 6px;
-  background: rgba(40, 30, 20, 0.78);
-  /* v3.3.32: tiny accent underline so the pill still
-     reads as a quest marker even when it overlaps text.
-     Sits below the text baseline via padding-bottom: 2px
-     in this rule. */
-  border: 1px solid rgba(255, 140, 26, 0.45);
+  /* v3.3.34: full opacity + bright solid background so
+     the pill is unmistakably a stamp on every bubble.
+     Tobe 2026-10-04 11:05: 'the right bottom text bubble
+     quest text is gone on the desktop, we should attach
+     the quest name text into all chat bubbles, almost
+     like a stamp, makes sense?' The pre-v3.3.34 pill
+     (opacity 0.85, dark background, 8px font) was too
+     easy to miss, especially on short bubbles where the
+     pill sat in 2px of bottom padding. Now: 10px bold
+     font, opaque accent background with dark text, top-
+     right corner like a postage stamp. Reads instantly
+     on any bubble. */
+  opacity: 1;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--accent, #ff8c1a);
+  color: #1a1a1a;
+  border: 1px solid rgba(255, 200, 100, 0.7);
   pointer-events: none;
   /* Don't widen the bubble or push the text — the pill
-     sits in the bubble's bottom-right corner over the
-     message text. Capped at 60% of the bubble's width
-     so the pill never wraps. */
+     sits in the bubble's top-right corner. Capped at 60%
+     of the bubble's width so the pill never wraps. */
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.2;
-  /* v3.3.32: lift the pill slightly above the message
-     text so it reads as a tag, not as part of the
-     sentence. Shadow makes the pill "float" without
-     making it loud. */
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 .msg-quest-header.no-quest {
-  color: var(--text-muted);
-  background: rgba(20, 20, 25, 0.72);
-  border-color: rgba(255, 255, 255, 0.12);
-  opacity: 0.65;
+  color: #1a1a1a;
+  background: rgba(180, 180, 200, 0.9);
+  border-color: rgba(220, 220, 235, 0.7);
+  opacity: 1;
 }
 
 /* v3.2.47: chat messages must be selectable so the user can
@@ -827,6 +832,82 @@
   background: rgba(255,107,53,0.1); border: 1px solid rgba(255,107,53,0.25);
   color: var(--gold); border-radius: 4px; margin-bottom: 4px;
   font-family: var(--font-mono);
+}
+
+/* v3.3.34: centered quest-context toggle pill above the
+   chat input. Replaces the v3.3.28 .chat-quest-badge as the
+   user-visible indicator; the badge is kept hidden for
+   backwards compat with existing JS.
+
+   Two states:
+   - On a quest:    [ 📜 <quest-name> ]  [ ↔ Casual ]
+   - On casual:     [ 💬 Casual      ]  [ ↔ <quest-name> ]
+   - No quests:     hidden
+
+   Tobe 2026-10-04 11:05: 'Lets put that in the middle above
+   that field and add a button for switch to casual chat.
+   Such that the user can always toggle between current quest
+   or casual chat with those two.' Centered (justify-content
+   center) so it reads as a single context marker, not as
+   left-rail metadata. The toggle button uses the same
+   accent palette as the per-bubble quest pill so the two
+   pieces of quest UI feel like a pair. */
+.chat-quest-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.chat-quest-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(255, 140, 26, 0.15);
+  border: 1px solid rgba(255, 140, 26, 0.45);
+  color: var(--accent, #ff8c1a);
+  letter-spacing: 0.02em;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Casual state: the pill uses a neutral palette so the
+   accent border doesn't read as 'this is a quest' when
+   the user has explicitly opted out of one. */
+.chat-quest-toggle-pill.casual {
+  background: rgba(120, 120, 140, 0.18);
+  border-color: rgba(180, 180, 200, 0.35);
+  color: var(--text-secondary, #c0c0d0);
+}
+.chat-quest-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-mid, rgba(255, 255, 255, 0.15));
+  color: var(--text-secondary, #c0c0d0);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.chat-quest-toggle-btn:hover {
+  background: rgba(255, 140, 26, 0.18);
+  border-color: rgba(255, 140, 26, 0.5);
+  color: var(--accent, #ff8c1a);
+}
+.chat-quest-toggle-btn:active {
+  transform: translateY(1px);
 }
 
 /* Local LLM status pill — sits in chat-input-area, only shown
