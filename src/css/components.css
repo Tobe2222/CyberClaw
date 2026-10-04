@@ -547,54 +547,48 @@
      padding space. Top padding kept for readability of
      multi-line messages; right padding kept the same so
      the pill's right-edge gap matches. */
-  /* v3.3.34: bump top padding to 24px so the per-bubble
-     quest stamp has clearance above the text. The stamp
-     is now positioned top-right (was bottom-right) and is
-     bigger / more opaque, so it needs vertical room to
-     not collide with the message text. */
-  padding: 24px 12px 4px 12px;
+  /* v3.3.36: bump top padding to 28px so the bigger
+     per-bubble quest stamp (now 11px bold with a
+     white border) has clearance above the message
+     text. The stamp is in the top-right corner. */
+  padding: 28px 12px 4px 12px;
 }
 .msg-quest-header {
   position: absolute;
-  right: 6px;
-  top: 3px;
+  right: 8px;
+  top: 6px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--accent, #ff8c1a);
-  /* v3.3.34: full opacity + bright solid background so
-     the pill is unmistakably a stamp on every bubble.
-     Tobe 2026-10-04 11:05: 'the right bottom text bubble
-     quest text is gone on the desktop, we should attach
-     the quest name text into all chat bubbles, almost
-     like a stamp, makes sense?' The pre-v3.3.34 pill
-     (opacity 0.85, dark background, 8px font) was too
-     easy to miss, especially on short bubbles where the
-     pill sat in 2px of bottom padding. Now: 10px bold
-     font, opaque accent background with dark text, top-
-     right corner like a postage stamp. Reads instantly
-     on any bubble. */
+  color: #1a1a1a;
+  /* v3.3.36: bigger, bolder, brighter pill. v3.3.34
+     shipped a 10px / opacity-1 / accent-bg pill but
+     Tobe 2026-10-04 13:34 still didn't see it on
+     casual-chat bubbles because the casual pill used
+     a low-contrast light-gray bg (rgba(180,180,200,0.9))
+     with dark text — it disappeared into the bubble's
+     teal/orange tint. Bump to 11px, dark text, solid
+     background (no alpha for both quest + casual
+     variants), 2px border for definition. The pill
+     is now a clear postage-stamp on every bubble. */
   opacity: 1;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 3px 9px;
+  border-radius: 12px;
   background: var(--accent, #ff8c1a);
   color: #1a1a1a;
-  border: 1px solid rgba(255, 200, 100, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
   pointer-events: none;
-  /* Don't widen the bubble or push the text — the pill
-     sits in the bubble's top-right corner. Capped at 60%
-     of the bubble's width so the pill never wraps. */
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.2;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 .msg-quest-header.no-quest {
-  color: #1a1a1a;
-  background: rgba(180, 180, 200, 0.9);
-  border-color: rgba(220, 220, 235, 0.7);
+  color: #ffffff;
+  background: #4a4a55;
+  border-color: rgba(255, 255, 255, 0.6);
   opacity: 1;
 }
 
