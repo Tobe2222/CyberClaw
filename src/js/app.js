@@ -3832,9 +3832,24 @@ const __sendChatMessageImpl = async function(message, attachments) {
   // The typingFailsafe is bumped proportionally (600s) so
   // the typing bubble survives long enough to cover a
   // full legitimate run.
-  const AGENT_TIMEOUT_MS = 900000; // 900s = 15 min
+  //
+  // v3.3.33: bumped to 1800s (30 min) per Tobe 2026-10-04
+  // 10:46: 'And lets extend the time cap since the error
+  // we seem to get often now is timeout.' The 15-min cap
+  // was still firing on multi-tool code-refactor /
+  // git-tag-please-actually-ship-this style workflows. The
+  // underlying LLM call keeps running on the gateway
+  // (openclaw default `timeoutSeconds` is 172800 = 48h),
+  // so extending the UI-side cap is purely a UX decision
+  // about how long we want the user to wait before we
+  // surface an error — the actual work still completes.
+  // 30 min covers the realistic worst-case Tobe's tasks
+  // have hit so far. typingFailsafe bumped to 1500s
+  // (25 min) so the typing bubble survives a full
+  // legitimate run.
+  const AGENT_TIMEOUT_MS = 1800000; // 1800s = 30 min
   const typingFailsafe = setTimeout(() => {
-    console.warn('[sendChatMessage] typing bubble > 600s, force-clearing');
+    console.warn('[sendChatMessage] typing bubble > 1500s, force-clearing');
     window.addDesktopLog?.('⚠️', 'AI still thinking after 600s — clearing indicator', message.substring(0, 60), 'warn');
     try { removeChatMsg(typingId); } catch {}
     try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
@@ -4530,7 +4545,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       }];
     }
   }
-  if (type === 'agent' || type === 'user' || type === 'agent-image') {
+  if (type === 'agent' || type === 'user' || type === 'agent-image' || type === 'error') {
     // v3.3.19: stamp activeQuestId and activeQuestName on
     // the flat mirror so the mobile can route each message
     // to the correct per-quest bucket on history fetch (the
@@ -4540,6 +4555,31 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
     // chat_history lands in the legacy DEFAULT bucket and
     // the user's active-quest view stays empty after a
     // cold start even though the desktop has the right
+    //
+    // v3.3.33: BUGFIX — also push `error` bubbles into
+    // the flat mirror. Previously the guard only matched
+    // agent / user / agent-image, so the realtime
+    // broadcast of the error (handled by the separate
+    // block at line ~4736) reached the mobile if it was
+    // online, but if the mobile was disconnected at the
+    // moment of broadcast (Android doze, app in
+    // background, brief network drop), the WS frame was
+    // lost. On reconnect, the mobile sent
+    // request_chat_history and got a chatHistory mirror
+    // that did NOT contain the error — so the user
+    // never saw the error on their phone even though
+    // it was clearly visible on the desktop.
+    // Tobe 2026-10-04 10:46: 'The errors still dont
+    // show on the mobile end ... see image. But Its an
+    // error i can see on the desktop and it does not
+    // reach the mobile chat.' The desktop log confirmed
+    // the broadcast fired (`[IPC] Message broadcast to
+    // mobile clients`) but the next client-connection
+    // was 20+ seconds later, by which time the realtime
+    // frame was gone and the chat_history replay had
+    // nothing to give back. Errors must persist in the
+    // mirror so chat_history replays them on every
+    // reconnect, not just on the realtime window.
     // per-quest history.
     //
     // activeQuestName is read sync from cachedQuestsList
@@ -4959,7 +4999,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   })();
   const questHeaderHtml = activeQuestNameForBubble
     ? `<span class="msg-quest-header">📜 ${escHtml(activeQuestNameForBubble)}</span>`
-    : `<span class="msg-quest-header no-quest">— No quest</span>`;
+    : `<span class="msg-quest-header no-quest">— Casual</span>`;
 
   switch (type) {
     case 'user':
@@ -8906,12 +8946,16 @@ window.sendChat = async function() {
     // paths. The 110s typingFailsafe became 300s.
     // v3.10.179: bumped to 900s (15 min) to match the
     // main path. Tobe 2026-08-30 11:56.
-    const AGENT_TIMEOUT_MS = 900000;
+    //
+    // v3.3.33: bumped to 1800s (30 min) to match the
+    // main path. Tobe 2026-10-04 10:46 — same reason
+    // as the main path bump.
+    const AGENT_TIMEOUT_MS = 1800000;
     const typingFailsafe = setTimeout(() => {
-      console.warn('[sendChat:img] typing bubble > 600s, force-clearing');
-      window.addDesktopLog?.('�️', 'AI still thinking after 600s (image path)', message.substring(0, 60), 'warn');
+      console.warn('[sendChat:img] typing bubble > 1500s, force-clearing');
+      window.addDesktopLog?.('�️', 'AI still thinking after 1500s (image path)', message.substring(0, 60), 'warn');
       try { removeChatMsg(typingId); } catch {}
-    }, 600000);
+    }, 1500000);
 
     try {
       let result;
@@ -8941,7 +8985,7 @@ window.sendChat = async function() {
             },
           ]),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('agent call timed out after 600s (image path)')), AGENT_TIMEOUT_MS)
+            setTimeout(() => reject(new Error('agent call timed out (current cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms=' + (AGENT_TIMEOUT_MS/1000) + 's) — the LLM call may still complete in the background (image path)')), AGENT_TIMEOUT_MS)
           ),
         ]);
       } catch (timeoutErr) {
