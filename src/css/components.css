@@ -827,13 +827,15 @@
 }
 .quest-dir-btn:hover { border-color: var(--cyan-dim); }
 
-.chat-quest-badge {
-  display: inline-block; font-size: 9px; padding: 2px 8px;
-  background: rgba(255,107,53,0.1); border: 1px solid rgba(255,107,53,0.25);
-  color: var(--gold); border-radius: 4px; margin-bottom: 4px;
-  font-family: var(--font-mono);
-}
-
+/* v3.3.35: the .chat-quest-badge rule (the small 9px
+   gold "📜 <name>" pill that used to sit just above the
+   chat input row) is removed. The v3.3.34 centered
+   #chat-quest-toggle pill is the single source of truth
+   for the chat-context marker. Tobe 2026-10-04 11:25:
+   'we can now remove the quest indicator right above
+   the attach file and user text input field.' The
+   <span id="chat-quest-indicator"> element is also
+   removed from index.html, so the rule has no target. */
 /* v3.3.34: centered quest-context toggle pill above the
    chat input. Replaces the v3.3.28 .chat-quest-badge as the
    user-visible indicator; the badge is kept hidden for

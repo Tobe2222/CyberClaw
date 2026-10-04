@@ -295,16 +295,25 @@
               <span class="chat-quest-toggle-pill" id="chat-quest-toggle-pill">📜 —</span>
               <button class="chat-quest-toggle-btn" id="chat-quest-toggle-btn" type="button" title="Switch chat context" onclick="toggleChatQuestContext()">↔ Casual</button>
             </div>
-            <!-- v3.3.34: the small chat-quest-indicator badge
-                 is now superseded by the new toggle above.
-                 Kept hidden (was display:none inline anyway)
-                 so any external JS that still updates
-                 chat-quest-indicator doesn't error. The
-                 `updateChatQuestIndicator()` function is
-                 still called for the in-renderer code paths
-                 that reference it but only the new toggle
-                 is visible to the user. -->
-            <span id="chat-quest-indicator" class="chat-quest-badge" style="display:none"></span>
+            <!-- v3.3.35: the small chat-quest-indicator
+                 badge (a 9px gold "📜 <name>" pill) that
+                 used to sit just above the chat input
+                 row is GONE. Tobe 2026-10-04 11:25:
+                 'we can now remove the quest indicator
+                 right above the attach file and user
+                 text input field.' The new centered
+                 #chat-quest-toggle pill is the single
+                 source of truth for the chat-context
+                 marker. The JS still calls
+                 `updateChatQuestIndicator()` from
+                 `setActiveQuestId` / `switchActiveChatQuest`
+                 for code-path compat, but the function
+                 no longer touches the legacy element
+                 (it's removed from the DOM). The element
+                 id "chat-quest-indicator" is reserved
+                 (will silently no-op if anything still
+                 references it) so any external callers
+                 don't break. -->
             <div id="llm-status-pill" class="llm-status-pill" style="display:none" title="">
               <span class="llm-dot"></span>
               <span class="llm-label"></span>

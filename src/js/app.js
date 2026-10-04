@@ -2567,27 +2567,20 @@ window.switchActiveChatQuest = function(newQuestId) {
 function updateChatQuestIndicator() {
   const el = document.getElementById('chat-quest-indicator');
   if (!el) return;
-  if (!activeQuestId) {
-    el.style.display = 'none';
-    el.textContent = '';
-    el.title = '';
-    return;
-  }
-  // v3.3.28 BUGFIX: read from module-scope cachedQuestsList
-  // (populated by quests_list broadcasts at line 7765). The
-  // previous `typeof quests !== 'undefined'` guard looked
-  // defensive but `quests` is never declared at module
-  // scope — it's only a function-local `const` inside other
-  // functions. So the lookup always resolved to `[]` and
-  // every quest chip rendered '(unknown quest)' even when
-  // the active quest was set. Matches the v3.3.28 fix in
-  // addChatMsg's per-bubble quest header.
-  const q = (Array.isArray(cachedQuestsList) ? cachedQuestsList : []).find(qq => qq && qq.id === activeQuestId);
-  const name = q ? q.name : '(unknown quest)';
-  const dir = q && q.directory ? q.directory : '';
-  el.textContent = `📜 ${name}`;
-  el.style.display = '';
-  el.title = dir || `Currently chatting on quest: ${name}`;
+  // v3.3.35: the small chat-quest-indicator badge is
+  // fully superseded by the v3.3.34 centered quest
+  // toggle. The pre-v3.3.35 code re-set `display: ''`
+  // here on every quest change, which un-hid the
+  // inline `display:none` and showed the legacy small
+  // badge alongside the new toggle. Tobe 2026-10-04
+  // 11:25: 'we can now remove the quest indicator
+  // right above the attach file and user text input
+  // field.' Force the legacy indicator to stay hidden
+  // and let the centered toggle be the single source
+  // of truth for the chat-context marker.
+  el.style.display = 'none';
+  el.textContent = '';
+  el.title = '';
   // Also fire the async refresh so directory / metadata
   // updates flow through.
   if (typeof updateQuestIndicator === 'function') {
@@ -2714,6 +2707,20 @@ window.toggleChatQuestContext = async function() {
     if (!btn || btn.disabled) return;
     const target = (btn.dataset && btn.dataset.target) || '';
     const targetId = target === '' ? null : target;
+    // v3.3.35: log the click + transition for debuggability.
+    // The 2026-10-04 11:25 user report ('dont have the
+    // toggles for current quest and casual switch places
+    // when clicked') was ambiguous — could mean the toggle
+    // doesn't appear, doesn't switch state, or doesn't
+    // switch the chat panel. The log below lets us tell
+    // which call site (if any) fires.
+    try {
+      console.log('[toggleChatQuestContext] click', {
+        prev: activeQuestId,
+        target: targetId,
+        ts: Date.now(),
+      });
+    } catch (_) {}
     // Optimistic local update — setActiveQuestId handles
     // the chat panel auto-jump and re-renders the toggle
     // pill in the new state.
@@ -2742,9 +2749,51 @@ function _renderStoredChatMsg(m, container, agentId) {
   const id = `chat-msg-${++chatMsgId}`;
   div.id = id;
   div.className = `chat-msg ${m.type}`;
+  // v3.3.34: compute the per-bubble quest pill from the
+  // stored message's `activeQuestId` (which was stamped
+  // by addChatMsg at the time the message was sent) and
+  // the current `cachedQuestsList` (which provides the
+  // quest name). Without this, _renderStoredChatMsg
+  // re-creates bubbles WITHOUT the quest pill on every
+  // renderer reload, and the user's chat history
+  // suddenly loses the per-bubble quest attribution
+  // they had in the previous session.
+  //
+  // Tobe 2026-10-04 11:25: 'Still dont see the chat
+  // watermark on the bottom right of the text bubbles
+  // on desktop, they might be applied forward tho.'
+  // Confirmed: the watermark was applied to NEW
+  // bubbles by addChatMsg (which has the
+  // `questHeaderHtml` prepend), but on every renderer
+  // reload _renderStoredChatMsg re-renders the entire
+  // chat history from localStorage WITHOUT the pill.
+  // The bubbles the user saw five minutes ago had the
+  // pill; the same bubbles after a page reload don't.
+  //
+  // The fix: mirror the questHeaderHtml logic from
+  // addChatMsg. Use the stored `m.activeQuestId` as
+  // the source of truth (not the live `activeQuestId`,
+  // which may have changed since the message was sent).
+  // Look up the quest name from `cachedQuestsList` for
+  // the displayed text; fall back to the stored
+  // `m.activeQuestName` if the quest isn't in the
+  // current list (deleted quest, etc.).
+  const storedQid = m.activeQuestId;
+  const storedName = (() => {
+    if (Array.isArray(cachedQuestsList) && storedQid) {
+      const q = cachedQuestsList.find(qq => qq && qq.id === storedQid);
+      if (q && q.name) return q.name;
+    }
+    return m.activeQuestName || null;
+  })();
+  const questHeaderHtml = storedQid
+    ? (storedName
+        ? `<span class="msg-quest-header">📜 ${escHtml(storedName)}</span>`
+        : '')
+    : `<span class="msg-quest-header no-quest">— Casual</span>`;
   switch (m.type) {
     case 'user':
-      div.innerHTML = `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'agent':
       // v3.1.21: the desktop now passes the resolved icon
@@ -2756,13 +2805,20 @@ function _renderStoredChatMsg(m, container, agentId) {
       // emoji. Otherwise the mobile's chat history (which was
       // broadcast earlier) shows a stray robot next to every
       // message from agents without an explicit emoji.
-      div.innerHTML = `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(m.text)}</span>`;
       break;
     case 'error':
-      div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(m.text)}</span>`;
+      // v3.3.34: also render the quest pill on error
+      // bubbles when re-rendering from storage. The
+      // pre-v3.3.34 error path skipped the pill entirely,
+      // so error bubbles loaded from history had no quest
+      // attribution even though the same error bubble
+      // (when added in-session by addChatMsg) did have
+      // one. Mirror the live behavior.
+      div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--red)">${escHtml(m.text)}</span>`;
       break;
   }
   container.appendChild(div);
@@ -5188,10 +5244,23 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
       break;
     case 'typing':
-      div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
+      // v3.3.34: include the quest pill on typing bubbles
+      // too. Pre-v3.3.34 the typing case skipped the pill
+      // (it was thought to be visual noise), but the
+      // per-bubble quest pill is now the user's primary
+      // affordance for knowing which quest the typing
+      // indicator is for. Same shape as the other cases.
+      div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
       break;
     case 'error':
-      div.innerHTML = `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
+      // v3.3.34: include the quest pill on error bubbles
+      // so the per-bubble quest attribution is consistent
+      // across all bubble types. Pre-v3.3.34 the error
+      // case skipped the pill, so an error fired while
+      // chatting on a quest (the most common case) had
+      // no quest attribution. Now: stamp it just like
+      // agent / user bubbles.
+      div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
       break;
     case 'agent-image':
       // v3.2.83: image attachment bubble. Renders a thumbnail
