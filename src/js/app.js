@@ -8497,7 +8497,6 @@ try {
         console.warn('[mobile-chat-with-attachments] switchActiveChat failed:', e?.message);
       }
     }
-    addChatMsg('user', text, null);
     const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
     // Convert main.js attachment shape to renderer's
     // expected shape (dataUri instead of data + mimeType).
@@ -8508,6 +8507,29 @@ try {
       size: a.size || 0,
       path: a.path || '',
     })).filter((a) => a.dataUri);
+    // v3.3.36 FIX (Tobe 2026-10-05 08:32): pass
+    //   attachments to addChatMsg so the chat_history
+    //   mirror and the sync-broadcast-chat broadcast
+    //   both carry them. Previously addChatMsg was
+    //   called with `null` as the attachments arg,
+    //   which meant the desktop's chatHistoryByAgent
+    //   stored the bubble WITHOUT attachments, and the
+    //   realtime broadcast sent `attachments: 0`.
+    //   On mobile reconnect / cold start, chat_history
+    //   replay returned a text-only bubble; the mobile
+    //   would dedupe by stableHistoryMessageId, but if
+    //   the local bubble's id differed, a duplicate
+    //   bubble without images would land in the
+    //   bucket. Even with dedupe, the persisted
+    //   chatHistory was the source of truth on
+    //   reconnect — and it had none.
+    //
+    //   Pass `rendererAttachments` so addChatMsg
+    //   persists them AND broadcasts them. The mobile's
+    //   onChat handler already accepts attachments on
+    //   the broadcast (v3.11.19 / HomeScreen.tsx
+    //   ~line 3814). Symmetry restored.
+    addChatMsg('user', text, null, null, rendererAttachments);
     const doSend = () => {
       if (typeof window.sendChatMessage === 'function') {
         window.sendChatMessage(llmText, rendererAttachments);
