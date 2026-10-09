@@ -40,6 +40,35 @@
       border: 1px solid var(--border-mid); border-radius: 4px;
       padding: 2px 6px; margin-top: 4px; display: inline-block;
     }
+    /* v3.1.34: friendlier "big choice" card row on step 0b */
+    .setup-choice {
+      display: flex; flex-direction: column; gap: 10px;
+      width: 100%; max-width: 520px; margin-top: 8px;
+    }
+    .setup-choice-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; border: 1px solid var(--border-mid);
+      border-radius: 8px; cursor: pointer; text-align: left;
+      background: rgba(255,255,255,0.02);
+      transition: background 0.12s, border-color 0.12s, transform 0.12s;
+    }
+    .setup-choice-card:hover {
+      background: rgba(0,212,255,0.06); border-color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .setup-choice-icon { font-size: 28px; flex-shrink: 0; }
+    .setup-choice-title {
+      color: var(--cyan); font-weight: 700; font-size: 13px;
+      margin-bottom: 2px; letter-spacing: 0.5px;
+    }
+    .setup-choice-desc {
+      color: var(--text-secondary); font-size: 11px; line-height: 1.5;
+    }
+    .setup-choice-desc code {
+      font-family: var(--font-mono); color: var(--gold);
+      background: rgba(0,0,0,0.2); padding: 1px 4px; border-radius: 3px;
+      font-size: 10px;
+    }
     .tb-btn { width: 36px; height: 28px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; border-radius: 4px; }
     .tb-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
     .tb-close:hover { background: var(--red); color: white; }
@@ -218,6 +247,37 @@
       <div class="btn-row">
         <button class="wizard-btn primary" id="btn-check" disabled>Continue</button>
         <button class="wizard-btn hidden" id="btn-import-existing" onclick="importFromOpenclaw()">Import from OpenClaw</button>
+      </div>
+    </div>
+
+    <!-- Step 0b: Companion setup (auto-detect or manual) -->
+    <div class="step" id="step-0b">
+      <div class="step-header">🐾 Set up your first companion</div>
+      <div class="step-desc">Pick one path: auto-detect existing agents from your local OpenClaw config, or import a project directory manually.</div>
+
+      <div class="setup-choice">
+        <div class="setup-choice-card" onclick="autoDetectCompanions()">
+          <div class="setup-choice-icon">⚡</div>
+          <div class="setup-choice-title">Auto-detect from OpenClaw</div>
+          <div class="setup-choice-desc">One click. Finds every agent already registered in <code>~/.openclaw/openclaw.json</code> and registers them as companions.</div>
+        </div>
+        <div class="setup-choice-card" onclick="importFromOpenclaw()">
+          <div class="setup-choice-icon">📥</div>
+          <div class="setup-choice-title">Import from OpenClaw (picker)</div>
+          <div class="setup-choice-desc">Shows a list of detected agents with a per-row "Use this one" button.</div>
+        </div>
+        <div class="setup-choice-card" onclick="showManualImport()">
+          <div class="setup-choice-icon">🔧</div>
+          <div class="setup-choice-title">Import a project directory manually</div>
+          <div class="setup-choice-desc">Point at any folder under <code>/media…cts/</code> that isn't yet a companion.</div>
+        </div>
+      </div>
+
+      <div id="auto-detect-result" class="hidden" style="margin-top:14px;padding:10px;border:1px solid var(--border-mid);border-radius:6px;font-size:11px;line-height:1.6"></div>
+
+      <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep(0)">Back</button>
+        <button class="wizard-btn primary" onclick="goStep(4)" id="btn-after-companion">Continue →</button>
       </div>
     </div>
 

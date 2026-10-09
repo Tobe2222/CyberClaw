@@ -1777,6 +1777,35 @@ async function importProjectAsQuest(project) {
   }
 }
 
+// v3.1.34: Auto-detect all unimported project directories and
+// register them as quests in one click. Used by the new
+// '⚡ Auto-detect All' button next to 'Import Existing' in the
+// quest form.
+window.autoDetectQuests = async function() {
+  const form = document.getElementById('quest-form');
+  if (form) form.classList.add('hidden');
+  try {
+    const res = await cyberclaw.quests.autoDetect();
+    if (!res) return;
+    const lines = [];
+    if (res.created && res.created.length > 0) {
+      lines.push('✓ Auto-registered ' + res.created.length + ' quest(s):');
+      for (const n of res.created) lines.push('  • ' + n);
+    }
+    if (res.skipped && res.skipped.length > 0) {
+      lines.push('— Already registered (skipped ' + res.skipped.length + '):');
+      for (const n of res.skipped) lines.push('  • ' + n);
+    }
+    if (lines.length === 0) lines.push('No new projects found in /media…cts/.');
+    alert(lines.join('\n'));
+  } catch (e) {
+    alert('Auto-detect failed: ' + (e && e.message ? e.message : String(e)));
+  } finally {
+    if (form) form.classList.remove('hidden');
+    renderQuests();
+  }
+};
+
 window.startQuestConversation = function() {
   // Switch to chat tab and send a system-prompted message to the companion
   switchTermTab('chat');

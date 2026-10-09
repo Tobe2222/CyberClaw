@@ -2,7 +2,59 @@
    CyberClaw — Setup Wizard Logic
    ============================================================ */
 
-// v3.1.34: stamp the wizard with the current package version
+// v3.1.34: Auto-detect companions from the local OpenClaw config.
+// Reads the existing openclaw:discover payload, then creates a
+// cyberclaw companion for each agent that isn't already registered
+// as a companion. One click — the user just sees a result list.
+window.autoDetectCompanions = async function() {
+  const result = document.getElementById('auto-detect-result');
+  if (result) { result.classList.remove('hidden'); result.textContent = 'Scanning ~/.openclaw/openclaw.json…'; }
+  try {
+    const discovery = await cyberclaw.openclaw.discover();
+    const agents = (discovery && Array.isArray(discovery.agents)) ? discovery.agents : [];
+    if (agents.length === 0) {
+      if (result) result.textContent = 'No agents found in ~/.openclaw/openclaw.json. Use the manual import option below.';
+      return;
+    }
+    // OpenClaw already has them registered; this wizard's
+    // `createAgent` is idempotent (it falls back to set-model on
+    // existing agents). Call it for each, then report.
+    const lines = ['Found ' + agents.length + ' agent(s) in OpenClaw:'];
+    for (const a of agents) {
+      try {
+        await cyberclaw.wizard.createAgent({
+          name: a.id || a.name,
+          vibe: 'openclaw',
+          model: (a.primaryModel || ''),
+          workspace: (a.workspace || ''),
+        });
+        const emoji = a.emoji || '🤖';
+        lines.push('✓ ' + emoji + ' ' + (a.name || a.id) + '  (model: ' + (a.primaryModel || 'default') + ')');
+      } catch (e) {
+        lines.push('✗ ' + (a.name || a.id) + '  failed: ' + (e && e.message ? e.message : String(e)));
+      }
+    }
+    lines.push('');
+    lines.push('All set. Click Continue to go to the channel-setup step.');
+    if (result) result.textContent = lines.join('\n');
+  } catch (e) {
+    if (result) result.textContent = 'Auto-detect failed: ' + (e && e.message ? e.message : String(e));
+  }
+};
+
+// v3.1.34: Manual import flow — let the user pick any directory on
+// disk as a new companion workspace. The directory doesn't need to
+// be in /media…cts/; it's a free-form folder picker.
+window.showManualImport = async function() {
+  // Reuse the existing projects scan + picker logic. The scan
+  // already filters out projects that are already quests/companions.
+  await showImportQuest();
+  // Override the picker header so the user knows this creates a
+  // *companion* not a quest. (Import flow is shared; the resulting
+  // IPC creates whatever the user has invoked.)
+  const header = document.querySelector('.quest-import-header');
+  if (header) header.textContent = 'Pick a folder to use as a companion workspace:';
+};
 // so the user can confirm at a glance which code is loaded.
 // Uses the `wizard:get-version` IPC bridge (CSP blocks the renderer's
 // file:// fetch, so we ask main.js to read package.json for us).
@@ -100,8 +152,12 @@ async function runChecks() {
       if (importBtn) importBtn.classList.remove('hidden');
       btn.onclick = () => launchApp();
     } else {
-      btn.textContent = 'Create Companion →';
-      btn.onclick = () => goStep(3);
+      // v3.1.34: no agents yet — send the user to the new
+      // step-0b companion-setup screen so they can pick auto-
+      // detect, picker, or manual. Skip the "create a random
+      // companion" old default.
+      btn.textContent = 'Set Up Companion →';
+      btn.onclick = () => goStep('0b');
     }
   }
 }

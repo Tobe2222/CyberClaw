@@ -1820,6 +1820,42 @@ ipcMain.handle('quests:scan-projects', async () => {
   } catch {}
   return out;
 });
+
+// v3.1.34: auto-detect all candidate quests at once (used by the
+// new "Auto-detect" button on the quest form). Reads the
+// projects directory, skips already-registered ones, and
+// registers each remaining one in a single pass.
+ipcMain.handle('quests:auto-detect', async () => {
+  const projectsRoot = '/media/dick/CYBERDRIVE/2B/work/projects';
+  const created = [];
+  const skipped = [];
+  try {
+    const existing = loadQuests();
+    const existingDirs = new Set(existing.map(q => (q.directory || '').replace(/\/$/, '')));
+    const entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(projectsRoot, e.name);
+      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue;
+      if (existingDirs.has(full)) { skipped.push(e.name); continue; }
+      try {
+        loadQuests().push({
+          id: e.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+          name: e.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          description: 'Auto-detected from ' + full,
+          directory: full,
+          questFilesDir: path.join(full, 'quest'),
+          active: false,
+          latestChanges: [],
+          conversationLog: ['[2026-10-09] Auto-detected by cyberclaw companion (quests:auto-detect IPC).']
+        });
+        created.push(e.name);
+      } catch {}
+    }
+    saveQuests();
+  } catch {}
+  return { created, skipped };
+});
 ipcMain.handle('quests:create', (event, quest) => {
   const quests = loadQuests();
   quest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
