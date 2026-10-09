@@ -4,19 +4,19 @@
 
 // v3.1.34: stamp the wizard with the current package version
 // so the user can confirm at a glance which code is loaded.
-// Reads from package.json once at load; if it fails, falls back
-// to a literal "dev" so the pill is never blank.
+// Uses the `wizard:get-version` IPC bridge (CSP blocks the renderer's
+// file:// fetch, so we ask main.js to read package.json for us).
+// Falls back to a literal "v-dev" so the pill is never blank.
 (async function stampWizardVersion() {
+  let version = null;
   try {
-    const pkg = await (typeof fetch === 'function'
-      ? fetch('../../package.json').then(r => r.ok ? r.json() : null).catch(() => null)
-      : Promise.resolve(null));
-    const el = document.getElementById('wizard-version-pill');
-    if (!el) return;
-    if (pkg && pkg.version) { el.textContent = 'v' + pkg.version; return; }
+    if (cyberclaw && cyberclaw.wizard && typeof cyberclaw.wizard.getVersion === 'function') {
+      version = await cyberclaw.wizard.getVersion();
+    }
   } catch {}
   const el = document.getElementById('wizard-version-pill');
-  if (el) el.textContent = 'v3.1.34-dev';
+  if (!el) return;
+  el.textContent = version ? 'v' + version : 'v-dev';
 })();
 
 

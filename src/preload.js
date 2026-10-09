@@ -227,5 +227,6 @@ window.cyberclaw = {
     startGateway: () => ipcRenderer.invoke('wizard:start-gateway'),
     launch: () => ipcRenderer.invoke('wizard:launch'),
     listOpenclawAgents: () => ipcRenderer.invoke('wizard:list-openclaw-agents'),
+    getVersion: () => ipcRenderer.invoke('wizard:get-version'),
   },
 };

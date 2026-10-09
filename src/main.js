@@ -3425,6 +3425,23 @@ function execPromise(cmd) {
   });
 }
 
+ipcMain.handle('wizard:get-version', () => {
+  // v3.1.34: read the actual package.json from disk so the
+  // wizard's version pill shows the real version (e.g. "v3.3.37")
+  // instead of the hardcoded fallback the renderer's CSP-blocked
+  // fetch had to use. Cached at module load so each call is cheap.
+  if (!wizardGetVersionCache) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+      wizardGetVersionCache = String(pkg.version || 'unknown');
+    } catch {
+      wizardGetVersionCache = 'unknown';
+    }
+  }
+  return wizardGetVersionCache;
+});
+let wizardGetVersionCache = null;
+
 ipcMain.handle('wizard:check', async (event, what) => {
   switch (what) {
     case 'check-node':
