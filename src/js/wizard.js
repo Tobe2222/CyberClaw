@@ -92,6 +92,12 @@ async function runChecks() {
     const hasAgents = await cyberclaw.wizard.check('check-agents');
     if (hasAgents.ok && hasAgents.count > 0) {
       btn.textContent = 'Launch CyberClaw →';
+      // v3.1.34: also show the Import from OpenClaw button so
+      // the user can pick a different agent without having to
+      // uninstall existing ones first. The importFromOpenclaw()
+      // function is defined in step-3 of this same wizard.
+      const importBtn = document.getElementById('btn-import-existing');
+      if (importBtn) importBtn.classList.remove('hidden');
       btn.onclick = () => launchApp();
     } else {
       btn.textContent = 'Create Companion →';
