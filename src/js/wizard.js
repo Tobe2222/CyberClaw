@@ -327,66 +327,112 @@ async function importFromOpenclaw() {
   listEl.innerHTML = '';
   const loading = document.createElement('div');
   loading.className = 'wt-line info';
-  loading.textContent = 'Scanning ~/.openclaw/openclaw.json…';
+  loading.textContent = 'Scanning ~/.openclaw/openclaw.json and /media…cts/…';
   listEl.appendChild(loading);
 
   // Switch view first so the user sees the picker skeleton immediately.
   goStep('3b');
 
-  let result;
-  try {
-    result = await cyberclaw.wizard.listOpenclawAgents();
-  } catch (err) {
-    listEl.innerHTML = '';
-    const errLine = document.createElement('div');
-    errLine.className = 'wt-line error';
-    errLine.textContent = 'Failed to read OpenClaw config: ' + (err && err.message ? err.message : String(err));
-    listEl.appendChild(errLine);
-    return;
-  }
+  // v3.1.34: pull from BOTH sources — the openclaw config
+  // (agents.entries) and the cyberdrive project directories
+  // (/media…cts/) — and render a unified picker.
+  let openclawResult = { agents: [] };
+  let projects = [];
+  try { openclawResult = await cyberclaw.wizard.listOpenclawAgents(); } catch {}
+  try { projects = await cyberclaw.quests.scanProjects(); } catch {}
 
-  const agents = (result && Array.isArray(result.agents)) ? result.agents : [];
+  const openclawAgents = (openclawResult && Array.isArray(openclawResult.agents)) ? openclawResult.agents : [];
   listEl.innerHTML = '';
 
-  if (agents.length === 0) {
+  if (openclawAgents.length === 0 && projects.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'wt-line warn';
-    empty.textContent = 'No agents found in ~/.openclaw/openclaw.json. Create one first or go Back.';
+    empty.textContent = 'No agents in ~/.openclaw/openclaw.json and no unimported project directories under /media…cts/. Create one first or go Back.';
     listEl.appendChild(empty);
     return;
   }
 
-  for (const a of agents) {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 4px; border-bottom:1px solid var(--border-mid);';
-
-    const info = document.createElement('div');
-    info.style.cssText = 'flex:1; min-width:0;';
-    const nameRow = document.createElement('div');
-    nameRow.style.cssText = 'color:var(--cyan); font-weight:600;';
-    const emoji = a.emoji || '🤖';
-    const idSuffix = a.id ? ' (' + a.id + ')' : '';
-    nameRow.textContent = emoji + ' ' + (a.name || a.id || 'unnamed') + idSuffix;
-    const wsRow = document.createElement('div');
-    wsRow.style.cssText = 'color:var(--text-secondary); font-size:10px; margin-top:2px;';
-    wsRow.textContent = a.workspace || '— no workspace —';
-    const modelRow = document.createElement('div');
-    modelRow.style.cssText = 'color:var(--text-muted); font-size:10px; margin-top:2px;';
-    modelRow.textContent = 'model: ' + (a.primaryModel || '(default)');
-    info.appendChild(nameRow);
-    info.appendChild(wsRow);
-    info.appendChild(modelRow);
-
-    const btn = document.createElement('button');
-    btn.className = 'wizard-btn primary';
-    btn.style.cssText = 'padding:6px 12px; font-size:11px; flex-shrink:0;';
-    btn.textContent = 'Use this one';
-    btn.onclick = () => useOpenclawAgent(a);
-
-    row.appendChild(info);
-    row.appendChild(btn);
-    listEl.appendChild(row);
+  // OpenClaw agents section
+  if (openclawAgents.length > 0) {
+    const head = document.createElement('div');
+    head.className = 'wt-line info';
+    head.textContent = 'From OpenClaw config (' + openclawAgents.length + '):';
+    head.style.fontWeight = '600';
+    listEl.appendChild(head);
+    for (const a of openclawAgents) {
+      listEl.appendChild(buildImportRow({
+        id: a.id, name: a.name || a.id || 'unnamed',
+        meta: (a.workspace || '— no workspace —') + ' · ' + (a.primaryModel || 'default'),
+        emoji: a.emoji || '🤖', workspace: a.workspace || '',
+      }));
+    }
   }
+
+  // Project directories section
+  if (projects.length > 0) {
+    const head = document.createElement('div');
+    head.className = 'wt-line info';
+    head.textContent = 'From /media…cts/ (' + projects.length + '):';
+    head.style.fontWeight = '600';
+    head.style.marginTop = openclawAgents.length > 0 ? '12px' : '0';
+    listEl.appendChild(head);
+    for (const p of projects) {
+      listEl.appendChild(buildImportRow({
+        id: p.name, name: p.name, meta: p.path, emoji: '📁',
+        workspace: p.path,
+      }));
+    }
+  }
+
+  // Manual directory picker
+  const manualWrap = document.createElement('div');
+  manualWrap.style.cssText = 'margin-top:14px; text-align:center;';
+  const manualBtn = document.createElement('button');
+  manualBtn.className = 'wizard-btn primary';
+  manualBtn.textContent = '📂 Pick a different directory…';
+  manualBtn.onclick = async () => {
+    if (window.cyberclaw && cyberclaw.quests && cyberclaw.quests.pickDirectory) {
+      const dir = await cyberclaw.quests.pickDirectory();
+      if (dir) {
+        const name = dir.split('/').filter(Boolean).pop() || dir;
+        listEl.appendChild(buildImportRow({
+          id: name, name: name, meta: dir, emoji: '📂', workspace: dir,
+        }));
+      }
+    }
+  };
+  manualWrap.appendChild(manualBtn);
+  listEl.appendChild(manualWrap);
+}
+
+// Build a single "Use this one" row in the import picker.
+function buildImportRow(_o) {
+  const _row = document.createElement('div');
+  _row.className = 'wt-line';
+  _row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 4px; border-bottom:1px solid var(--border-mid);';
+  const _info = document.createElement('div');
+  _info.style.cssText = 'flex:1; min-width:0;';
+  const _nameEl = document.createElement('div');
+  _nameEl.style.cssText = 'color:var(--cyan); font-weight:600;';
+  _nameEl.textContent = (_o.emoji || '🤖') + ' ' + (_o.name || _o.id);
+  const _pathEl = document.createElement('div');
+  _pathEl.style.cssText = 'color:var(--text-muted); font-size:10px; margin-top:2px; word-break:break-all;';
+  _pathEl.textContent = _o.meta;
+  _info.appendChild(_nameEl);
+  _info.appendChild(_pathEl);
+  const _btn = document.createElement('button');
+  _btn.className = 'wizard-btn primary';
+  _btn.style.cssText = 'padding:6px 12px; font-size:11px; flex-shrink:0;';
+  _btn.textContent = 'Use this one';
+  _btn.onclick = () => useOpenclawAgent({
+    name: _o.id,
+    workspace: _o.workspace || '',
+    primaryModel: '',
+    emoji: _o.emoji,
+  });
+  _row.appendChild(_info);
+  _row.appendChild(_btn);
+  return _row;
 }
 
 async function useOpenclawAgent(agent) {

@@ -800,7 +800,13 @@ function discoverAgents() {
   const config = readOpenClawConfig();
   if (!config) return { agents: [], bindings: [], subagents: [] };
 
-  const agentList = config.agents?.list || [];
+  // v3.1.34: read from BOTH `entries` (modern key the openclaw
+  // CLI writes) and `list` (legacy key the wizard used to write).
+  // Without this fallback, the wizard's import flow always
+  // showed "No agents found" because the openclaw config uses
+  // `entries` and `discoverAgents` was looking at `list`.
+  const _agentEntries = config.agents?.entries && Object.values(config.agents.entries);
+  const agentList = _agentEntries || config.agents?.list || [];
   const bindings = config.bindings || [];
   const defaults = config.agents?.defaults || {};
 

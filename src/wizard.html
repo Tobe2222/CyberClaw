@@ -124,10 +124,11 @@
 
     /* Buttons */
     .wizard-btn {
-      padding: 10px 28px; border: 2px solid var(--cyan); background: transparent;
-      color: var(--cyan); font-family: var(--font-cyber); font-size: 13px;
-      letter-spacing: 2px; cursor: pointer; border-radius: 6px;
+      padding: 8px 18px; border: 2px solid var(--cyan); background: transparent;
+      color: var(--cyan); font-family: var(--font-cyber); font-size: 12px;
+      letter-spacing: 1.5px; cursor: pointer; border-radius: 6px;
       transition: all 0.2s; text-transform: uppercase;
+      max-width: 240px; margin: 6px 4px;
     }
     .wizard-btn:hover {
       background: rgba(0,255,204,0.1); box-shadow: 0 0 15px rgba(0,255,204,0.2);
@@ -141,7 +142,12 @@
     .wizard-btn.gold { border-color: var(--gold); color: var(--gold); }
     .wizard-btn.gold:hover { background: rgba(251,191,36,0.1); box-shadow: 0 0 15px rgba(251,191,36,0.2); }
 
-    .btn-row { display: flex; gap: 12px; margin-top: 16px; }
+    .btn-row {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 20px 16px 8px 16px; padding: 0 8px;
+      justify-content: center; align-items: center;
+      max-width: 520px; margin-left: auto; margin-right: auto;
+    }
 
     /* Progress dots */
     .progress-dots {
