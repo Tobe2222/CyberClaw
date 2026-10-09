@@ -3430,9 +3430,10 @@ ipcMain.handle('wizard:get-version', () => {
   // wizard's version pill shows the real version (e.g. "v3.3.37")
   // instead of the hardcoded fallback the renderer's CSP-blocked
   // fetch had to use. Cached at module load so each call is cheap.
+  // main.js lives in src/, so package.json is one directory up.
   if (!wizardGetVersionCache) {
     try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
       wizardGetVersionCache = String(pkg.version || 'unknown');
     } catch {
       wizardGetVersionCache = 'unknown';
