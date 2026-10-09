@@ -45,8 +45,16 @@
           <input type="text" id="quest-dir-input" placeholder="Project directory (optional)..." readonly />
           <button class="quest-dir-btn" onclick="pickQuestDir()">📁</button>
         </div>
+        <div class="quest-import-picker hidden" id="quest-import-picker">
+          <div class="quest-import-header">Pick a project to import as a quest:</div>
+          <div class="quest-import-list" id="quest-import-list"><div class="quest-import-loading">Scanning…</div></div>
+          <div class="quest-import-actions">
+            <button class="quest-form-btn cancel" onclick="hideImportQuest()">Cancel</button>
+          </div>
+        </div>
         <div class="quest-form-actions">
           <button class="quest-form-btn save" onclick="createQuest()">Create</button>
+          <button class="quest-form-btn import" onclick="showImportQuest()">Import Existing</button>
           <button class="quest-form-btn cancel" onclick="hideQuestForm()">Cancel</button>
         </div>
       </div>

@@ -115,6 +115,7 @@ window.cyberclaw = {
     delete: (id) => ipcRenderer.invoke('quests:delete', id),
     pickDirectory: () => ipcRenderer.invoke('quests:pick-directory'),
     detectVersion: (dir) => ipcRenderer.invoke('quests:detect-version', dir),
+    scanProjects: () => ipcRenderer.invoke('quests:scan-projects'),
     // v3.1.50: active-quest management. The "active" quest is the
     // one the companion is currently working on. Exactly one is
     // active at a time; passing null to setActive clears all.

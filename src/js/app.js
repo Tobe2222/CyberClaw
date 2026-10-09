@@ -1708,7 +1708,74 @@ window.hideQuestForm = function() {
   document.getElementById('quest-name-input').value = '';
   document.getElementById('quest-desc-input').value = '';
   document.getElementById('quest-dir-input').value = '';
+  const p = document.getElementById('quest-import-picker');
+  if (p) p.classList.add('hidden');
 };
+
+// v3.1.34: Import Existing flow — show a picker of project dirs
+// from /media/dick/CYBERDRIVE/2B/work/projects/, click one to
+// create a quest pointing at that directory. Reuses the
+// `quests:create` IPC with the path pre-filled.
+window.showImportQuest = async function() {
+  document.getElementById('quest-form').classList.add('hidden');
+  const p = document.getElementById('quest-import-picker');
+  if (p) p.classList.remove('hidden');
+  const list = document.getElementById('quest-import-list');
+  if (list) list.innerHTML = '<div class="quest-import-loading">Scanning…</div>';
+  try {
+    const projects = await cyberclaw.quests.scanProjects();
+    if (!list) return;
+    if (!projects || projects.length === 0) {
+      list.innerHTML = '<div class="quest-import-loading">No unimported projects found in /media/dick/CYBERDRIVE/2B/work/projects/.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const proj of projects) {
+      const row = document.createElement('div');
+      row.className = 'quest-import-row';
+      const info = document.createElement('div');
+      info.className = 'quest-import-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'quest-import-name';
+      nameEl.textContent = proj.name;
+      const pathEl = document.createElement('div');
+      pathEl.className = 'quest-import-path';
+      pathEl.textContent = proj.path;
+      info.appendChild(nameEl);
+      info.appendChild(pathEl);
+      const btn = document.createElement('button');
+      btn.className = 'quest-form-btn save';
+      btn.textContent = 'Import';
+      btn.onclick = () => importProjectAsQuest(proj);
+      row.appendChild(info);
+      row.appendChild(btn);
+      list.appendChild(row);
+    }
+  } catch (e) {
+    if (list) list.innerHTML = '<div class="quest-import-loading">Failed to scan: ' + (e && e.message ? e.message : String(e)) + '</div>';
+  }
+};
+
+window.hideImportQuest = function() {
+  const p = document.getElementById('quest-import-picker');
+  if (p) p.classList.add('hidden');
+  // Re-open the main form so the user can still create from scratch.
+  document.getElementById('quest-form').classList.remove('hidden');
+};
+
+async function importProjectAsQuest(project) {
+  try {
+    await cyberclaw.quests.create({
+      name: project.name,
+      description: 'Imported from ' + project.path,
+      directory: project.path,
+    });
+    hideImportQuest();
+    renderQuests();
+  } catch (e) {
+    alert('Failed to import: ' + (e && e.message ? e.message : String(e)));
+  }
+}
 
 window.startQuestConversation = function() {
   // Switch to chat tab and send a system-prompted message to the companion

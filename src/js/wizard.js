@@ -2,6 +2,24 @@
    CyberClaw — Setup Wizard Logic
    ============================================================ */
 
+// v3.1.34: stamp the wizard with the current package version
+// so the user can confirm at a glance which code is loaded.
+// Reads from package.json once at load; if it fails, falls back
+// to a literal "dev" so the pill is never blank.
+(async function stampWizardVersion() {
+  try {
+    const pkg = await (typeof fetch === 'function'
+      ? fetch('../../package.json').then(r => r.ok ? r.json() : null).catch(() => null)
+      : Promise.resolve(null));
+    const el = document.getElementById('wizard-version-pill');
+    if (!el) return;
+    if (pkg && pkg.version) { el.textContent = 'v' + pkg.version; return; }
+  } catch {}
+  const el = document.getElementById('wizard-version-pill');
+  if (el) el.textContent = 'v3.1.34-dev';
+})();
+
+
 let currentStep = 0;
 let systemState = { node: false, npm: false, openclaw: false, gateway: false };
 let selectedChannel = null;
