@@ -277,7 +277,20 @@
       </div>
       <div class="btn-row">
         <button class="wizard-btn" onclick="goStep(2)">Back</button>
+        <button class="wizard-btn" onclick="importFromOpenclaw()">Import from OpenClaw</button>
         <button class="wizard-btn primary" onclick="createCompanion()">Create Companion</button>
+      </div>
+    </div>
+
+    <!-- Step 3b: Import from OpenClaw -->
+    <div class="step" id="step-3b">
+      <div class="step-header">📥 Import from OpenClaw</div>
+      <div class="step-desc">Existing agents already registered in your local OpenClaw config. Pick one to use as your first companion instead of creating a new one.</div>
+      <div id="openclaw-agent-list" class="wizard-terminal" style="min-height: 140px;">
+        <div class="wt-line info">Scanning ~/.openclaw/openclaw.json…</div>
+      </div>
+      <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep(3)">Back</button>
       </div>
     </div>
 

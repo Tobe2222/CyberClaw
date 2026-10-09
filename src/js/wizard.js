@@ -233,6 +233,98 @@ async function createCompanion() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// v3.1.34: Import from OpenClaw
+//   Reuses `openclaw:discover` via the `wizard:list-openclaw-agents` bridge.
+//   On pick, calls `createAgent` with the existing agent's id, workspace,
+//   and primary model — `openclaw agents add` is idempotent (it falls back
+//   to set-model if the agent already exists), so this is safe to run on
+//   agents that are already registered in OpenClaw.
+// ---------------------------------------------------------------------------
+async function importFromOpenclaw() {
+  const listEl = document.getElementById('openclaw-agent-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  const loading = document.createElement('div');
+  loading.className = 'wt-line info';
+  loading.textContent = 'Scanning ~/.openclaw/openclaw.json…';
+  listEl.appendChild(loading);
+
+  // Switch view first so the user sees the picker skeleton immediately.
+  goStep('3b');
+
+  let result;
+  try {
+    result = await cyberclaw.wizard.listOpenclawAgents();
+  } catch (err) {
+    listEl.innerHTML = '';
+    const errLine = document.createElement('div');
+    errLine.className = 'wt-line error';
+    errLine.textContent = 'Failed to read OpenClaw config: ' + (err && err.message ? err.message : String(err));
+    listEl.appendChild(errLine);
+    return;
+  }
+
+  const agents = (result && Array.isArray(result.agents)) ? result.agents : [];
+  listEl.innerHTML = '';
+
+  if (agents.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'wt-line warn';
+    empty.textContent = 'No agents found in ~/.openclaw/openclaw.json. Create one first or go Back.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  for (const a of agents) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 4px; border-bottom:1px solid var(--border-mid);';
+
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1; min-width:0;';
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'color:var(--cyan); font-weight:600;';
+    const emoji = a.emoji || '🤖';
+    const idSuffix = a.id ? ' (' + a.id + ')' : '';
+    nameRow.textContent = emoji + ' ' + (a.name || a.id || 'unnamed') + idSuffix;
+    const wsRow = document.createElement('div');
+    wsRow.style.cssText = 'color:var(--text-secondary); font-size:10px; margin-top:2px;';
+    wsRow.textContent = a.workspace || '— no workspace —';
+    const modelRow = document.createElement('div');
+    modelRow.style.cssText = 'color:var(--text-muted); font-size:10px; margin-top:2px;';
+    modelRow.textContent = 'model: ' + (a.primaryModel || '(default)');
+    info.appendChild(nameRow);
+    info.appendChild(wsRow);
+    info.appendChild(modelRow);
+
+    const btn = document.createElement('button');
+    btn.className = 'wizard-btn primary';
+    btn.style.cssText = 'padding:6px 12px; font-size:11px; flex-shrink:0;';
+    btn.textContent = 'Use this one';
+    btn.onclick = () => useOpenclawAgent(a);
+
+    row.appendChild(info);
+    row.appendChild(btn);
+    listEl.appendChild(row);
+  }
+}
+
+async function useOpenclawAgent(agent) {
+  const name = (agent && (agent.id || agent.name)) ? String(agent.id || agent.name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-') : '';
+  if (!name) { alert('Agent has no usable id'); return; }
+  try {
+    await cyberclaw.wizard.createAgent({
+      name,
+      vibe: 'openclaw',
+      model: (agent && agent.primaryModel) || '',
+      workspace: (agent && agent.workspace) || '',
+    });
+    goStep(4);
+  } catch (err) {
+    alert('Failed: ' + (err && err.message ? err.message : String(err)));
+  }
+}
+
 // v3.1.33: populate the wizard's model picker from the
 // configured providers + LLM endpoints. Called when the
 // user first reaches step 3. We mirror refreshForgeModelDropdowns

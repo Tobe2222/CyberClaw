@@ -922,6 +922,8 @@ function discoverAgents() {
 
 ipcMain.handle('openclaw:discover', () => discoverAgents());
 
+ipcMain.handle('wizard:list-openclaw-agents', () => discoverAgents());
+
 // Pop-out companion arena window
 let companionWindow = null;
 ipcMain.handle('arena:popout', (event, state) => {
