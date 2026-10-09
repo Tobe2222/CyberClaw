@@ -314,13 +314,192 @@ async function createCompanion() {
 }
 
 // ---------------------------------------------------------------------------
-// v3.1.34: Import from OpenClaw
-//   Reuses `openclaw:discover` via the `wizard:list-openclaw-agents` bridge.
-//   On pick, calls `createAgent` with the existing agent's id, workspace,
-//   and primary model — `openclaw agents add` is idempotent (it falls back
-//   to set-model if the agent already exists), so this is safe to run on
-//   agents that are already registered in OpenClaw.
+// v3.1.34: Import page — multi-select from BOTH OpenClaw config
+// and cyberdrive project directories, plus a folder browser for
+// picking any directory manually. One import button to register
+// them all.
 // ---------------------------------------------------------------------------
+
+// Render the multi-select import list. Re-runs every time the
+// user adds a manual directory or switches back to this step.
+async function renderImportList() {
+  const listEl = document.getElementById('import-list');
+  const errEl = document.getElementById('import-error');
+  if (errEl) { errEl.classList.add('hidden'); errEl.textContent = ''; }
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="wt-line info" id="import-loading">Scanning ~/.openclaw/openclaw.json and /media…cts/…</div>';
+
+  let openclawResult = { agents: [] };
+  let projects = [];
+  try { openclawResult = await cyberclaw.wizard.listOpenclawAgents(); } catch (e) { /* show in error box */ }
+  try { projects = await cyberclaw.quests.scanProjects(); } catch (e) { /* show in error box */ }
+
+  const openclawAgents = (openclawResult && Array.isArray(openclawResult.agents)) ? openclawResult.agents : [];
+  const manualItems = (window.__importManualItems || []);
+  const items = [];
+  openclawAgents.forEach((a) => {
+    items.push({
+      kind: 'openclaw',
+      id: a.id,
+      name: a.name || a.id || 'unnamed',
+      meta: (a.workspace || '— no workspace —') + ' · ' + (a.primaryModel || 'default'),
+      workspace: a.workspace || '',
+      primaryModel: a.primaryModel || '',
+      checked: true,
+    });
+  });
+  projects.forEach((p) => {
+    items.push({
+      kind: 'project',
+      id: p.name,
+      name: p.name,
+      meta: p.path,
+      workspace: p.path,
+      primaryModel: '',
+      checked: true,
+    });
+  });
+  manualItems.forEach((m) => {
+    items.push({
+      kind: 'manual',
+      id: m.name,
+      name: m.name,
+      meta: m.path,
+      workspace: m.path,
+      primaryModel: '',
+      checked: true,
+    });
+  });
+
+  listEl.innerHTML = '';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'wt-line warn';
+    empty.textContent = 'No agents in ~/.openclaw/openclaw.json and no unimported project directories under /media…cts/. Use “📂 Pick a directory…” below to add one manually.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  // Group items by kind, with section headers
+  const groups = [
+    { kind: 'openclaw', header: 'From OpenClaw config (' + openclawAgents.length + ')' },
+    { kind: 'project', header: 'From /media…cts/ (' + projects.length + ')' },
+    { kind: 'manual', header: 'Manually picked (' + manualItems.length + ')' },
+  ];
+  groups.forEach((g) => {
+    const gItems = items.filter((i) => i.kind === g.kind);
+    if (gItems.length === 0) return;
+    const head = document.createElement('div');
+    head.className = 'wt-line info';
+    head.textContent = g.header;
+    head.style.cssText = 'font-weight:600; margin-top:8px;';
+    listEl.appendChild(head);
+    gItems.forEach((it) => listEl.appendChild(buildImportRowEl(it)));
+  });
+}
+
+function buildImportRowEl(item) {
+  const wrap = document.createElement('label');
+  wrap.style.cssText = 'display:flex; align-items:flex-start; gap:8px; padding:6px 4px; border-bottom:1px solid var(--border-mid); cursor:pointer;';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!item.checked;
+  cb.dataset.kind = item.kind;
+  cb.dataset.id = item.id;
+  cb.style.cssText = 'margin-top:2px; flex-shrink:0;';
+  wrap.appendChild(cb);
+  const info = document.createElement('div');
+  info.style.cssText = 'flex:1; min-width:0;';
+  const nameEl = document.createElement('div');
+  nameEl.style.cssText = 'color:var(--cyan); font-weight:600; font-size:11px;';
+  nameEl.textContent = item.name;
+  const metaEl = document.createElement('div');
+  metaEl.style.cssText = 'color:var(--text-muted); font-size:9px; word-break:break-all;';
+  metaEl.textContent = item.meta;
+  info.appendChild(nameEl);
+  info.appendChild(metaEl);
+  wrap.appendChild(info);
+  return wrap;
+}
+
+// Import all checked items.
+async function importSelected() {
+  const listEl = document.getElementById('import-list');
+  if (!listEl) return;
+  const errEl = document.getElementById('import-error');
+  const checked = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked')).map((cb) => ({
+    kind: cb.dataset.kind, id: cb.dataset.id,
+  }));
+  if (checked.length === 0) {
+    if (errEl) {
+      errEl.textContent = 'Pick at least one item to import.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  // Snapshot the current items (since renderImportList may rebuild the DOM)
+  const snapshot = window.__importListSnapshot || [];
+  const targets = checked.map((c) => {
+    const it = snapshot.find((s) => s.kind === c.kind && s.id === c.id);
+    return it || null;
+  }).filter(Boolean);
+  let ok = 0, fail = 0;
+  for (const it of targets) {
+    try {
+      const name = String(it.id || it.name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+      await cyberclaw.wizard.createAgent({
+        name,
+        vibe: 'openclaw',
+        model: it.primaryModel || '',
+        workspace: it.workspace || '',
+      });
+      ok++;
+    } catch (e) {
+      fail++;
+      if (errEl) {
+        errEl.textContent = 'Imported ' + ok + ', failed: ' + (e && e.message ? e.message : String(e));
+        errEl.classList.remove('hidden');
+      }
+    }
+  }
+  if (fail === 0) {
+    // Clear manual items after a successful import
+    window.__importManualItems = [];
+    // Move on to the next step
+    const btn = document.getElementById('btn-after-companion');
+    if (btn) btn.classList.remove('hidden');
+    const importBtn = document.getElementById('btn-import-selected');
+    if (importBtn) importBtn.classList.add('hidden');
+    goStep(4);
+  }
+}
+
+// Open the system folder picker so the user can pick any
+// directory on disk, not just the suggested /media…cts/ ones.
+async function importFromManualDir() {
+  if (!window.cyberclaw || !cyberclaw.quests || !cyberclaw.quests.pickDirectory) return;
+  const dir = await cyberclaw.quests.pickDirectory();
+  if (!dir) return;
+  if (!window.__importManualItems) window.__importManualItems = [];
+  // Don't add duplicates
+  if (!window.__importManualItems.find((m) => m.path === dir)) {
+    const name = dir.split('/').filter(Boolean).pop() || dir;
+    window.__importManualItems.push({ name, path: dir });
+  }
+  await renderImportList();
+}
+
+// Run renderImportList() when the user first reaches step-0b,
+// and also when the wizard first shows. The wizard.js file
+// has a goStep() function that's called on every step change.
+const _origGoStep = window.goStep;
+window.goStep = function(n) {
+  if (typeof _origGoStep === 'function') _origGoStep(n);
+  if (n === '0b' || n === 0) {
+    // Always re-render when entering this step
+    setTimeout(() => { renderImportList(); }, 30);
+  }
+};
 async function importFromOpenclaw() {
   const listEl = document.getElementById('openclaw-agent-list');
   if (!listEl) return;

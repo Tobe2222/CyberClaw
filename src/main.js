@@ -634,10 +634,10 @@ function createWindow() {
   const showWizard = needsWizard();
 
   mainWindow = new BrowserWindow({
-    width: showWizard ? 700 : 1600,
-    height: showWizard ? 600 : 1000,
-    minWidth: showWizard ? 600 : 1200,
-    minHeight: showWizard ? 500 : 800,
+    width: showWizard ? 980 : 1600,
+    height: showWizard ? 760 : 1000,
+    minWidth: showWizard ? 800 : 1200,
+    minHeight: showWizard ? 640 : 800,
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#0a0a0f',
