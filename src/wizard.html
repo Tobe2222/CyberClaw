@@ -159,6 +159,7 @@
     }
     .dot.active { background: var(--cyan); box-shadow: 0 0 8px rgba(0,255,204,0.4); }
     .dot.done { background: var(--green); }
+    .hidden { display: none !important; }
 
     /* v3.1.34: numbered step bar at the top of the wizard.
        8 steps (0, 0b, 1, 2, 3, 4, 5, 6) shown as numbered circles
@@ -171,10 +172,11 @@
       color: var(--text-muted); user-select: none;
     }
     .step-bar-dot {
-      width: 22px; height: 22px; border-radius: 50%;
+      width: 44px; height: 44px; border-radius: 50%;
       background: rgba(255,255,255,0.04); border: 1px solid var(--border-mid);
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0; transition: all 0.2s; cursor: pointer;
+      font-size: 11px; font-weight: 700; line-height: 1.1; text-align: center;
     }
     .step-bar-dot:hover { border-color: var(--cyan); }
     .step-bar-dot.active {
@@ -184,6 +186,10 @@
     .step-bar-dot.done {
       background: var(--green); color: var(--bg-darkest);
       border-color: var(--green); font-weight: 700;
+    }
+    .step-bar-label {
+      font-size: 8px; font-weight: 400; opacity: 0.85;
+      display: block; margin-top: 1px; line-height: 1;
     }
     .step-bar-line {
       flex: 1; height: 2px; background: var(--border-mid);
@@ -251,26 +257,26 @@
 
   <div id="wizard">
     <div class="step-bar" id="step-bar">
-      <span class="step-bar-dot" data-step="0">1</span>
+      <span class="step-bar-dot active" data-step="0">1<br><span class="step-bar-label">Check</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="0b">2</span>
+      <span class="step-bar-dot" data-step="0b">2<br><span class="step-bar-label">Import</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="1">3</span>
+      <span class="step-bar-dot" data-step="1">3<br><span class="step-bar-label">Install</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="2">4</span>
+      <span class="step-bar-dot" data-step="2">4<br><span class="step-bar-label">API Key</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="3">5</span>
+      <span class="step-bar-dot" data-step="3">5<br><span class="step-bar-label">Companion</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="4">6</span>
+      <span class="step-bar-dot" data-step="4">6<br><span class="step-bar-label">Channel</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="5">7</span>
+      <span class="step-bar-dot" data-step="5">7<br><span class="step-bar-label">Gateway</span></span>
       <span class="step-bar-line"></span>
-      <span class="step-bar-dot" data-step="6">8</span>
+      <span class="step-bar-dot" data-step="6">8<br><span class="step-bar-label">Done</span></span>
     </div>
-    <div class="wizard-logo"><img src="assets/icons/cyberclaw.png" style="width:36px;height:36px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(251,191,36,0.25));margin-bottom:4px" /></div>
-    <div class="wizard-title" style="font-size:20px;margin-bottom:2px">CYBERCLAW</div>
-    <div class="wizard-subtitle" style="font-size:10px;margin-bottom:4px">Your companion party awaits</div>
-    <div class="wizard-version" id="wizard-version-pill" style="font-size:9px;padding:1px 5px;margin-bottom:8px">v—</div>
+    <div class="wizard-logo" style="margin-top:32px;margin-bottom:14px"><img src="assets/icons/cyberclaw.png" style="width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 0 12px rgba(251,191,36,0.3))" /></div>
+    <div class="wizard-title" style="font-size:22px;margin-bottom:2px;letter-spacing:3px">CYBERCLAW</div>
+    <div class="wizard-version" id="wizard-version-pill" style="font-size:10px;padding:1px 6px;margin-bottom:6px;display:inline-block">v—</div>
+    <div class="wizard-subtitle" style="font-size:10px;margin-bottom:0">Your companion party awaits</div>
 
     <!-- Step 0: System Check -->
     <div class="step active" id="step-0">
@@ -469,7 +475,7 @@
       </div>
     </div>
 
-    <div class="progress-dots" id="progress-dots">
+    <div class="hidden" id="progress-dots" style="display:none">
       <div class="dot active" data-step="0"></div>
       <div class="dot" data-step="1"></div>
       <div class="dot" data-step="2"></div>

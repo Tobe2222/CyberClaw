@@ -106,11 +106,23 @@ async function runChecks() {
     { id: 'gateway', cmd: 'check-gateway' },
   ];
 
+  // v3.1.34: run every check in isolation so a single IPC failure
+  // (e.g. timeout, disconnected preload) doesn't block the whole
+  // row. If the IPC throws or returns no result we mark the
+  // status as 'not reachable' (with a ⛔ icon) so the user
+  // sees a clear failure mode instead of a permanent 'checking…'.
   for (const check of checks) {
-    const result = await cyberclaw.wizard.check(check.cmd);
     const icon = document.getElementById(`check-${check.id}-icon`);
     const status = document.getElementById(`check-${check.id}-status`);
-
+    let result;
+    try {
+      result = await cyberclaw.wizard.check(check.cmd);
+    } catch (e) {
+      result = { ok: false, message: 'IPC error: ' + (e && e.message ? e.message : String(e)) };
+    }
+    if (!result || typeof result !== 'object') {
+      result = { ok: false, message: 'no response' };
+    }
     if (result.ok) {
       icon.textContent = '✅';
       status.textContent = result.version || 'installed';
@@ -118,7 +130,7 @@ async function runChecks() {
       systemState[check.id] = true;
     } else {
       icon.textContent = '❌';
-      status.textContent = result.message || 'not found';
+      status.textContent = result.message || 'not reachable';
       status.className = 'check-status missing';
       systemState[check.id] = false;
     }
