@@ -502,6 +502,14 @@ async function initArenaCompanions() {
 
     if (!pixelId && defaultCompanions.length > 0) {
       pixelId = defaultCompanions[i % defaultCompanions.length].id;
+      // v3.4.1: persist the default sprite. After the computer
+      // migration sprites.json was missing, so the sprite was
+      // re-derived on every boot and the channel tabs (rendered
+      // before the arena) had no sprite to take an icon from.
+      try {
+        const prev = await cyberclaw.agents.getSpriteConfig(id);
+        await cyberclaw.agents.saveSpriteConfig(id, { ...(prev || {}), pixelCompanionId: pixelId });
+      } catch (e) { debugLog('[Arena] could not persist default sprite for ' + id + ': ' + e.message); }
     }
 
     if (!pixelId) { debugLog('[Arena] WARN: No pixelId for ' + id); continue; }
@@ -524,6 +532,11 @@ async function initArenaCompanions() {
     localStorage.setItem('cyberclaw-selected-companion', currentCompanionId);
   }
   debugLog('[Arena] Init complete. Companions in arena: ' + pixelArena.companions.length);
+
+  // v3.4.1: the channel tabs are first rendered before the arena
+  // has resolved each companion's sprite. Re-render now so every
+  // tab gets its sprite icon (🦊 / 🐗 / ...).
+  try { renderCompanionChannelTabs(); } catch (e) { debugLog('[Arena] tab re-render failed: ' + e.message); }
 
   broadcastAgentsListToMobile();
 }
@@ -1710,6 +1723,76 @@ window.hideQuestForm = function() {
   document.getElementById('quest-dir-input').value = '';
 };
 
+// v3.4.1: Import quest — the button next to + in the Quest Log.
+// Lists project folders that aren't quests yet (quests:scan-projects)
+// with one-click Import, plus Browse… for any other folder.
+window.showImportQuest = async function() {
+  hideQuestForm();
+  const picker = document.getElementById('quest-import-picker');
+  const list = document.getElementById('quest-import-list');
+  if (!picker || !list) return;
+  picker.classList.remove('hidden');
+  list.innerHTML = '<div class="quest-import-loading">Scanning projects…</div>';
+  let projects = [];
+  try { projects = await cyberclaw.quests.scanProjects(); } catch (e) {
+    list.innerHTML = '<div class="quest-import-loading">Scan failed: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>';
+    return;
+  }
+  if (!projects || projects.length === 0) {
+    list.innerHTML = '<div class="quest-import-loading">Every project folder is already a quest. Use Browse… to pick another folder.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const proj of projects) {
+    const row = document.createElement('div');
+    row.className = 'quest-import-row';
+    row.title = proj.path;
+    const nameEl = document.createElement('span');
+    nameEl.className = 'quest-import-name';
+    nameEl.textContent = proj.name;
+    const btn = document.createElement('button');
+    btn.className = 'quest-form-btn save';
+    btn.textContent = 'Import';
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = '…';
+      const ok = await importProjectAsQuest(proj);
+      if (ok) { row.classList.add('imported'); btn.textContent = '✓'; }
+      else { btn.disabled = false; btn.textContent = 'Import'; }
+    };
+    row.appendChild(nameEl);
+    row.appendChild(btn);
+    list.appendChild(row);
+  }
+};
+
+window.hideImportQuest = function() {
+  const picker = document.getElementById('quest-import-picker');
+  if (picker) picker.classList.add('hidden');
+};
+
+window.importQuestFromFolder = async function() {
+  const dir = await cyberclaw.quests.pickDirectory();
+  if (!dir) return;
+  const ok = await importProjectAsQuest({ name: path.basename(dir), path: dir });
+  if (ok) showImportQuest();
+};
+
+async function importProjectAsQuest(project) {
+  try {
+    await cyberclaw.quests.create({
+      name: project.name,
+      description: 'Imported from ' + project.path,
+      directory: project.path,
+    });
+    await renderQuests();
+    return true;
+  } catch (e) {
+    alert('Failed to import: ' + (e && e.message ? e.message : String(e)));
+    return false;
+  }
+}
+
 window.startQuestConversation = function() {
   // Switch to chat tab and send a system-prompted message to the companion
   switchTermTab('chat');
@@ -2490,6 +2573,8 @@ window.switchActiveChat = function(agentId) {
   const msgs = document.getElementById('chat-messages');
   if (msgs) {
     msgs.innerHTML = '';
+    // v3.4.1: keep the system-startup block pinned at the top.
+    if (window._chatBootLog) msgs.appendChild(window._chatBootLog);
     const qk = questKeyForStorage(activeQuestId);
     const agentBuckets = chatHistoryByAgentAndQuest[agentId] || {};
     // Prefer the active quest's bucket. If empty, fall back
@@ -2651,6 +2736,7 @@ function updateChatQuestToggle() {
   let toggleLabel = '↔ Casual';
   let otherName = 'Casual';
   if (activeQuest) {
+    btn.style.display = '';
     toggleTarget = null;
     toggleLabel = '↔ Casual';
     otherName = 'Casual';
@@ -2660,25 +2746,18 @@ function updateChatQuestToggle() {
       ? `Currently chatting on quest: ${activeQuest.name}\n${activeQuest.directory}`
       : `Currently chatting on quest: ${activeQuest.name}`;
   } else {
-    // Casual: pick the best candidate to switch to.
-    const preferred = quests.find(q => q && q.active)
-      || quests.find(q => q && q.status === 'active')
-      || quests[0];
-    if (preferred) {
-      toggleTarget = preferred.id;
-      toggleLabel = `↔ ${preferred.name || 'quest'}`;
-      otherName = preferred.name || 'quest';
-    } else {
-      // Shouldn't reach here (quests.length > 0 check
-      // above), but defensive: no target means the
-      // button can stay but should be disabled.
-      btn.disabled = true;
-      btn.textContent = 'No quests';
-      btn.title = 'Create a quest in the Quests panel to enable toggle';
-    }
+    // v3.4.1: no active quest → no quest alternative. Tobe
+    // 2026-10-12: 'there should not be a quest alternative
+    // when there is no quest active.' The old code offered
+    // the first quest in the list (e.g. NRK) as a toggle
+    // target. Casual chat now just shows the Casual pill;
+    // activate a quest in the Quest Log to get the toggle.
     pill.classList.add('casual');
     pill.textContent = '💬 Casual';
-    pill.title = 'Currently chatting without an active quest (casual chat).';
+    pill.title = 'Casual chat — no quest is active. Activate a quest in the Quest Log to chat about it.';
+    btn.style.display = 'none';
+    wrap.style.display = '';
+    return;
   }
   if (toggleTarget !== null || activeQuest) {
     btn.disabled = false;
@@ -5697,13 +5776,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     t: `> CyberClaw v${APP_VERSION} online.`
   });
 
+  // v3.4.1: boot lines live in their own block that is always the
+  // first child of #chat-messages (switchActiveChat re-attaches it).
+  // Before, they were appended on 400–2000 ms timers, so the
+  // companion's greeting / restored history landed ABOVE the
+  // startup lines and the chat looked mangled.
+  const bootLog = document.createElement('div');
+  bootLog.id = 'chat-boot-log';
+  window._chatBootLog = bootLog;
+  if (msgs) msgs.insertBefore(bootLog, msgs.firstChild);
   bootMsgs.forEach(({ d, t }) => {
     setTimeout(() => {
       const div = document.createElement('div');
       div.className = 'chat-msg system';
       div.innerHTML = `<span class="msg-text">${t}</span>`;
-      msgs.appendChild(div);
-      msgs.scrollTop = msgs.scrollHeight;
+      bootLog.appendChild(div);
+      if (msgs && bootLog.parentNode !== msgs) msgs.insertBefore(bootLog, msgs.firstChild);
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
     }, d);
   });
 
@@ -6004,7 +6093,8 @@ window.createNewCompanion = function() {
     return origSave.apply(this, arguments);
   };
 
-  document.getElementById('companion-editor-overlay').classList.remove('hidden');
+  // v3.4.1: the forge now lives in Settings → Companions.
+  showCompanionPageInSettings('✨ New companion');
   addChatMsg('system', '✨ Pick a sprite and name your new companion. It will be added to your openclaw agents.');
 };
 
@@ -6171,7 +6261,8 @@ function openCompanionForge(agentId) {
   loadCompanionSoulEditor(agentId);
   loadCompanionMemoryViewer(agentId);
 
-  document.getElementById('companion-editor-overlay').classList.remove('hidden');
+  // v3.4.1: the forge now lives in Settings → Companions.
+  showCompanionPageInSettings(agent.name || agentId);
 }
 
 window.toggleCompanionPicker = function() {
@@ -6446,6 +6537,14 @@ window.closeCompanionEditor = function(e) {
   document.getElementById('companion-editor-overlay').classList.add('hidden');
   if (forgeCompanionSprite) { forgeCompanionSprite.dispose(); forgeCompanionSprite = null; }
   editorAgentId = null;
+  // v3.4.1: forge lives in Settings → Companions — go back to the list.
+  const page = document.getElementById('settings-companion-page');
+  if (page) page.classList.add('hidden');
+  const list = document.getElementById('settings-companions-list');
+  if (list) list.classList.remove('hidden');
+  const desc = document.getElementById('settings-companions-desc');
+  if (desc) desc.classList.remove('hidden');
+  try { renderSettingsCompanionsList(); } catch (_) {}
 };
 // (Spirit editor was removed in v3.1.1 — all agents are companions and
 // saveCompanion handles both editing an existing companion and creating
@@ -6893,6 +6992,8 @@ window.testTTSVoice = function() {
 window.openSettings = function() {
   const s = loadSettings();
   document.getElementById('settings-overlay').classList.remove('hidden');
+  // v3.4.1: sidebar nav, one section card at a time (mobile-style).
+  try { initSettingsNav(); showSettingsSection(window._lastSettingsSection || null); } catch (e) { console.warn('settings nav:', e); }
   // Populate fields
   const langEl = document.getElementById('settings-voice-lang');
   if (langEl) langEl.value = s.voiceLang;
@@ -6945,7 +7046,132 @@ window.openSettings = function() {
 // slider + Edit button. The slider is the same scale the
 // mobile's Personalize screen uses; values are clamped 1–5
 // and persisted to sprites.json via the existing surface.
+// v3.4.1: Settings → Companions list, mobile-style. One row per
+// companion (sprite icon, name, sprite · model, ›) that opens the
+// companion's page (the forge), plus a ➕ Create new companion row.
+// Chattiness lives on the companion page itself.
 async function renderSettingsCompanionsList() {
+  const listEl = document.getElementById('settings-companions-list');
+  if (!listEl) return;
+  let catalog = { companions: [] };
+  try { catalog = loadPixelCatalog() || catalog; } catch (_) {}
+  listEl.innerHTML = '';
+  for (const id of (agentOrder || [])) {
+    const a = agents[id];
+    if (!a || id.startsWith('subagent-')) continue;
+    const row = document.createElement('div');
+    row.className = 'settings-companion-item';
+    row.onclick = () => openCompanionForge(id);
+    const icon = document.createElement('span');
+    icon.className = 'sci-icon';
+    const iconFile = getSpriteIconFile(a._pixelCompanionId);
+    if (iconFile) {
+      const img = document.createElement('img');
+      img.src = iconFile; img.alt = ''; img.draggable = false;
+      icon.appendChild(img);
+    } else {
+      icon.textContent = (a.emoji && a.emoji !== '🤖') ? a.emoji : (getSpriteIcon(a._pixelCompanionId) || '🐾');
+    }
+    const info = document.createElement('div');
+    info.className = 'sci-info';
+    const nm = document.createElement('div');
+    nm.className = 'sci-name';
+    nm.textContent = a.name || id;
+    const sub = document.createElement('div');
+    sub.className = 'sci-sub';
+    const sprite = (catalog.companions || []).find(c => c.id === a._pixelCompanionId);
+    sub.textContent = [sprite ? sprite.name : null, a.model || null].filter(Boolean).join(' · ') || id;
+    info.appendChild(nm); info.appendChild(sub);
+    const arrow = document.createElement('span');
+    arrow.className = 'sci-arrow';
+    arrow.textContent = '›';
+    row.appendChild(icon); row.appendChild(info); row.appendChild(arrow);
+    listEl.appendChild(row);
+  }
+  const create = document.createElement('div');
+  create.className = 'settings-companion-item create';
+  create.onclick = () => createNewCompanion();
+  create.innerHTML = '<span class="sci-icon">➕</span><div class="sci-info"><div class="sci-name">Create new companion</div><div class="sci-sub">Pick a sprite, name it, give it a model and a personality</div></div><span class="sci-arrow">›</span>';
+  listEl.appendChild(create);
+}
+
+// v3.4.1: settings layout helpers (sidebar nav + one card at a time).
+function initSettingsNav() {
+  const panel = document.querySelector('#settings-overlay .settings-panel');
+  const content = panel && panel.querySelector('.settings-content');
+  if (!content || panel.dataset.navReady) return;
+  panel.dataset.navReady = '1';
+  // Companions first — it's the page people come here for.
+  const comp = document.getElementById('settings-companions-section');
+  if (comp) content.insertBefore(comp, content.firstChild);
+  const body = document.createElement('div');
+  body.className = 'settings-body';
+  const nav = document.createElement('nav');
+  nav.className = 'settings-nav';
+  content.parentNode.insertBefore(body, content);
+  body.appendChild(nav);
+  body.appendChild(content);
+  const sections = Array.from(content.querySelectorAll('.settings-section'))
+    .filter(s => !s.parentElement.closest('.settings-section'));
+  sections.forEach((sec, i) => {
+    const key = sec.id || ('settings-sec-' + i);
+    sec.dataset.navKey = key;
+    const t = sec.querySelector('.settings-section-title');
+    const btn = document.createElement('button');
+    btn.className = 'settings-nav-btn';
+    btn.dataset.navKey = key;
+    btn.textContent = t ? t.textContent.trim() : ('Section ' + (i + 1));
+    btn.onclick = () => showSettingsSection(key);
+    nav.appendChild(btn);
+  });
+}
+
+window.showSettingsSection = function(keyOrEl) {
+  const content = document.querySelector('#settings-overlay .settings-content');
+  if (!content) return;
+  const sections = Array.from(content.querySelectorAll('.settings-section[data-nav-key]'));
+  if (sections.length === 0) return;
+  let target = null;
+  if (keyOrEl && typeof keyOrEl === 'object') target = keyOrEl.closest('.settings-section[data-nav-key]');
+  else if (keyOrEl) target = sections.find(s => s.dataset.navKey === keyOrEl);
+  if (!target) target = sections[0];
+  sections.forEach(s => s.classList.toggle('active', s === target));
+  document.querySelectorAll('#settings-overlay .settings-nav-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.navKey === target.dataset.navKey));
+  window._lastSettingsSection = target.dataset.navKey;
+  content.scrollTop = 0;
+};
+
+function showCompanionPageInSettings(title) {
+  const overlay = document.getElementById('settings-overlay');
+  if (overlay && overlay.classList.contains('hidden')) openSettings();
+  initSettingsNav();
+  const page = document.getElementById('settings-companion-page');
+  if (!page) return;
+  // Move the forge body + Save/Cancel footer into the companion
+  // page once. Ids and handlers move with the nodes, so all the
+  // forge code keeps working unchanged.
+  if (!page.dataset.mounted) {
+    const panel = document.querySelector('#companion-editor-overlay .modal-panel');
+    if (panel) {
+      const body = panel.querySelector('.editor-content');
+      const footer = panel.querySelector('.modal-footer');
+      if (body) page.appendChild(body);
+      if (footer) page.appendChild(footer);
+    }
+    page.dataset.mounted = '1';
+  }
+  showSettingsSection('settings-companions-section');
+  const list = document.getElementById('settings-companions-list');
+  if (list) list.classList.add('hidden');
+  const desc = document.getElementById('settings-companions-desc');
+  if (desc) desc.classList.add('hidden');
+  const t = document.getElementById('settings-companion-page-title');
+  if (t) t.textContent = title || 'Companion';
+  page.classList.remove('hidden');
+}
+
+async function renderSettingsCompanionsListLegacy() {
   const listEl = document.getElementById('settings-companions-list');
   if (!listEl) return;
   if (!agentOrder || agentOrder.length === 0) {
@@ -7102,6 +7328,9 @@ window.resetCyberclawPrompt = async function() {
 window.closeSettings = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('settings-overlay').classList.add('hidden');
+  // v3.4.1: leaving Settings while on a companion page closes it.
+  const page = document.getElementById('settings-companion-page');
+  if (page && !page.classList.contains('hidden')) closeCompanionEditor();
 };
 
 window.setTheme = function(theme) {
@@ -7811,7 +8040,7 @@ window.openLocalEndpointsSection = function() {
   setTimeout(() => {
     const sec = document.getElementById('llm-endpoints-section')
               || document.querySelector('[data-section="llm-endpoints"]');
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (sec) { showSettingsSection(sec); sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   }, 200);
 };
 

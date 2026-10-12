@@ -37,6 +37,7 @@
       <div class="panel-header">
         <span class="rune-icon">📜</span> QUEST LOG
         <button class="quest-add-btn" onclick="showQuestForm()" title="New Quest">+</button>
+        <button class="quest-add-btn quest-import-btn" onclick="showImportQuest()" title="Import an existing project as a quest">⤓</button>
       </div>
       <div class="quest-form hidden" id="quest-form">
         <input type="text" id="quest-name-input" placeholder="Quest name..." maxlength="60" />
@@ -48,6 +49,15 @@
         <div class="quest-form-actions">
           <button class="quest-form-btn save" onclick="createQuest()">Create</button>
           <button class="quest-form-btn cancel" onclick="hideQuestForm()">Cancel</button>
+        </div>
+      </div>
+      <!-- v3.4.1: Import quest picker (opened by the ⤓ button) -->
+      <div class="quest-import-picker hidden" id="quest-import-picker">
+        <div class="quest-import-header">Import a project as a quest</div>
+        <div class="quest-import-list" id="quest-import-list"></div>
+        <div class="quest-form-actions">
+          <button class="quest-form-btn save" onclick="importQuestFromFolder()">📁 Browse…</button>
+          <button class="quest-form-btn cancel" onclick="hideImportQuest()">Close</button>
         </div>
       </div>
       <div class="quest-section" id="quest-list">
@@ -392,7 +402,9 @@
              are what openclaw calls "skills", so the user-facing label
              is now "Skills" to match) -->
         <div class="inspect-section">
-          <div class="section-title">Skill Categories</div>
+          <!-- v3.4.1: renamed "Skill Categories" → "Abilities" so it
+               isn't confused with the Skills library below (separate thing). -->
+          <div class="section-title">Abilities</div>
           <div id="inspect-skills"></div>
         </div>
 
@@ -471,11 +483,7 @@
           </div>
         </div>
 
-        <!-- Edit + Create buttons -->
-        <div class="inspect-edit-row">
-          <button class="inspect-edit-btn" onclick="openCompanionEditor()" title="Edit current companion">🎨 Edit Companion</button>
-          <button class="inspect-edit-btn inspect-edit-btn-secondary" onclick="createNewCompanion()" title="Create a new companion from scratch">✨ Create New Companion</button>
-        </div>
+        <!-- v3.4.1: Edit / Create companion moved to Settings → Companions. -->
       </div>
     </aside>
   </div>
@@ -689,17 +697,21 @@
              chattiness slider writes to the same sprite config the
              mobile Personalize screen uses, so the value syncs
              both ways. -->
-        <div class="settings-section">
+        <div class="settings-section" id="settings-companions-section">
           <div class="settings-section-title">🐾 Companions</div>
-          <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">
-            Edit your companions — sprite, scale, traits, model, and chattiness.
+          <div class="settings-section-desc" id="settings-companions-desc">
+            Open a companion to edit its sprite, name, size, model, personality, chattiness and memory.
             Changes sync to your mobile.
           </div>
           <div id="settings-companions-list" class="settings-companions-list">
             <!-- Populated by renderSettingsCompanionsList() -->
           </div>
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <button class="settings-action-btn" onclick="openCompanionsView()">📋 View All Companions</button>
+          <!-- v3.4.1: the companion page. The Companion Forge body +
+               Save/Cancel footer are moved in here at runtime
+               (showCompanionPageInSettings in app.js). -->
+          <div id="settings-companion-page" class="settings-companion-page companion-editor hidden">
+            <button class="settings-back-btn" onclick="closeCompanionEditor()">‹ All companions</button>
+            <div class="settings-companion-page-title" id="settings-companion-page-title">Companion</div>
           </div>
         </div>
 
