@@ -159,6 +159,8 @@ window.cyberclaw = {
     appendConversationLog: (id, role, text, agentId, agentName) => ipcRenderer.invoke('quests:append-conversation-log', id, role, text, agentId, agentName),
     getConversationLog: (id) => ipcRenderer.invoke('quests:get-conversation-log', id),
     clearConversationLog: (id) => ipcRenderer.invoke('quests:clear-conversation-log', id),
+    // v3.4.4: raw quest/CONVERSATION.md — hydrates the quest chat view.
+    getConversationFile: (id) => ipcRenderer.invoke('quests:get-conversation-file', id),
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

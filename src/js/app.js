@@ -2582,9 +2582,21 @@ window.switchActiveChat = function(agentId) {
     // to the default bucket so the user sees something (and
     // doesn't get a confusing blank panel when they first
     // activate a quest that has no history yet).
+    // v3.4.4: no more fallback to the casual bucket. Tobe
+    // 2026-10-12: activating a quest showed the casual ball-play
+    // chatter because the (empty) quest bucket fell back to the
+    // casual one. A quest chat now shows only that quest: its
+    // quest/CONVERSATION.md history plus this session's messages.
     let hist = agentBuckets[qk] || [];
-    if (hist.length === 0 && qk !== DEFAULT_QUEST_KEY) {
-      hist = agentBuckets[DEFAULT_QUEST_KEY] || [];
+    if (qk !== DEFAULT_QUEST_KEY) {
+      const fileHist = questFileHistoryFor(agentId, qk);
+      if (fileHist === undefined) {
+        loadQuestFileHistory(agentId, qk); // async; re-renders when ready
+      } else if (fileHist.length) {
+        const seen = new Set(hist.map(chatDedupeKey));
+        const older = fileHist.filter(m => !seen.has(chatDedupeKey(m)));
+        hist = older.concat(hist);
+      }
     }
     // Re-render in chronological order; suppress the last-separator cursor
     // so the first message after a switch gets a fresh separator.
@@ -2610,6 +2622,64 @@ window.switchActiveChat = function(agentId) {
     }
   }
 };
+
+// v3.4.4: per-quest chat history from <quest.directory>/quest/CONVERSATION.md.
+// That file is the long-term log (written on every exchange while
+// the quest is active), so it survives reinstalls and computer moves
+// — unlike the renderer's localStorage buckets. Parsed lazily the
+// first time a (companion, quest) chat is opened; kept in memory
+// only (the file stays the source of truth).
+const QUEST_FILE_HISTORY_LIMIT = 150;
+const _questFileHistory = {};   // "agentId::questId" -> [msg] | null (loading)
+function questFileHistoryFor(agentId, qk) {
+  const v = _questFileHistory[agentId + '::' + qk];
+  return v === null ? [] : v; // null = loading → render nothing extra yet
+}
+function chatDedupeKey(m) {
+  const minute = Math.floor((m.ts || 0) / 60000);
+  return (m.type || '') + '|' + minute + '|' + String(m.text || '').trim().slice(0, 80);
+}
+function parseQuestConversationMd(content, agentId) {
+  const agent = agents[agentId] || {};
+  const want = new Set([String(agentId).toLowerCase(), String(agent.name || '').toLowerCase()]);
+  const emoji = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || null);
+  const re = /^\[(\d{4}-\d\d-\d\dT[^\]]+)\] (user|agent|error)\(([^)]*)\): ?/gm;
+  const heads = [];
+  let m;
+  while ((m = re.exec(content))) heads.push({ idx: m.index, end: re.lastIndex, ts: Date.parse(m[1]), role: m[2], who: m[3] });
+  const out = [];
+  for (let i = 0; i < heads.length; i++) {
+    const h = heads[i];
+    const text = content.slice(h.end, i + 1 < heads.length ? heads[i + 1].idx : content.length).replace(/\s+$/, '');
+    const who = h.who.split('|');
+    if (!who.some(w => want.has(String(w).trim().toLowerCase()))) continue;
+    if (!text || isNaN(h.ts)) continue;
+    const msg = { type: h.role, ts: h.ts, text: h.role === 'agent' ? stripAgentReplyDecorations(text) : text, fromQuestFile: true };
+    if (h.role === 'agent') { msg.name = agent.name || who[0]; msg.emoji = emoji; }
+    if (!msg.text.trim()) continue;
+    out.push(msg);
+  }
+  return out.slice(-QUEST_FILE_HISTORY_LIMIT);
+}
+async function loadQuestFileHistory(agentId, qk) {
+  const key = agentId + '::' + qk;
+  if (_questFileHistory[key] !== undefined) return;
+  _questFileHistory[key] = null;
+  let msgs = [];
+  try {
+    const res = await cyberclaw.quests.getConversationFile(qk);
+    if (res && res.ok && res.content) {
+      const q = (cachedQuestsList || []).find(x => x && x.id === qk);
+      msgs = parseQuestConversationMd(res.content, agentId)
+        .map(x => ({ ...x, activeQuestId: qk, activeQuestName: q ? q.name : null }));
+    }
+  } catch (e) { console.warn('[QuestHistory] load failed:', e && e.message); }
+  _questFileHistory[key] = msgs;
+  // Re-render if the user is still looking at this chat.
+  if (msgs.length && activeChatAgentId === agentId && questKeyForStorage(activeQuestId) === qk) {
+    switchActiveChat(agentId);
+  }
+}
 
 // v3.3.11: switch the chat pane to the active quest's bucket for
 // the current companion. Called whenever the desktop's active
