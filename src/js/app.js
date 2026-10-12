@@ -6094,7 +6094,7 @@ window.createNewCompanion = function() {
   };
 
   // v3.4.1: the forge now lives in Settings → Companions.
-  showCompanionPageInSettings('✨ New companion');
+  showCompanionPageInSettings('New companion', null, 'looks');
   addChatMsg('system', '✨ Pick a sprite and name your new companion. It will be added to your openclaw agents.');
 };
 
@@ -6262,7 +6262,7 @@ function openCompanionForge(agentId) {
   loadCompanionMemoryViewer(agentId);
 
   // v3.4.1: the forge now lives in Settings → Companions.
-  showCompanionPageInSettings(agent.name || agentId);
+  showCompanionPageInSettings(agent.name || agentId, agentId);
 }
 
 window.toggleCompanionPicker = function() {
@@ -7095,15 +7095,27 @@ async function renderSettingsCompanionsList() {
   listEl.appendChild(create);
 }
 
-// v3.4.1: settings layout helpers (sidebar nav + one card at a time).
+// v3.4.2: settings layout helpers — grouped sidebar nav, one card
+// at a time (mobile-style). Groups give the clear separation Tobe
+// asked for (2026-10-12 23:13): General / Connections / Advanced.
+const SETTINGS_NAV_GROUPS = [
+  ['General',     ['settings-companions-section', 'settings-user-section', 'settings-appearance-section', 'settings-voice-section']],
+  ['Connections', ['settings-providers-section', 'settings-channels-section', 'settings-mobile-section']],
+  ['Advanced',    ['settings-prompt-section', 'settings-data-section']],
+];
 function initSettingsNav() {
   const panel = document.querySelector('#settings-overlay .settings-panel');
   const content = panel && panel.querySelector('.settings-content');
   if (!content || panel.dataset.navReady) return;
   panel.dataset.navReady = '1';
-  // Companions first — it's the page people come here for.
-  const comp = document.getElementById('settings-companions-section');
-  if (comp) content.insertBefore(comp, content.firstChild);
+  // Merge sub-sections (e.g. Local LLM Endpoints → AI Providers).
+  content.querySelectorAll('.settings-section[data-merge-into]').forEach(sub => {
+    const target = document.getElementById(sub.dataset.mergeInto);
+    if (!target) return;
+    sub.classList.remove('settings-section');
+    sub.classList.add('settings-subsection');
+    target.appendChild(sub);
+  });
   const body = document.createElement('div');
   body.className = 'settings-body';
   const nav = document.createElement('nav');
@@ -7113,17 +7125,32 @@ function initSettingsNav() {
   body.appendChild(content);
   const sections = Array.from(content.querySelectorAll('.settings-section'))
     .filter(s => !s.parentElement.closest('.settings-section'));
-  sections.forEach((sec, i) => {
-    const key = sec.id || ('settings-sec-' + i);
-    sec.dataset.navKey = key;
+  sections.forEach((sec, i) => { sec.dataset.navKey = sec.id || ('settings-sec-' + i); });
+  const used = new Set();
+  const addBtn = (sec) => {
     const t = sec.querySelector('.settings-section-title');
     const btn = document.createElement('button');
     btn.className = 'settings-nav-btn';
-    btn.dataset.navKey = key;
-    btn.textContent = t ? t.textContent.trim() : ('Section ' + (i + 1));
-    btn.onclick = () => showSettingsSection(key);
+    btn.dataset.navKey = sec.dataset.navKey;
+    btn.textContent = t ? t.textContent.trim() : sec.dataset.navKey;
+    btn.onclick = () => showSettingsSection(sec.dataset.navKey);
     nav.appendChild(btn);
-  });
+    used.add(sec);
+  };
+  const addLabel = (txt) => {
+    const l = document.createElement('div');
+    l.className = 'settings-nav-group';
+    l.textContent = txt;
+    nav.appendChild(l);
+  };
+  for (const [label, ids] of SETTINGS_NAV_GROUPS) {
+    const secs = ids.map(id => document.getElementById(id)).filter(s => s && sections.includes(s));
+    if (!secs.length) continue;
+    addLabel(label);
+    secs.forEach(addBtn);
+  }
+  const rest = sections.filter(s => !used.has(s));
+  if (rest.length) { addLabel('Other'); rest.forEach(addBtn); }
 }
 
 window.showSettingsSection = function(keyOrEl) {
@@ -7134,7 +7161,7 @@ window.showSettingsSection = function(keyOrEl) {
   let target = null;
   if (keyOrEl && typeof keyOrEl === 'object') target = keyOrEl.closest('.settings-section[data-nav-key]');
   else if (keyOrEl) target = sections.find(s => s.dataset.navKey === keyOrEl);
-  if (!target) target = sections[0];
+  if (!target) target = document.getElementById('settings-companions-section') || sections[0];
   sections.forEach(s => s.classList.toggle('active', s === target));
   document.querySelectorAll('#settings-overlay .settings-nav-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.navKey === target.dataset.navKey));
@@ -7142,33 +7169,95 @@ window.showSettingsSection = function(keyOrEl) {
   content.scrollTop = 0;
 };
 
-function showCompanionPageInSettings(title) {
+// v3.4.2: the companion page (old Companion Forge) is split into
+// three tabs. Personality keeps traits + soul together because the
+// soul presets are built from the traits. Brain is the technical
+// tab: which model powers the companion + what it remembers.
+const COMPANION_PAGE_TABS = [
+  { key: 'looks', label: '🎨 Looks', desc: 'How this companion looks — name, sprite and size in the arena.',
+    blocks: [['.editor-name-row', '🏷️ Name'], ['.forge-companion-preview', '🐾 Sprite'], ['#companion-picker', null], ['.forge-size-section', null]] },
+  { key: 'personality', label: '🎭 Personality', desc: 'How this companion acts — traits, character and how often it speaks up on its own.',
+    blocks: [['#forge-traits-grid', null], ['.forge-soul-section', null], ['.forge-chattiness-section', null]] },
+  { key: 'brain', label: '🧠 Brain', desc: 'What powers this companion — the AI model it thinks with, and what it remembers.',
+    blocks: [['.forge-model-section', null], ['.forge-memory-section', null]] },
+];
+let _companionPageTab = 'looks';
+
+function mountCompanionPage(page) {
+  const panel = document.querySelector('#companion-editor-overlay .modal-panel');
+  const body = panel && panel.querySelector('.editor-content');
+  const footer = panel && panel.querySelector('.modal-footer');
+  if (!body) return;
+  const tabs = document.createElement('div');
+  tabs.className = 'cp-tabs';
+  let looksPane = null;
+  const panes = [];
+  for (const t of COMPANION_PAGE_TABS) {
+    const btn = document.createElement('button');
+    btn.className = 'cp-tab';
+    btn.dataset.tab = t.key;
+    btn.textContent = t.label;
+    btn.onclick = () => showCompanionPageTab(t.key);
+    tabs.appendChild(btn);
+    const pane = document.createElement('div');
+    pane.className = 'cp-pane';
+    pane.dataset.tab = t.key;
+    const d = document.createElement('div');
+    d.className = 'cp-pane-desc';
+    d.textContent = t.desc;
+    pane.appendChild(d);
+    for (const [sel, title] of t.blocks) {
+      const el = body.querySelector(sel);
+      if (!el) continue;
+      const blk = el.classList.contains('forge-traits-section') ? el : (el.closest('.forge-traits-section') || el);
+      blk.classList.add('cp-block');
+      if (title && !blk.querySelector(':scope > .forge-traits-title')) {
+        const h = document.createElement('div');
+        h.className = 'forge-traits-title';
+        h.textContent = title;
+        blk.insertBefore(h, blk.firstChild);
+      }
+      pane.appendChild(blk);
+    }
+    if (t.key === 'looks') looksPane = pane;
+    panes.push(pane);
+  }
+  // Anything not assigned to a tab stays reachable on Looks.
+  Array.from(body.children).forEach(c => { if (c.tagName !== 'INPUT') looksPane.appendChild(c); });
+  body.appendChild(tabs);
+  panes.forEach(p => body.appendChild(p));
+  page.appendChild(body);
+  if (footer) page.appendChild(footer);
+}
+
+window.showCompanionPageTab = function(key) {
+  _companionPageTab = key;
+  document.querySelectorAll('#settings-companion-page .cp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
+  document.querySelectorAll('#settings-companion-page .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.tab === key));
+  const content = document.querySelector('#settings-overlay .settings-content');
+  if (content) content.scrollTop = 0;
+};
+
+function showCompanionPageInSettings(title, agentId, tab) {
   const overlay = document.getElementById('settings-overlay');
   if (overlay && overlay.classList.contains('hidden')) openSettings();
   initSettingsNav();
   const page = document.getElementById('settings-companion-page');
   if (!page) return;
-  // Move the forge body + Save/Cancel footer into the companion
-  // page once. Ids and handlers move with the nodes, so all the
-  // forge code keeps working unchanged.
-  if (!page.dataset.mounted) {
-    const panel = document.querySelector('#companion-editor-overlay .modal-panel');
-    if (panel) {
-      const body = panel.querySelector('.editor-content');
-      const footer = panel.querySelector('.modal-footer');
-      if (body) page.appendChild(body);
-      if (footer) page.appendChild(footer);
-    }
-    page.dataset.mounted = '1';
-  }
+  if (!page.dataset.mounted) { mountCompanionPage(page); page.dataset.mounted = '1'; }
   showSettingsSection('settings-companions-section');
   const list = document.getElementById('settings-companions-list');
   if (list) list.classList.add('hidden');
   const desc = document.getElementById('settings-companions-desc');
   if (desc) desc.classList.add('hidden');
   const t = document.getElementById('settings-companion-page-title');
-  if (t) t.textContent = title || 'Companion';
+  if (t) {
+    const a = agentId ? agents[agentId] : null;
+    const icon = a ? ((a.emoji && a.emoji !== '🤖') ? a.emoji : (getSpriteIcon(a._pixelCompanionId) || '🐾')) : '';
+    t.textContent = (icon ? icon + ' ' : '') + (title || 'Companion');
+  }
   page.classList.remove('hidden');
+  showCompanionPageTab(tab || _companionPageTab || 'looks');
 }
 
 async function renderSettingsCompanionsListLegacy() {
@@ -9701,7 +9790,7 @@ async function refreshInspectEnabledSkills(agentId) {
   const skills = _skillsCache || (await refreshSkillsList().then(() => _skillsCache) || []);
   const enabled = await refreshEnabledSkillsCache(agentId);
   if (skills.length === 0) {
-    el.innerHTML = '<div class="enabled-skill-empty">No skills in the library yet. Create one in the SKILLS LIBRARY section on the left.</div>';
+    el.innerHTML = '<div class="enabled-skill-empty">No abilities in the library yet. Create one with + in the Abilities Library above.</div>';
     return;
   }
   el.innerHTML = skills.map(s => {
@@ -9800,9 +9889,9 @@ window.seedStarterSkills = async function() {
     const focused = agentOrder[focusIndex];
     if (focused) refreshInspectEnabledSkills(focused);
     if (result.seeded && result.seeded.length) {
-      addChatMsg('system', `📚 Seeded ${result.seeded.length} starter skill${result.seeded.length === 1 ? '' : 's'}: ${result.seeded.join(', ')}`);
+      addChatMsg('system', `📚 Seeded ${result.seeded.length} starter abilit${result.seeded.length === 1 ? 'y' : 'ies'}: ${result.seeded.join(', ')}`);
     } else {
-      addChatMsg('system', '📚 Starter skills already present.');
+      addChatMsg('system', '📚 Starter abilities already present.');
     }
   }
 };
@@ -9812,7 +9901,7 @@ window.seedStarterSkills = async function() {
 window.openSkillDetail = async function(skillId) {
   const r = await cyberclaw.skills.read(skillId);
   if (!r || !r.ok) {
-    addChatMsg('system', `Couldn't open skill: ${r ? r.error : 'unknown error'}`);
+    addChatMsg('system', `Couldn't open ability: ${r ? r.error : 'unknown error'}`);
     return;
   }
   _activeSkillId = skillId;
@@ -9999,7 +10088,7 @@ window.saveSkillEdit = async function() {
 
 window.deleteSkillFromDetail = async function() {
   if (!_activeSkillId) return;
-  if (!confirm(`Delete skill "${_activeSkillId}"? This can't be undone.`)) return;
+  if (!confirm(`Delete ability "${_activeSkillId}"? This can't be undone.`)) return;
   const r = await cyberclaw.skills.delete(_activeSkillId);
   if (r && r.ok) {
     await refreshSkillsList();

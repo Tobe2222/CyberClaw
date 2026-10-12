@@ -1180,3 +1180,56 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 
 /* Pinned boot log */
 #chat-boot-log { margin-bottom: 6px; }
+
+
+/* ============================================================
+   v3.4.2 — tight system lines, no casual stamp, settings groups,
+   companion page tabs
+   ============================================================ */
+/* System / startup lines: terminal-style, no bubble */
+#chat-messages .chat-msg.system {
+  display: block; max-width: 100%; margin: 0; padding: 1px 10px !important;
+  background: none; border: none; border-left: 2px solid rgba(0,212,255,0.35); border-radius: 0;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--cyan-dim);
+}
+#chat-messages .chat-msg.system .msg-text { color: inherit; }
+#chat-boot-log { margin: 2px 0 12px; opacity: 0.9; }
+
+/* Casual stamp removed — the pill under the chat already says Casual */
+.msg-quest-header.no-quest { display: none !important; }
+.chat-msg:has(> .msg-quest-header.no-quest) { padding-top: 8px; }
+
+/* Sidebar group labels */
+.settings-nav-group {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted);
+  padding: 14px 12px 4px; font-weight: 700;
+}
+.settings-nav-group:first-child { padding-top: 2px; }
+.settings-subsection { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-mid); }
+.settings-subsection .settings-section-title { font-size: 15px !important; }
+
+/* Companion page */
+.settings-companion-page-title { font-size: 22px; margin-bottom: 14px; }
+.cp-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border-mid); padding-bottom: 12px; }
+.cp-tab {
+  background: transparent; border: 1px solid var(--border-mid); color: var(--text-secondary);
+  padding: 8px 16px; border-radius: 18px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.cp-tab:hover { color: var(--text-primary); border-color: var(--orange-dim); }
+.cp-tab.active { border-color: var(--orange); background: rgba(255,107,53,0.14); color: var(--orange); }
+.cp-pane { display: none; }
+.cp-pane.active { display: block; }
+.cp-pane-desc { color: var(--text-secondary); font-size: 13px; margin-bottom: 14px; }
+.settings-companion-page .cp-block {
+  background: var(--bg-dark); border: 1px solid var(--border-mid); border-radius: 10px;
+  padding: 14px 16px; margin: 0 0 12px !important;
+}
+.settings-companion-page .cp-block > .forge-traits-title {
+  font-family: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  color: var(--text-primary); margin: 0 0 10px; padding: 0; border: none;
+}
+.settings-companion-page textarea,
+.settings-companion-page .settings-textarea,
+.settings-companion-page .editor-name-input { width: 100%; box-sizing: border-box; }
+.settings-companion-page .settings-textarea { min-height: 110px; resize: vertical; font-size: 12px; }
+.settings-companion-page #forge-memory-viewer { min-height: 90px; }
