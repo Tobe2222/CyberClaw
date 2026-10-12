@@ -618,14 +618,24 @@ function stripMarkdownForTTS(text) {
 let syncServer = null;
 
 function needsWizard() {
-  // Show wizard if OpenClaw isn't installed or no agents configured
+  // Show wizard if OpenClaw isn't installed or no agents configured.
+  // v3.3.40: also check `config.agents.entries` (object form) — the
+  // desktop's own agent-loading path (main.js:827) handles both
+  // shapes (`entries` map OR `list` array), but needsWizard was only
+  // looking at `list`. Tobe 2026-10-11 16:59: 'Why do i have to enter
+  // the directories each setup? It should be stored.' — root cause
+  // was the wizard being re-launched on every desktop boot because
+  // his agents (clawsuu, codesuu) live under `entries` and this
+  // check always saw an empty `list`. Normalize both shapes here.
   const openclawBin = findOpenClaw();
   if (!openclawBin) return true;
   try {
     const config = readOpenClawConfig();
     if (!config) return true;
     const agents = config.agents?.list || [];
-    if (agents.length === 0) return true;
+    const entries = config.agents?.entries;
+    const entriesCount = (entries && typeof entries === 'object') ? Object.keys(entries).length : 0;
+    if (agents.length === 0 && entriesCount === 0) return true;
   } catch { return true; }
   return false;
 }
@@ -634,15 +644,20 @@ function createWindow() {
   const showWizard = needsWizard();
 
   mainWindow = new BrowserWindow({
-    width: showWizard ? 700 : 1600,
-    height: showWizard ? 600 : 1000,
-    minWidth: showWizard ? 600 : 1200,
-    minHeight: showWizard ? 500 : 800,
+    width: showWizard ? 980 : 1600,
+    height: showWizard ? 760 : 1000,
+    minWidth: showWizard ? 800 : 1200,
+    minHeight: showWizard ? 640 : 800,
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#0a0a0f',
     icon: path.join(__dirname, 'assets/icons/cyberclaw.png'),
-    resizable: !showWizard,
+    // v3.3.38: always resizable. Tobe wanted to be able to
+    // drag the wizard window edges when the selected-list
+    // grows past the default height. The desktop app stays
+    // resizable as before (this is the wizard branch's only
+    // // difference from the old behaviour).
+    resizable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
@@ -662,9 +677,17 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  // F12 opens DevTools
+  // F12 opens DevTools. F11 would normally toggle fullscreen
+  // on the BrowserWindow, but that traps the user in a state
+  // with no close button (Tobe hit it by accident on 2026-10-10
+  // and couldn't get out). Block F11: prevent it from
+  // entering fullscreen, and force-exit if it's already on.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12') mainWindow.webContents.toggleDevTools();
+    if (input.key === 'F11') {
+      event.preventDefault();
+      if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+    }
   });
 
   // v3.2.4: capture renderer console output to the
@@ -800,7 +823,21 @@ function discoverAgents() {
   const config = readOpenClawConfig();
   if (!config) return { agents: [], bindings: [], subagents: [] };
 
-  const agentList = config.agents?.list || [];
+  // v3.1.34: read from BOTH `entries` (modern key the openclaw
+  // CLI writes) and `list` (legacy key the wizard used to write).
+  // Without this fallback, the wizard's import flow always
+  // showed "No agents found" because the openclaw config uses
+  // `entries` and `discoverAgents` was looking at `list`.
+  // v3.3.38: entries are stored as { id: { workspace: ... } } —
+  // the ID is the KEY, not a field in the value. We need to
+  // preserve the key when converting to an array, otherwise
+  // every agent has `id: undefined` and the renderer can't
+  // tell Clawsuu from Codesuu (they both get empty names and
+  // the arena assigns all sprites to the first agent it finds).
+  const _agentEntries = config.agents?.entries
+    ? Object.entries(config.agents.entries).map(([k, v]) => ({ id: k, ...(v || {}) }))
+    : null;
+  const agentList = _agentEntries || config.agents?.list || [];
   const bindings = config.bindings || [];
   const defaults = config.agents?.defaults || {};
 
@@ -842,7 +879,11 @@ function discoverAgents() {
 
     // Read workspace files for name/identity
     const workspace = a.workspace || defaults.workspace || '~/workspace';
-    let agentName = a.name?.split(':').pop() || id.split('-').pop() || id;
+    // v3.3.38: if id is still missing (legacy list entries
+    // without an id field), derive it from the workspace
+    // basename. Belt-and-suspenders for the migration case.
+    const safeId = id || (workspace ? workspace.split('/').filter(Boolean).pop() : '') || 'unnamed';
+    let agentName = a.name?.split(':').pop() || safeId.split('-').pop() || safeId;
     agentName = agentName.charAt(0).toUpperCase() + agentName.slice(1);
     let agentClass = 'Agent';
     let emoji = '🤖';
@@ -896,7 +937,7 @@ function discoverAgents() {
     const agentFallbacks = a.model?.fallbacks || fallbackModels;
 
     return {
-      id,
+      id: safeId,
       name: agentName,
       class: agentClass,
       workspace,
@@ -921,6 +962,7 @@ function discoverAgents() {
 }
 
 ipcMain.handle('openclaw:discover', () => discoverAgents());
+ipcMain.handle('wizard:list-openclaw-agents', () => discoverAgents());
 
 // Pop-out companion arena window
 let companionWindow = null;
@@ -1795,8 +1837,170 @@ ipcMain.on('window:close', () => mainWindow?.close());
 
 // Quest CRUD
 ipcMain.handle('quests:list', () => loadQuests());
+ipcMain.handle('quests:scan-projects', async () => {
+  // v3.1.34: scan the projects directory for candidate quests
+  // (used by the "Import Existing" button next to "Create" in the
+  // desktop quest form). Returns [{name, path}] sorted by name.
+  // Filters out directories that are already registered as quests
+  // so the picker doesn't show duplicates.
+  // v3.3.37: switched to fs.promises.readdir so the main
+  // process doesn't block on slow disks.
+  const projectsRoot = '/media/dick/CYBERDRIVE/2B/work/projects';
+  const out = [];
+  try {
+    const existing = loadQuests();
+    const existingDirs = new Set(existing.map(q => (q.directory || '').replace(/\/$/, '')));
+    const entries = await fs.promises.readdir(projectsRoot, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(projectsRoot, e.name);
+      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue; // the app itself
+      if (existingDirs.has(full)) continue;
+      out.push({ name: e.name, path: full });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+  } catch {}
+  return out;
+});
+
+// v3.3.37: scan a user-chosen parent directory for projects.
+// Used by the wizard's "Default directory" feature — both
+// import steps let the user set a parent dir, and the Scan
+// button scans it for subdirectories. Returns the same shape
+// as quests:scan-projects ({name, path} per subdir, sorted)
+// plus a few metadata flags per project (hasPackage, hasReadme)
+// so the renderer can show useful detail.
+ipcMain.handle('wizard:scan-projects-dir', async (event, parentDir) => {
+  if (!parentDir || typeof parentDir !== 'string') {
+    return { ok: false, error: 'no directory provided', projects: [] };
+  }
+  console.log('[wizard] scan-projects-dir called with:', JSON.stringify(parentDir));
+  try {
+    // v3.3.38: removed the existingDirs filter. The user
+    // wanted to see ALL subdirectories in the projects root
+    // (not just the unregistered ones) so the wizard's bulk
+    // import can show them everything. Duplicates are now
+    // handled inside quests:create — if the directory is
+    // already registered, it returns the existing quest
+    // instead of creating a second entry.
+    const entries = await fs.promises.readdir(parentDir, { withFileTypes: true });
+    console.log('[wizard] scan-projects-dir: readdir found', entries.length, 'entries');
+    const projects = [];
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(parentDir, e.name);
+      // Skip the app itself (if user points the default at
+      // the projects root that contains the cyberclaw dir).
+      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue;
+      // Probe each subdir for key files. Best-effort: if the
+      // subdir is unreadable, just skip the flags.
+      let hasPackage = false, hasReadme = false, hasAgents = false;
+      try {
+        const files = await fs.promises.readdir(full);
+        hasPackage = files.includes('package.json');
+        hasReadme = files.some((f) => /^README/i.test(f));
+        hasAgents = files.some((f) => /^agents\.md$/i.test(f));
+      } catch {}
+      projects.push({ name: e.name, path: full, hasPackage, hasReadme, hasAgents });
+    }
+    projects.sort((a, b) => a.name.localeCompare(b.name));
+    console.log('[wizard] scan-projects-dir: returning', projects.length, 'projects:', projects.map(p => p.name));
+    return { ok: true, projects };
+  } catch (e) {
+    console.error('[wizard] scan-projects-dir failed:', e);
+    return { ok: false, error: e.message || String(e), projects: [] };
+  }
+});
+
+// v3.3.38: Export a companion's CyberClaw-specific settings
+// (sprite config, skill XP, identity, model, channel binding) to
+// its workspace folder. The wizard already writes IDENTITY.md,
+// but CyberClaw tracks its own state in
+// /home/<user>/.openclaw/cyberclaw/ — that's why skill XP
+// resets on a fresh install even when the companion folder is
+// intact. This IPC writes <workspace>/cyberclaw.json with
+// everything that belongs to the companion rather than to
+// the desktop install. A future import flow can read it back.
+ipcMain.handle('wizard:export-companion', async (event, opts) => {
+  try {
+    const agentId = String(opts?.agentId || '').trim();
+    if (!agentId) return { ok: false, error: 'agentId required' };
+    const cfg = readOpenClawConfig();
+    const entries = cfg?.agents?.entries || {};
+    const entry = entries[agentId] || (cfg?.agents?.list || []).find(a => a.id === agentId);
+    if (!entry) return { ok: false, error: 'Agent not found in openclaw config: ' + agentId };
+    const workspace = entry.workspace;
+    if (!workspace) return { ok: false, error: 'Agent has no workspace; nothing to export to' };
+    const exportData = {
+      agentId,
+      name: entry.name || agentId,
+      workspace,
+      exportedAt: new Date().toISOString(),
+      exportedBy: 'cyberclaw-desktop',
+      cyberclawSettings: opts?.settings || {},
+    };
+    fs.mkdirSync(workspace, { recursive: true });
+    const outPath = path.join(workspace, 'cyberclaw.json');
+    fs.writeFileSync(outPath, JSON.stringify(exportData, null, 2));
+    console.log('[wizard] exported companion', agentId, 'to', outPath);
+    return { ok: true, path: outPath, data: exportData };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
+// v3.1.34: auto-detect all candidate quests at once (used by the
+// new "Auto-detect" button on the quest form). Reads the
+// projects directory, skips already-registered ones, and
+// registers each remaining one in a single pass.
+ipcMain.handle('quests:auto-detect', async () => {
+  const projectsRoot = '/media/dick/CYBERDRIVE/2B/work/projects';
+  const created = [];
+  const skipped = [];
+  try {
+    const existing = loadQuests();
+    const existingDirs = new Set(existing.map(q => (q.directory || '').replace(/\/$/, '')));
+    const entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(projectsRoot, e.name);
+      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue;
+      if (existingDirs.has(full)) { skipped.push(e.name); continue; }
+      try {
+        loadQuests().push({
+          id: e.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+          name: e.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          description: 'Auto-detected from ' + full,
+          directory: full,
+          questFilesDir: path.join(full, 'quest'),
+          active: false,
+          latestChanges: [],
+          conversationLog: ['[2026-10-09] Auto-detected by cyberclaw companion (quests:auto-detect IPC).']
+        });
+        created.push(e.name);
+      } catch {}
+    }
+    saveQuests();
+  } catch {}
+  return { created, skipped };
+});
 ipcMain.handle('quests:create', (event, quest) => {
   const quests = loadQuests();
+  // v3.3.38: skip if a quest with the same directory is
+  // already registered. The wizard imports quests in bulk
+  // and may include already-registered directories; this
+  // makes quests:create idempotent so the bulk import
+  // doesn't create duplicate entries for projects the
+  // user has already registered via the main app's +
+  // button. Returns the existing quest on a match.
+  if (quest.directory) {
+    const normalized = String(quest.directory).replace(/\/$/, '');
+    const existing = quests.find((q) => String(q.directory || '').replace(/\/$/, '') === normalized);
+    if (existing) {
+      console.log('[quests:create] skipping duplicate for', quest.directory, '→ existing id', existing.id);
+      return existing;
+    }
+  }
   quest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   quest.created = new Date().toISOString();
   quest.status = quest.status || 'active';
@@ -3400,6 +3604,24 @@ function execPromise(cmd) {
   });
 }
 
+ipcMain.handle('wizard:get-version', () => {
+  // v3.1.34: read the actual package.json from disk so the
+  // wizard's version pill shows the real version (e.g. "v3.3.37")
+  // instead of the hardcoded fallback the renderer's CSP-blocked
+  // fetch had to use. Cached at module load so each call is cheap.
+  // main.js lives in src/, so package.json is one directory up.
+  if (!wizardGetVersionCache) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+      wizardGetVersionCache = String(pkg.version || 'unknown');
+    } catch {
+      wizardGetVersionCache = 'unknown';
+    }
+  }
+  return wizardGetVersionCache;
+});
+let wizardGetVersionCache = null;
+
 ipcMain.handle('wizard:check', async (event, what) => {
   switch (what) {
     case 'check-node':
@@ -3459,7 +3681,13 @@ ipcMain.handle('wizard:check', async (event, what) => {
     case 'check-agents': {
       try {
         const config = readOpenClawConfig();
-        const agents = config?.agents?.list || [];
+        // v3.1.34: read from BOTH `entries` (modern key) and
+        // `list` (older key the wizard used to write). The
+        // openclaw CLI uses `entries`; the wizard's own
+        // create-agent handler was using `list`; the result
+        // was the wizard seeing 0 agents even when the openclaw
+        // CLI had registered them. Normalize.
+        const agents = (config?.agents?.entries && Object.values(config.agents.entries)) || config?.agents?.list || [];
         return { ok: agents.length > 0, count: agents.length };
       } catch { return { ok: false, count: 0 }; }
     }
@@ -3714,12 +3942,26 @@ ipcMain.handle('wizard:create-agent', async (event, opts) => {
   // silently inherited the global default model.
   const args = [`"${bin}"`, 'agents', 'add', '--non-interactive', '--workspace', `"${workspace}"`];
   if (model) args.push('--model', `"${model}"`);
-  try {
-    const result = execSync(args.join(' ') + ' 2>&1', { encoding: 'utf8' });
-    return { ok: true, output: result };
-  } catch {
-    // Agent might already exist; fall through to set-model
-    // so the user's chosen model is applied even on retry.
+  // v3.3.37: use execPromise (async exec with 60s timeout)
+  // instead of bare execSync. The old execSync had NO timeout,
+  // so `openclaw agents add` could block the entire Electron
+  // main process for however long it took to write config /
+  // probe the model / etc. — making the WM show the
+  // "CyberClaw is not responding" dialog. Other wizard
+  // handlers already used execPromise; this one was missed.
+  // Falls through to the same set-model fallback on failure
+  // (covers the "agent already exists" case).
+  const result = await execPromise(args.join(' ') + ' 2>&1');
+  if (result.ok) {
+    await writeDefaultCompanionIdentity(workspace, name);
+    return { ok: true, output: result.output };
+  }
+  // Agent might already exist; fall through to set-model
+  // so the user's chosen model is applied even on retry.
+  // v3.3.37: defer the sync config read/write to the next
+  // tick via setImmediate so it doesn't block the main
+  // process while the IPC response is being sent back.
+  setImmediate(() => {
     try {
       const cfg = readOpenClawConfig();
       if (cfg?.agents?.list && model) {
@@ -3731,9 +3973,69 @@ ipcMain.handle('wizard:create-agent', async (event, opts) => {
         }
       }
     } catch (_) {}
-    return { ok: true };
-  }
+  });
+  await writeDefaultCompanionIdentity(workspace, name);
+  return { ok: true, warning: result.error };
 });
+
+// v3.1.34: write a default IDENTITY.md + avatar reference into a
+// brand-new companion's workspace so discoverAgents() picks up a
+// sprite instead of leaving the agent with `avatarPath: null` (which
+// shows up in the desktop UI as a missing/broken sprite and makes
+// the "edit companion" form look empty until the user manually
+// fills in the avatar field). Idempotent: if IDENTITY.md already
+// exists, we don't touch it.
+//
+// v3.3.37: converted to async (fs.promises). The old version used
+// fs.mkdirSync / fs.writeFileSync / fs.readdirSync which block the
+// Electron main process. On a slow disk (or a workspace on a
+// network mount) the sync calls would freeze the main process
+// long enough for the WM to show "not responding". This is the
+// second half of the wizard-hang fix — execPromise handles the
+// `openclaw agents add` CLI call, writeDefaultCompanionIdentity
+// handles the workspace file I/O.
+async function writeDefaultCompanionIdentity(workspace, name) {
+  try {
+    await fs.promises.mkdir(workspace, { recursive: true });
+    const identityPath = path.join(workspace, 'IDENTITY.md');
+    try {
+      await fs.promises.access(identityPath);
+      return; // already exists, don't touch
+    } catch {} // doesn't exist, continue
+    const assetsDir = path.join(__dirname, 'assets', 'avatars');
+    let sprite = null;
+    try {
+      await fs.promises.access(assetsDir);
+      const candidates = (await fs.promises.readdir(assetsDir))
+        .filter(f => /\.(png|jpg|webp|gif)$/i.test(f))
+        .map(f => path.join(assetsDir, f));
+      const exact = candidates.find(p => path.basename(p, path.extname(p)).toLowerCase() === (name || '').toLowerCase());
+      if (exact) sprite = exact;
+      else if (candidates.length > 0) sprite = candidates[Math.floor(Math.random() * candidates.length)];
+    } catch {}
+    const spriteRef = sprite ? '~' + path.relative(os.homedir(), sprite).replace(/\\/g, '/') : '';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const md = [
+      '# IDENTITY.md - Who Am I?',
+      '',
+      '_Auto-generated by CyberClaw wizard on ' + stamp + '. Edit freely. The companion reads this file on every chat send._',
+      '',
+      '- **Name:** ' + (name || 'unnamed'),
+      '- **Creature:** AI companion',
+      '- **Vibe:** friendly, curious, helpful',
+      spriteRef ? '- **Avatar:** ' + spriteRef : '- **Avatar:**',
+      '',
+      '## Setup',
+      '',
+      'Workspace: `' + workspace + '`',
+      ''
+    ].join('\n');
+    await fs.promises.writeFile(identityPath, md);
+  } catch (e) {
+    // best-effort — if we can't write IDENTITY.md, the agent still
+    // works, it just shows up without a sprite in the UI.
+  }
+}
 
 ipcMain.handle('wizard:configure-channel', async (event, opts) => {
   const bin = findOpenClaw();

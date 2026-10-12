@@ -28,6 +28,47 @@
     .titlebar-icon { font-size: 14px; }
     .titlebar-title { font-family: var(--font-cyber); font-size: 12px; font-weight: 700; color: var(--cyan); letter-spacing: 2px; }
     .titlebar-controls { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+    .titlebar-pill {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-muted); background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-mid); border-radius: 4px;
+      padding: 2px 6px; -webkit-app-region: no-drag;
+    }
+    .wizard-version {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-muted); background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-mid); border-radius: 4px;
+      padding: 2px 6px; margin-top: 4px; display: inline-block;
+    }
+    /* v3.1.34: friendlier "big choice" card row on step 0b */
+    .setup-choice {
+      display: flex; flex-direction: column; gap: 10px;
+      width: 100%; max-width: 520px; margin-top: 8px;
+    }
+    .setup-choice-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; border: 1px solid var(--border-mid);
+      border-radius: 8px; cursor: pointer; text-align: left;
+      background: rgba(255,255,255,0.02);
+      transition: background 0.12s, border-color 0.12s, transform 0.12s;
+    }
+    .setup-choice-card:hover {
+      background: rgba(0,212,255,0.06); border-color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .setup-choice-icon { font-size: 28px; flex-shrink: 0; }
+    .setup-choice-title {
+      color: var(--cyan); font-weight: 700; font-size: 13px;
+      margin-bottom: 2px; letter-spacing: 0.5px;
+    }
+    .setup-choice-desc {
+      color: var(--text-secondary); font-size: 11px; line-height: 1.5;
+    }
+    .setup-choice-desc code {
+      font-family: var(--font-mono); color: var(--gold);
+      background: rgba(0,0,0,0.2); padding: 1px 4px; border-radius: 3px;
+      font-size: 10px;
+    }
     .tb-btn { width: 36px; height: 28px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; border-radius: 4px; }
     .tb-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
     .tb-close:hover { background: var(--red); color: white; }
@@ -52,7 +93,7 @@
 
     /* Steps */
     .step { display: none; width: 100%; max-width: 560px; }
-    .step.active { display: flex; flex-direction: column; align-items: center; }
+    .step.active { display: flex; flex-direction: column; align-items: center; margin-top: 18px; }
 
     .step-header {
       font-family: var(--font-cyber); font-size: 16px; color: var(--gold);
@@ -83,10 +124,11 @@
 
     /* Buttons */
     .wizard-btn {
-      padding: 10px 28px; border: 2px solid var(--cyan); background: transparent;
-      color: var(--cyan); font-family: var(--font-cyber); font-size: 13px;
-      letter-spacing: 2px; cursor: pointer; border-radius: 6px;
+      padding: 8px 18px; border: 2px solid var(--cyan); background: transparent;
+      color: var(--cyan); font-family: var(--font-cyber); font-size: 12px;
+      letter-spacing: 1.5px; cursor: pointer; border-radius: 6px;
       transition: all 0.2s; text-transform: uppercase;
+      max-width: 240px; margin: 6px 4px;
     }
     .wizard-btn:hover {
       background: rgba(0,255,204,0.1); box-shadow: 0 0 15px rgba(0,255,204,0.2);
@@ -100,7 +142,12 @@
     .wizard-btn.gold { border-color: var(--gold); color: var(--gold); }
     .wizard-btn.gold:hover { background: rgba(251,191,36,0.1); box-shadow: 0 0 15px rgba(251,191,36,0.2); }
 
-    .btn-row { display: flex; gap: 12px; margin-top: 16px; }
+    .btn-row {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 20px 16px 8px 16px; padding: 0 8px;
+      justify-content: center; align-items: center;
+      max-width: 520px; margin-left: auto; margin-right: auto;
+    }
 
     /* Progress dots */
     .progress-dots {
@@ -112,6 +159,43 @@
     }
     .dot.active { background: var(--cyan); box-shadow: 0 0 8px rgba(0,255,204,0.4); }
     .dot.done { background: var(--green); }
+    .hidden { display: none !important; }
+
+    /* v3.1.34: numbered step bar at the top of the wizard.
+       8 steps (0, 0b, 1, 2, 3, 4, 5, 6) shown as numbered circles
+       connected by lines. Active step is cyan, done steps are
+       green, future steps are muted. The bar is clickable. */
+    .step-bar {
+      display: flex; align-items: center; gap: 0;
+      width: 100%; max-width: 360px; margin: 0 auto 14px auto;
+      padding: 0 8px; font-family: var(--font-mono); font-size: 9px;
+      color: var(--text-muted); user-select: none;
+    }
+    .step-bar-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border-mid);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.2s; cursor: pointer;
+      font-size: 10px; font-weight: 700; line-height: 1.1; text-align: center;
+    }
+    .step-bar-dot:hover { border-color: var(--cyan); }
+    .step-bar-dot.active {
+      background: var(--cyan); color: var(--bg-darkest);
+      border-color: var(--cyan); font-weight: 700;
+    }
+    .step-bar-dot.done {
+      background: var(--green); color: var(--bg-darkest);
+      border-color: var(--green); font-weight: 700;
+    }
+    .step-bar-label {
+      font-size: 8px; font-weight: 400; opacity: 0.85;
+      display: block; margin-top: 1px; line-height: 1;
+    }
+    .step-bar-line {
+      flex: 1; height: 2px; background: var(--border-mid);
+      min-width: 12px;
+    }
+    .step-bar-line.done { background: var(--green); }
 
     /* Input fields */
     .wizard-input {
@@ -172,14 +256,24 @@
   </div>
 
   <div id="wizard">
-    <div class="wizard-logo"><img src="assets/icons/cyberclaw.png" style="width:80px;height:80px;object-fit:contain;filter:drop-shadow(0 0 15px rgba(251,191,36,0.3))" /></div>
-    <div class="wizard-title">CYBERCLAW</div>
-    <div class="wizard-subtitle">Your companion party awaits</div>
+    <div class="step-bar" id="step-bar">
+      <span class="step-bar-dot active" data-step="0">1<br><span class="step-bar-label">Check</span></span>
+      <span class="step-bar-line"></span>
+      <span class="step-bar-dot" data-step="0b">2<br><span class="step-bar-label">Companions</span></span>
+      <span class="step-bar-line"></span>
+      <span class="step-bar-dot" data-step="0c">3<br><span class="step-bar-label">Quests</span></span>
+      <span class="step-bar-line"></span>
+      <span class="step-bar-dot" data-step="6">4<br><span class="step-bar-label">Done</span></span>
+    </div>
+    <div class="wizard-logo" style="margin-top:32px;margin-bottom:14px"><img src="assets/icons/cyberclaw.png" style="width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 0 12px rgba(251,191,36,0.3))" /></div>
+    <div class="wizard-title" style="font-size:22px;margin-bottom:2px;letter-spacing:3px">CYBERCLAW</div>
+    <div class="wizard-subtitle" style="font-size:10px;margin-bottom:4px">Your companions awaits</div>
+    <div class="wizard-version" id="wizard-version-pill" style="font-size:10px;padding:1px 6px;margin-bottom:6px;display:inline-block">v—</div>
 
     <!-- Step 0: System Check -->
     <div class="step active" id="step-0">
-      <div class="step-header">⚡ System Check</div>
-      <div class="step-desc">Checking your system for required components...</div>
+      <div class="step-header" style="font-size:14px;margin-bottom:4px">⚡ System Check</div>
+      <div class="step-desc" style="font-size:10px;margin-bottom:10px">Checking your system for required components...</div>
       <div id="checks">
         <div class="check-row">
           <span class="check-icon" id="check-node-icon">⏳</span>
@@ -202,8 +296,105 @@
           <span class="check-status checking" id="check-gateway-status">checking...</span>
         </div>
       </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="wizard-btn primary" id="btn-check" disabled>Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 0b: Import Companions -->
+    <div class="step" id="step-0b" data-next-step="0c">
+      <div class="step-header" style="font-size:14px;margin-bottom:4px">🐾 Import Companions</div>
+
+      <!-- Default directory: shown in both import steps.
+           Scan on this step reads the OpenClaw config AND
+           (if a default dir is set) also scans that dir for
+           companion workspaces. Stored in localStorage so
+           it persists across wizard runs. -->
+      <div style="display:flex; gap:6px; align-items:center; width:100%; max-width:640px; margin:8px 0 4px 0;">
+        <label style="font-size:10px; color:var(--text-muted); white-space:nowrap;">Default directory:</label>
+        <input type="text" id="default-dir-companions" class="wizard-input default-dir-input" style="flex:1; margin:0; font-size:11px; padding:6px 8px;" placeholder="(optional — scan will also search this dir for AGENTS.md workspaces)" oninput="saveDefaultDir(this.value)" />
+        <button class="wizard-btn" onclick="pickDefaultDir('companions')" style="margin:0; padding:4px 10px; font-size:11px;">📂…</button>
+      </div>
+
+      <!-- Two-column layout: action buttons on the left,
+           persistent selected-items list on the right.
+           Step bar (top) and nav buttons (bottom) stay
+           where they are. -->
+      <div style="display:flex; gap:14px; margin:12px 0 16px 0; width:100%; max-width:640px; align-items:stretch;">
+        <!-- Left: Scan + Pick -->
+        <div style="display:flex; flex-direction:column; align-items:center; gap:6px; flex:0 0 200px;">
+          <button class="wizard-btn primary" onclick="scanOpenclawAgents()" style="min-width:180px; max-width:100%;">🔍 Scan</button>
+          <div style="font-size:10px;color:var(--text-muted);margin:4px 0;">— or —</div>
+          <button class="wizard-btn" onclick="importFromManualDir('companions')" style="min-width:180px; max-width:100%;">📂 Pick a directory…</button>
+        </div>
+
+        <!-- Right: selected list -->
+        <div id="selected-list-companions" class="import-list" style="flex:1; min-height:130px; max-height:240px; overflow-y:auto; padding:6px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border-mid); border-radius:6px; text-align:left; font-size:11px; line-height:1.5;">
+          <div class="wt-line info" style="text-align:center; padding:6px 0;">No companions selected yet.</div>
+        </div>
+      </div>
+
+      <!-- Live import status — shows a progress bar + text
+           while createAgent calls are running. Each call
+           takes 5-10s (openclaw agents add writes config +
+           probes the model), so the bar makes the wait
+           feel productive instead of frozen. -->
+      <div id="import-status-companions" class="hidden" style="margin-bottom:12px; padding:8px; border:1px solid var(--cyan); border-radius:6px; color:var(--cyan); font-size:11px;">
+        <div class="import-status-text" style="margin-bottom:6px; text-align:center;">⏳ Importing 0/0…</div>
+        <div style="height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden;">
+          <div class="import-progress-bar" style="height:100%; width:0%; background:var(--cyan); transition:width 0.25s ease;"></div>
+        </div>
+      </div>
+
+      <!-- Bottom: navigation -->
       <div class="btn-row">
-        <button class="wizard-btn primary" id="btn-check" disabled>Continue</button>
+        <button class="wizard-btn" onclick="goStep(0)">Back</button>
+        <button class="wizard-btn" onclick="goStep('0c')">Skip →</button>
+        <button class="wizard-btn primary" onclick="importSelected()">Next →</button>
+      </div>
+    </div>
+
+    <!-- Step 0c: Import Quests -->
+    <div class="step" id="step-0c" data-next-step="6">
+      <div class="step-header" style="font-size:14px;margin-bottom:4px">📜 Import Quests</div>
+
+      <!-- Default directory: same shared localStorage value
+           as the companions step. Scan on this step uses
+           it as the projects root (instead of the hardcoded
+           /media…cts/ path). -->
+      <div style="display:flex; gap:6px; align-items:center; width:100%; max-width:640px; margin:8px 0 4px 0;">
+        <label style="font-size:10px; color:var(--text-muted); white-space:nowrap;">Default directory:</label>
+        <input type="text" id="default-dir-quests" class="wizard-input default-dir-input" style="flex:1; margin:0; font-size:11px; padding:6px 8px;" placeholder="(optional — scan will search this dir for project subdirectories)" oninput="saveDefaultDir(this.value)" />
+        <button class="wizard-btn" onclick="pickDefaultDir('quests')" style="margin:0; padding:4px 10px; font-size:11px;">📂…</button>
+      </div>
+
+      <div style="display:flex; gap:14px; margin:12px 0 16px 0; width:100%; max-width:640px; align-items:stretch;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:6px; flex:0 0 200px;">
+          <button class="wizard-btn primary" onclick="scanQuestProjects()" style="min-width:180px; max-width:100%;">🔍 Scan</button>
+          <div style="font-size:10px;color:var(--text-muted);margin:4px 0;">— or —</div>
+          <button class="wizard-btn" onclick="importFromManualDir('quests')" style="min-width:180px; max-width:100%;">📂 Pick a directory…</button>
+        </div>
+
+        <div id="selected-list-quests" class="import-list" style="flex:1; min-height:130px; max-height:240px; overflow-y:auto; padding:6px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border-mid); border-radius:6px; text-align:left; font-size:11px; line-height:1.5;">
+          <div class="wt-line info" style="text-align:center; padding:6px 0;">No quests selected yet.</div>
+        </div>
+      </div>
+
+      <!-- Live import status — same as the companions step.
+           quests.create is faster than createAgent but can
+           still take a beat per item, so the bar helps
+           the user see progress. -->
+      <div id="import-status-quests" class="hidden" style="margin-bottom:12px; padding:8px; border:1px solid var(--cyan); border-radius:6px; color:var(--cyan); font-size:11px;">
+        <div class="import-status-text" style="margin-bottom:6px; text-align:center;">⏳ Importing 0/0…</div>
+        <div style="height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden;">
+          <div class="import-progress-bar" style="height:100%; width:0%; background:var(--cyan); transition:width 0.25s ease;"></div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep('0b')">Back</button>
+        <button class="wizard-btn" onclick="launchApp()">Skip →</button>
+        <button class="wizard-btn primary" onclick="importSelected()">Next →</button>
       </div>
     </div>
 
@@ -277,7 +468,20 @@
       </div>
       <div class="btn-row">
         <button class="wizard-btn" onclick="goStep(2)">Back</button>
+        <button class="wizard-btn" onclick="importFromOpenclaw()">Import from OpenClaw</button>
         <button class="wizard-btn primary" onclick="createCompanion()">Create Companion</button>
+      </div>
+    </div>
+
+    <!-- Step 3b: Import from OpenClaw -->
+    <div class="step" id="step-3b">
+      <div class="step-header">📥 Import from OpenClaw</div>
+      <div class="step-desc">Existing agents already registered in your local OpenClaw config. Pick one to use as your first companion instead of creating a new one.</div>
+      <div id="openclaw-agent-list" class="wizard-terminal" style="min-height: 140px;">
+        <div class="wt-line info">Scanning ~/.openclaw/openclaw.json…</div>
+      </div>
+      <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep(3)">Back</button>
       </div>
     </div>
 
@@ -325,20 +529,22 @@
         <div class="wt-line info">Initializing gateway...</div>
       </div>
       <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep(4)">Back</button>
         <button class="wizard-btn primary" id="btn-launch" onclick="launchApp()" disabled>Launch CyberClaw</button>
       </div>
     </div>
 
     <!-- Step 6: Done -->
-    <div class="step" id="step-6">
+    <div class="step" id="step-6" data-next-step="6">
       <div class="step-header">⚔️ Party Assembled!</div>
       <div class="step-desc">Your companion is ready. Welcome to CyberClaw.</div>
       <div class="btn-row">
+        <button class="wizard-btn" onclick="goStep('0c')">← Back</button>
         <button class="wizard-btn gold" onclick="launchApp()">Enter CyberClaw</button>
       </div>
     </div>
 
-    <div class="progress-dots" id="progress-dots">
+    <div class="hidden" id="progress-dots" style="display:none">
       <div class="dot active" data-step="0"></div>
       <div class="dot" data-step="1"></div>
       <div class="dot" data-step="2"></div>

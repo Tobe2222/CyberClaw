@@ -115,6 +115,8 @@ window.cyberclaw = {
     delete: (id) => ipcRenderer.invoke('quests:delete', id),
     pickDirectory: () => ipcRenderer.invoke('quests:pick-directory'),
     detectVersion: (dir) => ipcRenderer.invoke('quests:detect-version', dir),
+    scanProjects: () => ipcRenderer.invoke('quests:scan-projects'),
+    autoDetect: () => ipcRenderer.invoke('quests:auto-detect'),
     // v3.1.50: active-quest management. The "active" quest is the
     // one the companion is currently working on. Exactly one is
     // active at a time; passing null to setActive clears all.
@@ -218,6 +220,16 @@ window.cyberclaw = {
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),
+    // v3.3.37: scan a user-picked directory. Used by the
+    // setup wizard's new user-driven import flow (step
+    // 0b Companions, step 0c Quests). The wizard calls
+    // this once per picked directory when the user hits
+    // the 🔍 Scan button.
+    scanDirectory: (dir) => ipcRenderer.invoke('wizard:scan-directory', dir),
+    // v3.3.37: scan a user-chosen parent directory for
+    // project subdirectories. Used by the wizard's
+    // "Default directory" feature on the import steps.
+    scanProjectsDir: (dir) => ipcRenderer.invoke('wizard:scan-projects-dir', dir),
     install: (pkg) => ipcRenderer.invoke('wizard:install', pkg),
     run: (cmd) => ipcRenderer.invoke('wizard:run', cmd),
     saveApiKey: (key) => ipcRenderer.invoke('wizard:save-apikey', key),
@@ -225,5 +237,7 @@ window.cyberclaw = {
     configureChannel: (opts) => ipcRenderer.invoke('wizard:configure-channel', opts),
     startGateway: () => ipcRenderer.invoke('wizard:start-gateway'),
     launch: () => ipcRenderer.invoke('wizard:launch'),
+    listOpenclawAgents: () => ipcRenderer.invoke('wizard:list-openclaw-agents'),
+    getVersion: () => ipcRenderer.invoke('wizard:get-version'),
   },
 };
