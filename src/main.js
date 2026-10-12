@@ -1949,6 +1949,128 @@ ipcMain.handle('wizard:export-companion', async (event, opts) => {
   }
 });
 
+// v3.4.5: companion export / import (Settings → Companions).
+// A bundle is one folder per companion: <id>-companion/
+//   companion.json  — openclaw agent entry (name, model, tools),
+//                     CyberClaw sprite config + stats, metadata
+//   workspace/      — the agent's top-level *.md files + memory/
+//                     (identity, soul, user notes, memories).
+//                     Sessions, keys, tmp and other bulk are skipped.
+//   cyberclaw/      — ~/.openclaw/cyberclaw/companions/<id>/
+// Import reverses it on a new install: copies the files, registers
+// the agent with `openclaw agents add`, restores model/tools/sprite.
+const COMPANION_BUNDLE_FORMAT = 'cyberclaw-companion';
+function _copyCompanionWorkspace(src, dst) {
+  const copied = [];
+  if (!src || !fs.existsSync(src)) return copied;
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (e.isFile() && /\.md$/i.test(e.name)) {
+      fs.copyFileSync(path.join(src, e.name), path.join(dst, e.name)); copied.push(e.name);
+    }
+  }
+  const mem = path.join(src, 'memory');
+  if (fs.existsSync(mem)) { fs.cpSync(mem, path.join(dst, 'memory'), { recursive: true }); copied.push('memory/'); }
+  return copied;
+}
+ipcMain.handle('companions:pick-folder', async (event, purpose) => {
+  const { dialog } = require('electron');
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: purpose === 'import' ? 'Choose a companion folder to import' : 'Choose where to export companions',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+});
+ipcMain.handle('companions:export', async (event, agentIds, destDir) => {
+  const results = [];
+  try {
+    if (!destDir) return { ok: false, error: 'no destination folder' };
+    const cfg = readOpenClawConfig() || {};
+    const entries = cfg.agents?.entries || {};
+    const list = cfg.agents?.list || [];
+    const sprites = loadSpriteConfigs();
+    const stats = loadStats();
+    let appVersion = 'unknown';
+    try { appVersion = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version; } catch {}
+    for (const id of (agentIds || [])) {
+      try {
+        const entry = entries[id] || list.find(a => a.id === id);
+        if (!entry) { results.push({ id, ok: false, error: 'not in openclaw config' }); continue; }
+        const out = path.join(destDir, id + '-companion');
+        fs.mkdirSync(out, { recursive: true });
+        const { workspace, ...agentEntry } = entry;
+        const files = _copyCompanionWorkspace(workspace, path.join(out, 'workspace'));
+        const ccDir = path.join(CYBERCLAW_DIR, 'companions', id);
+        if (fs.existsSync(ccDir)) fs.cpSync(ccDir, path.join(out, 'cyberclaw'), { recursive: true });
+        const manifest = {
+          format: COMPANION_BUNDLE_FORMAT, formatVersion: 1,
+          exportedAt: new Date().toISOString(), exportedFrom: os.hostname(), appVersion,
+          id, name: entry.name || id, originalWorkspace: workspace || null,
+          openclawAgent: agentEntry,
+          sprite: sprites[id] || null,
+          stats: stats[id] || null,
+          workspaceFiles: files,
+        };
+        fs.writeFileSync(path.join(out, 'companion.json'), JSON.stringify(manifest, null, 2));
+        results.push({ id, ok: true, path: out, files: files.length });
+      } catch (e) { results.push({ id, ok: false, error: e.message }); }
+    }
+    return { ok: results.every(r => r.ok), results };
+  } catch (e) { return { ok: false, error: e.message, results }; }
+});
+ipcMain.handle('companions:import', async (event, folder) => {
+  try {
+    // Accept the bundle folder itself, or a parent holding several bundles.
+    const bundles = [];
+    if (fs.existsSync(path.join(folder, 'companion.json'))) bundles.push(folder);
+    else for (const e of fs.readdirSync(folder, { withFileTypes: true })) {
+      if (e.isDirectory() && fs.existsSync(path.join(folder, e.name, 'companion.json'))) bundles.push(path.join(folder, e.name));
+    }
+    if (!bundles.length) return { ok: false, error: 'No companion.json found in that folder (or its subfolders).' };
+    const bin = findOpenClaw();
+    if (!bin) return { ok: false, error: 'OpenClaw is not installed' };
+    const results = [];
+    for (const b of bundles) {
+      let m;
+      try { m = JSON.parse(fs.readFileSync(path.join(b, 'companion.json'), 'utf8')); } catch (e) { results.push({ bundle: b, ok: false, error: 'bad companion.json' }); continue; }
+      if (m.format !== COMPANION_BUNDLE_FORMAT || !m.id) { results.push({ bundle: b, ok: false, error: 'not a CyberClaw companion export' }); continue; }
+      const id = String(m.id);
+      const cfg = readOpenClawConfig() || {};
+      if ((cfg.agents?.entries || {})[id] || (cfg.agents?.list || []).some(a => a.id === id)) {
+        results.push({ id, ok: false, error: 'a companion with this id already exists' }); continue;
+      }
+      // Workspace: keep the original path if its parent exists on
+      // this machine (same drive layout), else ~/.openclaw/workspace-<id>.
+      let ws = m.originalWorkspace;
+      if (!ws || !fs.existsSync(path.dirname(ws))) ws = path.join(OPENCLAW_DIR, 'workspace-' + id);
+      fs.mkdirSync(ws, { recursive: true });
+      // Copy without overwriting anything already there.
+      const srcWs = path.join(b, 'workspace');
+      if (fs.existsSync(srcWs)) fs.cpSync(srcWs, ws, { recursive: true, force: false, errorOnExist: false });
+      const primary = m.openclawAgent?.model?.primary || (typeof m.openclawAgent?.model === 'string' ? m.openclawAgent.model : '');
+      const args = ['"' + bin + '"', 'agents', 'add', '"' + id + '"', '--non-interactive', '--workspace', '"' + ws + '"'];
+      if (primary) args.push('--model', '"' + primary + '"');
+      const r = await execPromise(args.join(' ') + ' 2>&1');
+      // Restore name / model fallbacks / tools on the new entry.
+      try {
+        const c2 = readOpenClawConfig();
+        const ent = c2?.agents?.entries?.[id];
+        if (ent) {
+          const { workspace: _w, ...rest } = m.openclawAgent || {};
+          c2.agents.entries[id] = { ...ent, ...rest, workspace: ent.workspace || ws };
+          writeOpenClawConfig(c2);
+        } else if (!r.ok) { results.push({ id, ok: false, error: 'openclaw agents add failed: ' + String(r.error || r.output || '').slice(0, 200) }); continue; }
+      } catch (e) { console.warn('[companions:import] config patch failed:', e.message); }
+      if (m.sprite) { const s = loadSpriteConfigs(); s[id] = m.sprite; saveSpriteConfigs(s); }
+      if (m.stats) { try { const st = loadStats(); st[id] = m.stats; fs.writeFileSync(STATS_FILE, JSON.stringify(st, null, 2)); } catch {} }
+      const srcCc = path.join(b, 'cyberclaw');
+      if (fs.existsSync(srcCc)) fs.cpSync(srcCc, path.join(CYBERCLAW_DIR, 'companions', id), { recursive: true, force: false, errorOnExist: false });
+      results.push({ id, ok: true, name: m.name, workspace: ws });
+    }
+    return { ok: results.some(r => r.ok), results };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
 // v3.1.34: auto-detect all candidate quests at once (used by the
 // new "Auto-detect" button on the quest form). Reads the
 // projects directory, skips already-registered ones, and

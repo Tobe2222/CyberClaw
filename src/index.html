@@ -457,14 +457,7 @@
         <!-- Spacer to push Channel + Model to bottom -->
         <div style="flex:1"></div>
 
-        <!-- Channel -->
-        <div class="inspect-section">
-          <div class="section-title">Channel</div>
-          <div id="inspect-channel-info">
-            <div class="stat-row"><span class="stat-key">Platform</span><span class="stat-value" id="inspect-channel-platform">—</span></div>
-            <div class="stat-row"><span class="stat-key">Workspace</span><span class="stat-value truncate" id="inspect-workspace-right">—</span></div>
-          </div>
-        </div>
+        <!-- v3.4.5: Channel info moved to Settings → Companions → <companion> → Brain. -->
 
         <!-- Model (bottom) -->
         <div class="inspect-section">
@@ -707,12 +700,21 @@
           <div id="settings-companions-list" class="settings-companions-list">
             <!-- Populated by renderSettingsCompanionsList() -->
           </div>
+          <!-- v3.4.5: move companions between CyberClaw installs -->
+          <div class="companions-transfer-bar" id="companions-transfer-bar">
+            <button class="settings-action-btn" onclick="importCompanionsFromFolder()">📥 Import companion…</button>
+            <button class="settings-action-btn" onclick="exportAllCompanions()">📤 Export all…</button>
+          </div>
+          <div class="companions-transfer-status" id="companions-transfer-status"></div>
           <!-- v3.4.1: the companion page. The Companion Forge body +
                Save/Cancel footer are moved in here at runtime
                (showCompanionPageInSettings in app.js). -->
           <div id="settings-companion-page" class="settings-companion-page companion-editor hidden">
             <button class="settings-back-btn" onclick="closeCompanionEditor()">‹ All companions</button>
-            <div class="settings-companion-page-title" id="settings-companion-page-title">Companion</div>
+            <div class="cp-title-row">
+              <div class="settings-companion-page-title" id="settings-companion-page-title">Companion</div>
+              <button class="cp-export-btn" id="cp-export-btn" onclick="exportCurrentCompanion()" title="Save this companion to a folder so you can import it on another CyberClaw install">📤 Export</button>
+            </div>
           </div>
         </div>
 
@@ -1050,6 +1052,13 @@
         <!-- v3.2.32: Memory — read-only log of what the companion
              remembers. The companion writes here automatically
              via the remember_fact tool; the user can clear it. -->
+        <!-- v3.4.5: channel + workspace (was the Channel block in the right panel) -->
+        <div class="forge-traits-section" id="cp-channel-block">
+          <div class="forge-traits-title">📡 Channel &amp; workspace</div>
+          <div class="settings-row"><span class="settings-label">Platform</span><span class="settings-value" id="cp-channel-platform">—</span></div>
+          <div class="settings-row"><span class="settings-label">Workspace</span><span class="settings-value settings-path" id="cp-channel-workspace">—</span></div>
+          <div style="margin-top:6px;"><button class="btn-sm btn-muted" onclick="openCompanionWorkspace()">📂 Open workspace folder</button></div>
+        </div>
         <div class="forge-traits-section forge-memory-section">
           <div class="forge-traits-title">💭 Memory</div>
           <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">

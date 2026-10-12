@@ -66,6 +66,10 @@ window.cyberclaw = {
     openDoctor: () => ipcRenderer.invoke('openclaw:doctor'),
     getStats: (agentId) => ipcRenderer.invoke('companion:stats', agentId),
     getSpriteConfig: (agentId) => ipcRenderer.invoke('companion:get-sprite', agentId),
+    // v3.4.5: companion export / import bundles
+    pickCompanionFolder: (purpose) => ipcRenderer.invoke('companions:pick-folder', purpose),
+    exportCompanions: (ids, dir) => ipcRenderer.invoke('companions:export', ids, dir),
+    importCompanions: (dir) => ipcRenderer.invoke('companions:import', dir),
     saveSpriteConfig: (agentId, config) => ipcRenderer.invoke('companion:save-sprite', agentId, config),
     saveAvatar: (agentId, dataUrl) => ipcRenderer.invoke('companion:save-avatar', agentId, dataUrl),
     listSkills: () => ipcRenderer.invoke('openclaw:list-skills'),

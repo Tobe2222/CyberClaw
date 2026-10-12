@@ -7250,7 +7250,7 @@ const COMPANION_PAGE_TABS = [
   { key: 'personality', label: '🎭 Personality', desc: 'How this companion acts — traits, character and how often it speaks up on its own.',
     blocks: [['#forge-traits-grid', null], ['.forge-soul-section', null], ['.forge-chattiness-section', null]] },
   { key: 'brain', label: '🧠 Brain', desc: 'What powers this companion — the AI model it thinks with, and what it remembers.',
-    blocks: [['.forge-model-section', null], ['.forge-memory-section', null]] },
+    blocks: [['.forge-model-section', null], ['.forge-memory-section', null], ['#cp-channel-block', null]] },
 ];
 let _companionPageTab = 'looks';
 
@@ -7327,8 +7327,77 @@ function showCompanionPageInSettings(title, agentId, tab) {
     const icon = a ? ((a.emoji && a.emoji !== '🤖') ? a.emoji : (getSpriteIcon(a._pixelCompanionId) || '🐾')) : '';
     t.textContent = (icon ? icon + ' ' : '') + (title || 'Companion');
   }
+  fillCompanionChannelBlock(agentId);
   page.classList.remove('hidden');
   showCompanionPageTab(tab || _companionPageTab || 'looks');
+}
+
+
+// v3.4.5: companion export / import + channel info on the companion page.
+function _companionTransferStatus(html) {
+  const el = document.getElementById('companions-transfer-status');
+  if (el) el.innerHTML = html || '';
+}
+async function _exportCompanionIds(ids) {
+  if (!ids.length) return;
+  const dir = await cyberclaw.agents.pickCompanionFolder('export');
+  if (!dir) return;
+  _companionTransferStatus('Exporting…');
+  const res = await cyberclaw.agents.exportCompanions(ids, dir);
+  const lines = (res.results || []).map(r => r.ok
+    ? '✅ ' + escapeHtml((agents[r.id] && agents[r.id].name) || r.id) + ' → <code>' + escapeHtml(r.path) + '</code>'
+    : '❌ ' + escapeHtml(r.id) + ': ' + escapeHtml(r.error || 'failed'));
+  if (!lines.length && res.error) lines.push('❌ ' + escapeHtml(res.error));
+  _companionTransferStatus(lines.join('<br>'));
+  addChatMsg('system', '📤 Exported ' + (res.results || []).filter(r => r.ok).length + ' companion(s) to ' + dir);
+}
+window.exportCurrentCompanion = async function() {
+  if (!editorAgentId) return;
+  const id = editorAgentId;
+  await _exportCompanionIds([id]);
+  // Status line lives under the list; surface it on the page too.
+  const s = document.getElementById('companions-transfer-status');
+  if (s && s.textContent) alert(s.textContent);
+};
+window.exportAllCompanions = async function() {
+  await _exportCompanionIds((agentOrder || []).filter(id => agents[id] && !id.startsWith('subagent-')));
+};
+window.importCompanionsFromFolder = async function() {
+  const dir = await cyberclaw.agents.pickCompanionFolder('import');
+  if (!dir) return;
+  _companionTransferStatus('Importing…');
+  const res = await cyberclaw.agents.importCompanions(dir);
+  const lines = (res.results || []).map(r => r.ok
+    ? '✅ ' + escapeHtml(r.name || r.id) + ' imported (workspace <code>' + escapeHtml(r.workspace) + '</code>)'
+    : '❌ ' + escapeHtml(r.id || r.bundle || '?') + ': ' + escapeHtml(r.error || 'failed'));
+  if (!lines.length && res.error) lines.push('❌ ' + escapeHtml(res.error));
+  _companionTransferStatus(lines.join('<br>'));
+  if ((res.results || []).some(r => r.ok)) {
+    try {
+      await loadAgents();
+      renderCompanionChannelTabs();
+      if (typeof initArenaCompanions === 'function') await initArenaCompanions();
+    } catch (e) { console.warn('[import] reload agents:', e); }
+    renderSettingsCompanionsList();
+    addChatMsg('system', '📥 Imported companion(s): ' + res.results.filter(r => r.ok).map(r => r.name || r.id).join(', '));
+  }
+};
+window.openCompanionWorkspace = function() {
+  const a = editorAgentId && agents[editorAgentId];
+  if (!a || !a.workspace) return;
+  try { require('electron').shell.openPath(a.workspace); } catch (e) { console.warn(e); }
+};
+function fillCompanionChannelBlock(agentId) {
+  const a = agentId ? agents[agentId] : null;
+  const plat = document.getElementById('cp-channel-platform');
+  const ws = document.getElementById('cp-channel-workspace');
+  const blk = document.getElementById('cp-channel-block');
+  if (blk) blk.style.display = a ? '' : 'none';
+  const exp = document.getElementById('cp-export-btn');
+  if (exp) exp.style.display = a ? '' : 'none';
+  if (!a) return;
+  if (plat) plat.innerHTML = '<span class="channel-badge ' + (a.channelBadge || '') + '">' + (a.channelIcon || '') + ' ' + escapeHtml(a.channelDetail || '—') + '</span>';
+  if (ws) { ws.textContent = a.workspace || '—'; ws.title = a.workspace || ''; }
 }
 
 async function renderSettingsCompanionsListLegacy() {
