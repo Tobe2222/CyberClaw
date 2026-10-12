@@ -708,7 +708,7 @@ function startCameraLoop() {
 // ---------------------------------------------------------------------------
 const BACKGROUNDS = [
   { id: 'meadow', label: 'Summer Meadow', file: 'pixel_landscape_1.png', horizon: 0.30, season: 'summer', vibe: 'a warm sunny meadow full of flowers' },
-  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.55, season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
+  { id: 'forest', label: 'Dark Forest', file: 'pixel_landscape_2.png', horizon: 0.63, /* v3.4.3: was 0.55 — feet reached the tree line */ season: 'autumn', vibe: 'a dark mysterious forest, feels like autumn' },
   { id: 'grove', label: 'Forest Edge', file: 'pixel_landscape_3.png', horizon: 0.30, season: 'spring', vibe: 'a peaceful forest edge in spring' },
 ];
 
@@ -1782,7 +1782,8 @@ async function importProjectAsQuest(project) {
   try {
     await cyberclaw.quests.create({
       name: project.name,
-      description: 'Imported from ' + project.path,
+      // v3.4.3: no auto description — the 📁 line already shows the folder.
+      description: '',
       directory: project.path,
     });
     await renderQuests();
@@ -2106,7 +2107,7 @@ async function renderQuests() {
           <button class="quest-delete" onclick="deleteQuest(event,'${q.id}')" title="Delete">✕</button>
         </div>
       </div>
-      ${q.description ? `<div class="quest-desc">${escapeHtml(q.description)}</div>` : ''}
+      ${q.description ? `<div class="quest-desc" title="${escapeHtml(q.description)}">${escapeHtml(q.description)}</div>` : ''}
       ${renderQuestGoals(q)}
       ${companionAvatars}
       ${q.directory ? `<div class="quest-dir">📁 ${escapeHtml(q.directory.split('/').pop() || q.directory)}</div>` : ''}
@@ -10286,6 +10287,10 @@ document.querySelectorAll('.feed-treat').forEach(function(el) {
 function placeTreatOnArena(canvasX, canvasY, treatType) {
   var a = window.pixelArena;
   if (!a) return;
+  // v3.4.3: food / toys wake sleeping companions at night. Before,
+  // between 22:00 and 06:30 they stayed asleep and ignored the treat
+  // (the chat still said 'more meat!'), so feeding looked broken.
+  try { nudgeNightWake(); } catch (_) {}
   a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
   // v3.2.70: always-visible snack comment. Tobe
   // 2026-08-05 11:59: "I tried to give him some food

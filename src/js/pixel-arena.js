@@ -886,7 +886,13 @@ class PixelArena {
         const dx = (toy.x + toy.radius) - compCX2;
         const dy = (toy.y + toy.radius) - compCY2;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > cp.reactRadius) continue;
+        // v3.4.3: reactRadius (60–180 px) was tuned for a ~500 px
+        // arena; on the current ~1300 px arena a thrown ball was
+        // almost never noticed. Scale it with the arena width, and
+        // let everyone notice a toy that was just thrown/kicked.
+        const fresh = (performance.now() - (toy.lastTouched || 0)) < 6000;
+        const radius = cp.reactRadius * Math.max(1, this.width / 500);
+        if (!fresh && dist > radius) continue;
         if (dist < nearToyDist) { nearToy = toy; nearToyDist = dist; }
       }
 
