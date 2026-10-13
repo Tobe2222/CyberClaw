@@ -159,7 +159,7 @@ class PixelArena {
         img.onerror = () => resolve(); // don't crash on missing anims
         img.src = `file://${imgPath}`;
       });
-      images[animName] = { img, frames: animData.frames, cols: animData.cols || animData.frames };
+      images[animName] = { img, frames: animData.frames, cols: animData.cols || animData.frames, rowMap: animData.rowMap || null };
     }
 
     // v3.1.17: per-companion chase personality so they don't all
@@ -1159,7 +1159,10 @@ class PixelArena {
 
     const [fw, fh] = comp.data.frameSize;
     const cols = animData.cols || animData.frames;
-    const row = comp.direction;
+    // v3.4.7: some sheets order their rows differently (the fox run
+    // sheet has left/right swapped → moonwalking). catalog.json can
+    // give a per-animation rowMap [down, up, left, right].
+    const row = animData.rowMap ? animData.rowMap[comp.direction] : comp.direction;
     const col = comp.frame % cols;
 
     const sx = col * fw;

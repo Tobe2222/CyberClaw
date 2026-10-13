@@ -1294,9 +1294,14 @@ let activeQuestId = null;
 // Returns the previous value so call sites that need
 // it (e.g. the chat-history switch detection) don't have
 // to maintain a parallel variable.
+// v3.4.7: casual view. Toggling to Casual no longer deactivates the
+// quest — it only switches the chat context. _casualFromQuestId
+// remembers which active quest to toggle back to.
+let _casualFromQuestId = null;
 function setActiveQuestId(newId) {
   const prev = activeQuestId;
   activeQuestId = newId || null;
+  if (activeQuestId) _casualFromQuestId = null;
   // Auto-jump the chat panel to the new quest's bucket.
   // We call switchActiveChatQuest, which is a no-op when
   // the chat panel isn't mounted or there's no active
@@ -2074,7 +2079,9 @@ async function renderQuests() {
   // auto-jumps to the new quest's bucket when the list
   // changes (e.g. desktop restart re-reads quests.json with
   // a different active quest).
-  setActiveQuestId(quests.find(q => q.active)?.id || null);
+  { const aqId = quests.find(q => q.active)?.id || null;
+    // v3.4.7: stay in casual view if the user toggled away from this same quest.
+    if (aqId && aqId === _casualFromQuestId) updateChatQuestToggle(); else setActiveQuestId(aqId); }
 
   for (const q of sorted) {
     const isComplete = q.status === 'completed';
@@ -2827,6 +2834,20 @@ function updateChatQuestToggle() {
     pill.title = activeQuest.directory
       ? `Currently chatting on quest: ${activeQuest.name}\n${activeQuest.directory}`
       : `Currently chatting on quest: ${activeQuest.name}`;
+  } else if (_casualFromQuestId && quests.find(q => q && q.id === _casualFromQuestId && q.active)) {
+    // v3.4.7: casual view while a quest is still active → offer
+    // the way back to that quest.
+    const aq = quests.find(q => q && q.id === _casualFromQuestId);
+    pill.classList.add('casual');
+    pill.textContent = '💬 Casual';
+    pill.title = 'Casual chat. Your quest is still active.';
+    btn.style.display = '';
+    btn.disabled = false;
+    btn.textContent = '↔ ' + (aq.name || 'quest');
+    btn.title = 'Back to quest: ' + (aq.name || '');
+    btn.dataset.target = aq.id;
+    wrap.style.display = '';
+    return;
   } else {
     // v3.4.1: no active quest → no quest alternative. Tobe
     // 2026-10-12: 'there should not be a quest alternative
@@ -2882,10 +2903,13 @@ window.toggleChatQuestContext = async function() {
         ts: Date.now(),
       });
     } catch (_) {}
-    // Optimistic local update — setActiveQuestId handles
-    // the chat panel auto-jump and re-renders the toggle
-    // pill in the new state.
+    // v3.4.7: local chat-context switch only. The quest stays
+    // active (no setActive IPC) so the toggle can flip back.
+    const fromQuest = activeQuestId;
     setActiveQuestId(targetId);
+    if (!targetId && fromQuest) _casualFromQuestId = fromQuest;
+    updateChatQuestToggle();
+    return;
     try {
       await cyberclaw.quests.setActive(targetId);
     } catch (e) {
@@ -8764,7 +8788,8 @@ try {
       // set_quest_active). Without this, a quest switch
       // initiated from the mobile wouldn't be reflected in
       // the desktop's chat panel until the next renderQuests.
-      setActiveQuestId(list.find(q => q.active)?.id || null);
+      { const aqId = list.find(q => q.active)?.id || null;
+        if (aqId && aqId === _casualFromQuestId) updateChatQuestToggle(); else setActiveQuestId(aqId); }
       renderQuests();
     } catch (err) {
       console.warn('[quests-updated] handler failed:', err?.message);

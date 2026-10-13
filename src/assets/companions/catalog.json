@@ -10,7 +10,7 @@
       "animations": {
         "idle": { "file": "Fox_Idle.png", "cols": 4, "rows": 4, "frames": 4, "speed": 6 },
         "walk": { "file": "Fox_walk.png", "cols": 6, "rows": 4, "frames": 6, "speed": 8 },
-        "run": { "file": "Fox_Run.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10 },
+        "run": { "file": "Fox_Run.png", "cols": 6, "rows": 4, "frames": 6, "speed": 10, "rowMap": [0, 1, 3, 2] },
         "hurt": { "file": "Fox_Hurt.png", "cols": 4, "rows": 4, "frames": 2, "speed": 6 },
         "death": { "file": "Fox_Death.png", "cols": 6, "rows": 4, "frames": 6, "speed": 6 }
       },
