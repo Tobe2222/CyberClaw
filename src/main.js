@@ -901,7 +901,7 @@ function discoverAgents() {
         if (!m) return null;
         const val = m[1].trim();
         // Skip unfilled template placeholders
-        if (!val || val.startsWith('_(') || val.startsWith('(') || val.includes('pick something')) return null;
+        if (!val || val.startsWith('_') || val.startsWith('(') || val.includes('pick something') || val.includes('pick one')) return null;
         return val;
       };
 
@@ -6391,6 +6391,12 @@ ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
 // the desktop arena (one companion per agent). Each entry has the
 // fields needed to render the sprite: id, name, sprite (companionId),
 // scale.
+// v3.4.12: renderer → phones: current chat context (casual vs quest).
+ipcMain.handle('sync-broadcast-chat-context', (e, payload) => {
+  if (syncServer) syncServer.broadcastChatContext(payload || {});
+  return true;
+});
+
 ipcMain.handle('sync-broadcast-agents-list', (e, { agents }) => {
   console.log('[IPC] sync-broadcast-agents-list received:', agents?.length, 'agents:', agents?.map(a => a.id).join(','));
   if (syncServer) syncServer.broadcastAgentsList(agents);

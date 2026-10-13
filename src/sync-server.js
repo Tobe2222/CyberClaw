@@ -485,6 +485,7 @@ class SyncServer extends EventEmitter {
         if (this._lastTtsSettings) {
           this._send(ws, this._lastTtsSettings.payload);
         }
+        if (this._lastChatContext) this._send(ws, this._lastChatContext); // v3.4.12
 
         // Send current state and request chat history for this client
         this._sendFullState(ws);
@@ -527,6 +528,15 @@ class SyncServer extends EventEmitter {
             deviceType: msg.deviceType || 'mobile',
           });
         }
+        break;
+      }
+
+      case 'set_chat_context': {
+        // v3.4.12: phone toggled casual ↔ active quest. The quest stays
+        // active; the desktop switches its chat context (same as its own
+        // ↔ toggle) and re-broadcasts chat_context to every client.
+        if (!client.authenticated) return;
+        this._notifyMainWindow('mobile-set-chat-context', { casual: !!msg.casual });
         break;
       }
 
@@ -2555,6 +2565,12 @@ class SyncServer extends EventEmitter {
         ws.send(json);
       }
     }
+  }
+
+  // v3.4.12: shared casual/quest chat context.
+  broadcastChatContext(payload) {
+    this._lastChatContext = { type: 'chat_context', ...payload, ts: Date.now() };
+    this._broadcast(this._lastChatContext);
   }
 
   _notifyMainWindow(channel, data) {

@@ -11267,3 +11267,32 @@ window.closeSpriteGallery = function() {
   const ov = document.getElementById('sprite-gallery-overlay');
   if (ov) ov.classList.add('hidden');
 };
+
+// v3.4.12: share the casual/quest chat context with the phone.
+let _lastCtxSig = '';
+function broadcastChatContextToMobile() {
+  try {
+    const casual = !activeQuestId && !!_casualFromQuestId;
+    const qid = activeQuestId || _casualFromQuestId || null;
+    const q = (cachedQuestsList || []).find(x => x && x.id === qid);
+    const sig = (casual ? 'c' : 'q') + ':' + (qid || '');
+    if (sig === _lastCtxSig) return;
+    _lastCtxSig = sig;
+    require('electron').ipcRenderer.invoke('sync-broadcast-chat-context', { casual, questId: qid, questName: q ? q.name : null });
+  } catch (e) { console.warn('[chat-context] broadcast failed:', e && e.message); }
+}
+try {
+  require('electron').ipcRenderer.on('mobile-set-chat-context', (e, { casual }) => {
+    const inCasual = !activeQuestId && !!_casualFromQuestId;
+    if (casual && activeQuestId && !inCasual) {
+      _casualFromQuestId = activeQuestId; setActiveQuestId(null); _casualFromQuestId = _casualFromQuestId || null;
+    } else if (!casual && inCasual) {
+      setActiveQuestId(_casualFromQuestId);
+    }
+    try { updateChatQuestToggle(); } catch (_) {}
+    _lastCtxSig = ''; broadcastChatContextToMobile();
+  });
+} catch (_) {}
+
+const _origUpdateChatQuestToggle = updateChatQuestToggle;
+updateChatQuestToggle = function() { const r = _origUpdateChatQuestToggle.apply(this, arguments); broadcastChatContextToMobile(); return r; };
