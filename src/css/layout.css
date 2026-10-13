@@ -1295,3 +1295,14 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 .cp-hint { font-size: 12px !important; color: var(--text-secondary) !important; line-height: 1.45; margin: 4px 0 8px; }
 #cp-voice-block .settings-row { gap: 8px; }
 #cp-voice-block select { flex: 1; }
+
+/* v3.4.10: sprite gallery window */
+#settings-companion-page #companion-picker, #settings-companion-page #companion-picker.hidden { display: block !important; }
+#sprite-gallery-overlay #companion-picker, #sprite-gallery-overlay #companion-picker.hidden { display: block !important; }
+.sprite-gallery-panel { width: 620px; max-width: 92vw; background: var(--bg-panel); border: 2px solid var(--accent); border-radius: 12px; box-shadow: 0 0 40px rgba(255,107,53,0.25); padding-bottom: 16px; }
+.sprite-gallery-hint { color: var(--text-secondary); font-size: 13px; padding: 10px 18px; }
+#sprite-gallery-overlay .pixel-companion-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; padding: 0 18px; }
+#sprite-gallery-overlay .pixel-companion-card { cursor: pointer; padding: 10px 6px; border-radius: 10px; border: 1px solid var(--border-mid); background: var(--bg-dark); text-align: center; }
+#sprite-gallery-overlay .pixel-companion-card:hover { border-color: var(--orange-dim); }
+#sprite-gallery-overlay .pixel-companion-card.selected { border-color: var(--orange); background: rgba(255,107,53,0.14); }
+.cp-browse-btn { margin-top: 2px; }

@@ -7326,7 +7326,26 @@ function mountCompanionPage(page) {
   const picker = body.querySelector('#companion-picker');
   if (prev) hero.appendChild(prev);
   if (nameRow) hero.appendChild(nameRow);
-  if (picker) { const l = document.createElement('div'); l.className = 'cp-hero-label'; l.textContent = 'Sprite'; hero.appendChild(l); hero.appendChild(picker); }
+  // v3.4.10: sprite gallery opens in its own window via "Browse sprites";
+  // clicking a sprite picks it and closes the window.
+  const browse = document.createElement('button');
+  browse.className = 'settings-action-btn cp-browse-btn';
+  browse.textContent = '🖼️ Browse sprites';
+  browse.onclick = () => openSpriteGallery();
+  hero.appendChild(browse);
+  if (picker) {
+    const ov = document.createElement('div');
+    ov.id = 'sprite-gallery-overlay';
+    ov.className = 'modal-overlay hidden';
+    ov.onclick = (e) => { if (e.target === ov) closeSpriteGallery(); };
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel sprite-gallery-panel';
+    panel.innerHTML = '<div class="modal-header"><span class="rune-icon">🖼️</span> SPRITE GALLERY<button class="modal-close" onclick="closeSpriteGallery()">✕</button></div><div class="sprite-gallery-hint">Click a sprite to use it. Remember to Save.</div>';
+    panel.appendChild(picker);
+    ov.appendChild(panel);
+    document.body.appendChild(ov);
+    picker.addEventListener('click', (e) => { if (e.target.closest('.pixel-companion-card')) setTimeout(closeSpriteGallery, 120); });
+  }
   out.appendChild(hero);
   for (const grp of COMPANION_PAGE_LAYOUT) {
     if (grp.group) {
@@ -11235,4 +11254,16 @@ window.closeAbilitiesLibrary = function(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('abilities-library-overlay').classList.add('hidden');
   try { hideSkillForm(); } catch (_) {}
+};
+
+// v3.4.10: sprite gallery window
+window.openSpriteGallery = function() {
+  const ov = document.getElementById('sprite-gallery-overlay');
+  if (!ov) return;
+  try { renderPixelGallery(); } catch (_) {}
+  ov.classList.remove('hidden');
+};
+window.closeSpriteGallery = function() {
+  const ov = document.getElementById('sprite-gallery-overlay');
+  if (ov) ov.classList.add('hidden');
 };
