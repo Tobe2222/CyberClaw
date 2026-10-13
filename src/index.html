@@ -215,6 +215,41 @@
 
       <!-- v3.3.0: Skill detail/edit modal. Shows a skill's full SKILL.md
            content with edit/delete buttons. -->
+      <!-- v3.4.8: Abilities Library window -->
+      <div id="abilities-library-overlay" class="modal-overlay hidden" onclick="closeAbilitiesLibrary(event)">
+        <div class="modal-panel abilities-library-panel" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span class="rune-icon">📚</span> ABILITIES LIBRARY
+            <button class="modal-close" onclick="closeAbilitiesLibrary()">✕</button>
+          </div>
+          <div class="abilities-library-body">
+            <div class="abilities-library-intro">Abilities are step-by-step processes a companion can follow. Click one to view or edit it, or create a new one. Turn them on per companion under Enabled Abilities.</div>
+            <button class="settings-action-btn" id="abilities-new-btn" onclick="showSkillForm()">➕ New ability</button>
+            <div class="skill-form hidden" id="skill-form">
+            <input type="text" id="skill-name-input" placeholder="Ability name (e.g. Send Screenshots to User)" maxlength="80" />
+            <textarea id="skill-desc-input" placeholder="Short description (one line)" rows="2" maxlength="240"></textarea>
+            <textarea id="skill-triggers-input" placeholder="When to use (one phrase per line, e.g. 'user asks for a picture')" rows="3"></textarea>
+            <textarea id="skill-body-input" placeholder="Process — write the steps the companion should follow. Use headings and numbered/bulleted lists." rows="10"></textarea>
+            <div id="skill-validation-msg" class="skill-validation-msg"></div>
+            <div class="skill-form-actions">
+              <button class="quest-form-btn save" onclick="createSkill()">Create</button>
+              <button class="quest-form-btn cancel" onclick="hideSkillForm()">Cancel</button>
+            </div>
+          </div>
+          <div class="skill-section" id="skill-list">
+            <!-- Skills populated dynamically -->
+            <div class="skill-empty" id="skill-empty">
+              <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">
+                <div style="font-size:20px;margin-bottom:6px">📚</div>
+                No abilities yet.<br>Click + to create your first ability,<br>or seed the starter set below.
+              </div>
+              <button class="skill-seed-btn" onclick="seedStarterSkills()">Seed Starter Abilities</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+
       <div id="skill-detail-overlay" class="modal-overlay hidden" onclick="closeSkillDetail(event)">
         <div class="modal-panel skill-detail-panel" onclick="event.stopPropagation()">
           <div class="modal-header">
@@ -418,29 +453,9 @@
              of which toggles below are enabled. -->
         <div class="inspect-section">
           <div class="section-title">📚 Abilities Library
-            <button class="quest-add-btn" onclick="showSkillForm()" title="New ability">+</button>
+            <button class="quest-add-btn" onclick="openAbilitiesLibrary()" title="Open the Abilities Library">+</button>
           </div>
-          <div class="skill-form hidden" id="skill-form">
-            <input type="text" id="skill-name-input" placeholder="Ability name (e.g. Send Screenshots to User)" maxlength="80" />
-            <textarea id="skill-desc-input" placeholder="Short description (one line)" rows="2" maxlength="240"></textarea>
-            <textarea id="skill-triggers-input" placeholder="When to use (one phrase per line, e.g. 'user asks for a picture')" rows="3"></textarea>
-            <textarea id="skill-body-input" placeholder="Process — write the steps the companion should follow. Use headings and numbered/bulleted lists." rows="10"></textarea>
-            <div id="skill-validation-msg" class="skill-validation-msg"></div>
-            <div class="skill-form-actions">
-              <button class="quest-form-btn save" onclick="createSkill()">Create</button>
-              <button class="quest-form-btn cancel" onclick="hideSkillForm()">Cancel</button>
-            </div>
-          </div>
-          <div class="skill-section" id="skill-list">
-            <!-- Skills populated dynamically -->
-            <div class="skill-empty" id="skill-empty">
-              <div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">
-                <div style="font-size:20px;margin-bottom:6px">📚</div>
-                No abilities yet.<br>Click + to create your first ability,<br>or seed the starter set below.
-              </div>
-              <button class="skill-seed-btn" onclick="seedStarterSkills()">Seed Starter Abilities</button>
-            </div>
-          </div>
+          <!-- v3.4.8: library list + form live in the Abilities window (+ opens it) -->
         </div>
 
         <!-- v3.3.0: Per-companion enabled-skills toggles. Each row

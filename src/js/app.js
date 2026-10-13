@@ -9955,6 +9955,7 @@ async function refreshSkillsList() {
       <div class="skill-row-icon">${escapeHtml(s.icon || '🔧')}</div>
       <div class="skill-row-body" title="${escapeAttr(s.description || '')}">
         <div class="skill-row-name">${escapeHtml(s.name)}</div>
+        <div class="skill-row-desc">${escapeHtml(s.description || '')}</div>
       </div>
     </div>`;
   }).join('');
@@ -11207,3 +11208,14 @@ window.focusCompanionFromView = function(agentId) {
   window.closeCompanionsView();
 };
 
+
+// v3.4.8: Abilities Library window (opened by + in the right panel).
+window.openAbilitiesLibrary = function() {
+  document.getElementById('abilities-library-overlay').classList.remove('hidden');
+  try { refreshSkillsList(); } catch (_) {}
+};
+window.closeAbilitiesLibrary = function(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('abilities-library-overlay').classList.add('hidden');
+  try { hideSkillForm(); } catch (_) {}
+};

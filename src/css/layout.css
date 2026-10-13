@@ -1266,3 +1266,13 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 }
 /* abilities library: name only */
 #skill-list .skill-row-meta, #skill-list .skill-row-desc { display: none; }
+
+/* v3.4.8: Abilities Library window */
+.abilities-library-panel { width: 640px; max-width: 92vw; max-height: 82vh; overflow-y: auto;
+  background: var(--bg-panel); border: 2px solid var(--accent); border-radius: 12px; box-shadow: 0 0 40px rgba(255,107,53,0.25); }
+.abilities-library-body { padding: 14px 18px 18px; }
+.abilities-library-intro { color: var(--text-secondary); font-size: 13px; line-height: 1.45; margin-bottom: 12px; }
+#abilities-new-btn { margin-bottom: 12px; }
+#abilities-library-overlay #skill-form { margin-bottom: 14px; }
+#abilities-library-overlay #skill-list .skill-row-desc { display: block; }
+#abilities-library-overlay #skill-list .skill-row { padding: 10px 12px; }
