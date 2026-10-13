@@ -527,7 +527,8 @@ const localAI = require('./local-ai');
 // Delegates to local-ai.js (whisper.cpp STT + piper TTS)
 // local-ai is initialized once the app window is ready (see createWindow)
 const transcribeAudio = (audioBase64, mimeType) => localAI.transcribeAudio(audioBase64, mimeType);
-const synthesizeSpeech = (text) => localAI.synthesizeSpeech(text);
+// v3.4.9: pass the voice through (it was silently dropped → always 'lessac').
+const synthesizeSpeech = (text, voice) => localAI.synthesizeSpeech(text, voice || 'lessac');
 
 // Strip emojis and special symbols from text for TTS
 function stripEmojisForTTS(text) {
@@ -6361,6 +6362,8 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUs
       console.warn('[TTS] Could not get voice setting, using default:', err.message);
     }
     
+    // v3.4.9: per-companion voice (Settings → Companions → <name> → Voice).
+    try { const sc = loadSpriteConfigs()[agentId]; if (sc && sc.voice) ttsVoice = sc.voice; } catch (_) {}
     console.log(`[TTS] Synthesizing voice response with ${ttsVoice}: "${cleanText.substring(0, 60)}..."`);
     discordLog('🔊', 'TTS synthesizing', `${ttsVoice}: "${cleanText.substring(0, 60)}"`);
     try {
@@ -6487,7 +6490,7 @@ ipcMain.on('desktop-set-companion', (e, { companionId }) => {
 ipcMain.handle('test-tts-voice', async (e, { voice, text }) => {
   try {
     console.log(`[TEST] Testing TTS voice: ${voice}`);
-    const audioBase64 = await synthesizeSpeech(text);
+    const audioBase64 = await synthesizeSpeech(text, voice);
     if (audioBase64) {
       // Play the audio immediately
       const path = require('path');

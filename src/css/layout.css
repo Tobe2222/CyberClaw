@@ -1276,3 +1276,22 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 #abilities-library-overlay #skill-form { margin-bottom: 14px; }
 #abilities-library-overlay #skill-list .skill-row-desc { display: block; }
 #abilities-library-overlay #skill-list .skill-row { padding: 10px 12px; }
+
+/* v3.4.9: single-page companion settings (mobile-style) */
+.cp-tabs { display: none !important; }
+.cp-page { display: flex; flex-direction: column; gap: 12px; }
+.cp-hero { background: var(--bg-dark); border: 1px solid var(--orange); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.cp-hero .forge-companion-preview { width: 100%; min-height: 190px; display: flex; align-items: center; justify-content: center; margin: 0;
+  background: radial-gradient(ellipse at center 70%, rgba(255,107,53,0.18), transparent 65%); border-radius: 10px; }
+.cp-hero .forge-change-btn { display: none; }
+.cp-hero .editor-name-row { width: 100%; max-width: 360px; }
+.cp-hero .editor-name-input { text-align: center; font-size: 18px; font-weight: 700; }
+.cp-hero-label { align-self: flex-start; color: var(--text-muted); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+#settings-companion-page #companion-picker, #settings-companion-page #companion-picker.hidden { display: block !important; width: 100%; }
+.cp-group-title { margin-top: 10px; color: var(--orange); font-size: 18px; font-weight: 700; }
+.settings-companion-page .cp-block.forge-traits-section { margin: 0 !important; }
+.cp-subpart { background: none !important; border: none !important; padding: 0 !important; margin: 0 0 6px !important; }
+.cp-subtitle { font-size: 12px !important; color: var(--text-secondary) !important; margin: 6px 0 2px !important; }
+.cp-hint { font-size: 12px !important; color: var(--text-secondary) !important; line-height: 1.45; margin: 4px 0 8px; }
+#cp-voice-block .settings-row { gap: 8px; }
+#cp-voice-block select { flex: 1; }

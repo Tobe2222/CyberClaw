@@ -1058,6 +1058,7 @@
             </select>
             <button class="btn-sm btn-muted" onclick="applySoulPreset()" style="margin-left:6px;">Apply preset</button>
           </div>
+          <div class="settings-info cp-hint" id="cp-soul-hint">The <b>personality block</b> (between the markers) is written for you from <b>Behaviour</b> — toggle traits and it updates. Anything you write outside the block is yours and is never touched.</div>
           <textarea id="forge-soul-editor" class="settings-textarea" rows="6" placeholder="Describe this companion's character — personality, voice, how they talk. Markdown OK."></textarea>
           <div class="settings-info" style="font-size:10px;color:var(--text-muted);margin-top:4px;">
             <span id="forge-soul-status">Empty</span> · Capped at 8KB · Injected into every chat as system context
@@ -1067,6 +1068,25 @@
         <!-- v3.2.32: Memory — read-only log of what the companion
              remembers. The companion writes here automatically
              via the remember_fact tool; the user can clear it. -->
+        <!-- v3.4.9: per-companion voice -->
+        <div class="forge-traits-section" id="cp-voice-block">
+          <div class="forge-traits-title">🔊 Voice</div>
+          <div class="settings-row">
+            <span class="settings-label">Voice</span>
+            <select id="forge-voice" class="settings-select">
+              <option value="">Default (Settings → Voice)</option>
+              <optgroup label="Female"><option value="amy">Amy — warm</option><option value="kathleen">Kathleen — clear</option><option value="jenny">Jenny — British</option><option value="kristin">Kristin — low, breathy</option></optgroup>
+              <optgroup label="Male"><option value="lessac">Lessac — baseline</option><option value="joe">Joe — deeper</option><option value="ryan">Ryan</option><option value="sam">Sam — smooth</option></optgroup>
+            </select>
+            <button class="btn-sm btn-muted" onclick="testCompanionVoice()">🔊 Test</button>
+          </div>
+          <div class="settings-info cp-hint">Used when this companion answers you by voice on the phone.</div>
+        </div>
+        <!-- v3.4.9: wake & exit phrases (trained on the phone) -->
+        <div class="forge-traits-section" id="cp-wake-block">
+          <div class="forge-traits-title">🎤 Wake &amp; exit phrases</div>
+          <div class="settings-info cp-hint">Wake word, wake greeting, exit phrase and exit reply are recorded and trained on your phone (microphone lives there). Open the CyberClaw app → Settings → Companions → <b id="cp-wake-name">this companion</b> → Wake / Exit.</div>
+        </div>
         <!-- v3.4.5: channel + workspace (was the Channel block in the right panel) -->
         <div class="forge-traits-section" id="cp-channel-block">
           <div class="forge-traits-title">📡 Channel &amp; workspace</div>

@@ -6264,11 +6264,10 @@ const CHATTINESS_DESCRIPTIONS = {
 let currentTraitSoulMap = {};
 let currentSoulIsCustom = false;
 
+const _cpSoul = require('./companion-prompts');
 function buildSoulFromTraits(traits, name) {
-  const arr = Array.isArray(traits) ? traits : [];
-  const lines = arr.map((t) => currentTraitSoulMap[t]).filter(Boolean);
-  if (!lines.length) return '';
-  return `# ${name || ''}\n\n` + lines.join(' ') + '\n';
+  // v3.4.9: marker-wrapped personality block (see mergeTraitsIntoSoul).
+  return _cpSoul.mergeTraitsIntoSoul('', traits, name, currentTraitSoulMap);
 }
 
 function showForgeCompanion(pixelId) {
@@ -6348,6 +6347,7 @@ function openCompanionForge(agentId) {
     showForgeCompanion(pixelId);
     // Render gallery for picker
     renderPixelGallery();
+    { const vsel = document.getElementById('forge-voice'); if (vsel) vsel.value = (config && config.voice) || ''; } // v3.4.9
     // Load saved traits
     const savedTraits = config?.traits || [];
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
@@ -6425,7 +6425,11 @@ async function loadCompanionSoulEditor(agentId) {
     //       the current traits and surface a toast so the
     //       user knows it happened.
     const looksStale = looksLikeStaleSoul(loaded, auto);
-    if (loaded && loaded !== auto.trim() && looksStale) {
+    if (loaded.includes(_cpSoul.SOUL_BLOCK_START)) {
+      // v3.4.9: refresh just the personality block from current traits.
+      ta.value = _cpSoul.mergeTraitsIntoSoul(ta.value, traits, name, currentTraitSoulMap);
+      currentSoulIsCustom = false;
+    } else if (loaded && loaded !== auto.trim() && looksStale) {
       const regenerated = buildSoulFromTraits(traits, name);
       ta.value = regenerated;
       currentSoulIsCustom = false;
@@ -6515,13 +6519,14 @@ function getCheckedForgeTraits() {
 // can always tap "Apply preset" or hit the new "Reset
 // from traits" button to force regeneration.
 function regenerateSoulFromTraits() {
-  if (currentSoulIsCustom) return;
+  // v3.4.9: always update — only the personality block changes;
+  // the user's own text around it is preserved.
   const ta = document.getElementById('forge-soul-editor');
   if (!ta) return;
   const traits = getCheckedForgeTraits();
   const nameEl = document.getElementById('editor-name');
   const name = nameEl ? nameEl.value.trim() : '';
-  const generated = buildSoulFromTraits(traits, name);
+  const generated = _cpSoul.mergeTraitsIntoSoul(ta.value, traits, name, currentTraitSoulMap);
   if (ta.value !== generated) {
     ta.value = generated;
     updateSoulStatus();
@@ -6704,6 +6709,7 @@ window.saveCompanion = async function() {
       primaryModel: readForgePrimaryModel() || agent.primaryModel,
       scale: currentForgeScale, // v3.1.6: persist the size slider value
       chattiness: currentForgeChattiness, // v3.2.26: persist the chattiness slider value
+      voice: (document.getElementById('forge-voice') || {}).value || undefined, // v3.4.9
     });
     // v3.2.32: persist the soul.md alongside the sprite config.
     // Soul failures don't block the rest of the save — we warn
@@ -7284,73 +7290,83 @@ window.showSettingsSection = function(keyOrEl) {
   content.scrollTop = 0;
 };
 
-// v3.4.2: the companion page (old Companion Forge) is split into
-// three tabs. Personality keeps traits + soul together because the
-// soul presets are built from the traits. Brain is the technical
-// tab: which model powers the companion + what it remembers.
-const COMPANION_PAGE_TABS = [
-  { key: 'looks', label: '🎨 Looks', desc: 'How this companion looks — name, sprite and size in the arena.',
-    blocks: [['.editor-name-row', '🏷️ Name'], ['.forge-companion-preview', '🐾 Sprite'], ['#companion-picker', null], ['.forge-size-section', null]] },
-  { key: 'personality', label: '🎭 Personality', desc: 'How this companion acts — traits, character and how often it speaks up on its own.',
-    blocks: [['#forge-traits-grid', null], ['.forge-soul-section', null], ['.forge-chattiness-section', null]] },
-  { key: 'brain', label: '🧠 Brain', desc: 'What powers this companion — the AI model it thinks with, and what it remembers.',
-    blocks: [['.forge-model-section', null], ['.forge-memory-section', null], ['#cp-channel-block', null]] },
+// v3.4.9: the companion page is one scrolling page, mobile-style:
+// hero (sprite preview + name + sprite picker) → Size & chattiness →
+// Behaviour → Voice → Wake & exit → Brain (model, memory, soul,
+// channel). Tobe 2026-10-13: 'It should look more like the mobile end'.
+const COMPANION_PAGE_LAYOUT = [
+  { group: null, cards: [
+    { title: '📐 Size & chattiness', parts: ['.forge-size-section', '.forge-chattiness-section'] },
+    { title: null, parts: ['#forge-traits-grid'] },
+    { title: null, parts: ['#cp-voice-block'] },
+    { title: null, parts: ['#cp-wake-block'] },
+  ] },
+  { group: '🧠 Brain', desc: 'What powers this companion — the AI model it thinks with, what it remembers, and its written character.', cards: [
+    { title: null, parts: ['.forge-model-section'] },
+    { title: null, parts: ['.forge-memory-section'] },
+    { title: null, parts: ['.forge-soul-section'] },
+    { title: null, parts: ['#cp-channel-block'] },
+  ] },
 ];
-let _companionPageTab = 'looks';
+let _companionPageTab = 'looks'; // kept for older callers
 
 function mountCompanionPage(page) {
   const panel = document.querySelector('#companion-editor-overlay .modal-panel');
   const body = panel && panel.querySelector('.editor-content');
   const footer = panel && panel.querySelector('.modal-footer');
   if (!body) return;
-  const tabs = document.createElement('div');
-  tabs.className = 'cp-tabs';
-  let looksPane = null;
-  const panes = [];
-  for (const t of COMPANION_PAGE_TABS) {
-    const btn = document.createElement('button');
-    btn.className = 'cp-tab';
-    btn.dataset.tab = t.key;
-    btn.textContent = t.label;
-    btn.onclick = () => showCompanionPageTab(t.key);
-    tabs.appendChild(btn);
-    const pane = document.createElement('div');
-    pane.className = 'cp-pane';
-    pane.dataset.tab = t.key;
-    const d = document.createElement('div');
-    d.className = 'cp-pane-desc';
-    d.textContent = t.desc;
-    pane.appendChild(d);
-    for (const [sel, title] of t.blocks) {
-      const el = body.querySelector(sel);
-      if (!el) continue;
-      const blk = el.classList.contains('forge-traits-section') ? el : (el.closest('.forge-traits-section') || el);
-      blk.classList.add('cp-block');
-      if (title && !blk.querySelector(':scope > .forge-traits-title')) {
-        const h = document.createElement('div');
-        h.className = 'forge-traits-title';
-        h.textContent = title;
-        blk.insertBefore(h, blk.firstChild);
-      }
-      pane.appendChild(blk);
+  const find = sel => { const el = body.querySelector(sel); if (!el) return null; return el.classList.contains('forge-traits-section') ? el : (el.closest('.forge-traits-section') || el); };
+  const out = document.createElement('div');
+  out.className = 'cp-page';
+  // Hero
+  const hero = document.createElement('div');
+  hero.className = 'cp-hero';
+  const prev = body.querySelector('.forge-companion-preview');
+  const nameRow = body.querySelector('.editor-name-row');
+  const picker = body.querySelector('#companion-picker');
+  if (prev) hero.appendChild(prev);
+  if (nameRow) hero.appendChild(nameRow);
+  if (picker) { const l = document.createElement('div'); l.className = 'cp-hero-label'; l.textContent = 'Sprite'; hero.appendChild(l); hero.appendChild(picker); }
+  out.appendChild(hero);
+  for (const grp of COMPANION_PAGE_LAYOUT) {
+    if (grp.group) {
+      const h = document.createElement('div'); h.className = 'cp-group-title'; h.textContent = grp.group; out.appendChild(h);
+      if (grp.desc) { const d = document.createElement('div'); d.className = 'cp-pane-desc'; d.textContent = grp.desc; out.appendChild(d); }
     }
-    if (t.key === 'looks') looksPane = pane;
-    panes.push(pane);
+    for (const card of grp.cards) {
+      const els = card.parts.map(find).filter(Boolean);
+      if (!els.length) continue;
+      let blk;
+      if (els.length === 1 && !card.title) { blk = els[0]; }
+      else {
+        blk = document.createElement('div'); blk.className = 'forge-traits-section';
+        if (card.title) { const t = document.createElement('div'); t.className = 'forge-traits-title'; t.textContent = card.title; blk.appendChild(t); }
+        els.forEach(e => { const tt = e.querySelector(':scope > .forge-traits-title'); if (tt) tt.classList.add('cp-subtitle'); e.classList.add('cp-subpart'); blk.appendChild(e); });
+      }
+      blk.classList.add('cp-block');
+      out.appendChild(blk);
+    }
   }
-  // Anything not assigned to a tab stays reachable on Looks.
-  Array.from(body.children).forEach(c => { if (c.tagName !== 'INPUT') looksPane.appendChild(c); });
-  body.appendChild(tabs);
-  panes.forEach(p => body.appendChild(p));
+  // Leftovers (hidden inputs etc.) stay in the body.
+  body.appendChild(out);
+  Array.from(body.children).forEach(c => { if (c !== out && c.tagName !== 'INPUT') out.appendChild(c); });
   page.appendChild(body);
   if (footer) page.appendChild(footer);
 }
 
-window.showCompanionPageTab = function(key) {
-  _companionPageTab = key;
-  document.querySelectorAll('#settings-companion-page .cp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
-  document.querySelectorAll('#settings-companion-page .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.tab === key));
+window.showCompanionPageTab = function() {
   const content = document.querySelector('#settings-overlay .settings-content');
   if (content) content.scrollTop = 0;
+};
+
+window.testCompanionVoice = function() {
+  const sel = document.getElementById('forge-voice');
+  let voice = sel && sel.value;
+  if (!voice) { try { voice = (loadSettings().ttsVoice) || 'lessac'; } catch (_) { voice = 'lessac'; } }
+  const a = editorAgentId && agents[editorAgentId];
+  const nm = (document.getElementById('editor-name') || {}).value || (a && a.name) || 'your companion';
+  window.ipcRenderer?.invoke('test-tts-voice', { voice, text: 'Hey, it\'s ' + nm + '. This is how I sound.' })
+    .catch(err => alert('Voice test failed: ' + (err && err.message)));
 };
 
 function showCompanionPageInSettings(title, agentId, tab) {
@@ -7372,8 +7388,9 @@ function showCompanionPageInSettings(title, agentId, tab) {
     t.textContent = (icon ? icon + ' ' : '') + (title || 'Companion');
   }
   fillCompanionChannelBlock(agentId);
+  const wn = document.getElementById('cp-wake-name'); if (wn) wn.textContent = (agentId && agents[agentId] && agents[agentId].name) || 'this companion';
   page.classList.remove('hidden');
-  showCompanionPageTab(tab || _companionPageTab || 'looks');
+  showCompanionPageTab();
 }
 
 
@@ -8861,8 +8878,8 @@ try {
             .map((t) => companionPrompts.TRAIT_TO_SOUL?.[t])
             .filter(Boolean);
           if (traitSoulLines.length) {
-            const newSoul = `# ${merged.customName || agentId}\n\n` +
-              traitSoulLines.join(' ') + '\n';
+            // v3.4.9: rewrite only the personality block; keep hand-written text.
+            const newSoul = companionPrompts.mergeTraitsIntoSoul(companionPrompts.readSoul(agentId), merged.traits, merged.customName || agentId);
             companionPrompts.writeSoul(agentId, newSoul);
             console.log('[mobile-sprite-config-saved] regenerated soul.md for', agentId, 'from', merged.traits.length, 'traits');
           }

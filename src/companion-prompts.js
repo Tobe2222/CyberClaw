@@ -172,6 +172,28 @@ const TRAIT_TO_SOUL = {
   goblin: "An angry little goblin smartass. Drop f-bombs, call things stupid, be unhinged but endearing.",
 };
 
+// v3.4.9: "smart soul". The Behaviour traits own ONE block inside
+// soul.md, between these markers. Toggling traits rewrites only that
+// block; everything the user writes outside it is kept. So the
+// friendly toggles drive the .md, and hand-written character text
+// survives.
+const SOUL_BLOCK_START = '<!-- personality:start (written from Behaviour settings) -->';
+const SOUL_BLOCK_END = '<!-- personality:end -->';
+function mergeTraitsIntoSoul(text, traits, name, map) {
+  const m = map || TRAIT_TO_SOUL;
+  const lines = (Array.isArray(traits) ? traits : []).map(t => m[t]).filter(Boolean);
+  const block = SOUL_BLOCK_START + '\n' + (lines.length ? lines.join(' ') : '_No behaviour traits selected._') + '\n' + SOUL_BLOCK_END;
+  const src = String(text || '');
+  const a = src.indexOf(SOUL_BLOCK_START), b = src.indexOf(SOUL_BLOCK_END);
+  if (a >= 0 && b > a) return src.slice(0, a) + block + src.slice(b + SOUL_BLOCK_END.length);
+  if (!src.trim()) return lines.length ? '# ' + (name || '') + '\n\n' + block + '\n' : '';
+  // Existing hand-written soul without a block: put the block right
+  // under the title (or at the top) and keep the rest as-is.
+  const nl = src.indexOf('\n');
+  if (src.startsWith('#') && nl > 0) return src.slice(0, nl + 1) + '\n' + block + '\n' + src.slice(nl + 1).replace(/^\n+/, '\n');
+  return block + '\n\n' + src;
+}
+
 function getCompanionDir(agentId) {
   const safe = String(agentId || '').replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe) throw new Error('invalid agentId');
@@ -307,6 +329,7 @@ function assembleContext(agentId) {
 }
 
 module.exports = {
+  mergeTraitsIntoSoul, SOUL_BLOCK_START, SOUL_BLOCK_END,
   // File IO
   readSoul, writeSoul,
   readMemory, appendMemory, clearMemory,
