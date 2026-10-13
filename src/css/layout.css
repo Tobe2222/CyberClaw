@@ -1254,3 +1254,15 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 .settings-companions-list.hidden ~ .companions-transfer-status { display: none; }
 .companions-transfer-status { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; word-break: break-all; }
 #cp-channel-block .settings-path { max-width: 420px; }
+
+/* v3.4.6: no per-bubble quest stamp (shown under the chat instead) */
+.msg-quest-header { display: none !important; }
+#chat-messages .chat-msg:not(.system) { padding: 8px 12px !important; }
+/* unread dot on the casual/quest toggle */
+.chat-quest-toggle-btn.has-unread { position: relative; }
+.chat-quest-toggle-btn.has-unread::after {
+  content: ''; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--orange); box-shadow: 0 0 6px var(--orange);
+}
+/* abilities library: name only */
+#skill-list .skill-row-meta, #skill-list .skill-row-desc { display: none; }

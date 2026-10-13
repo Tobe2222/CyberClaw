@@ -2648,8 +2648,17 @@ function parseQuestConversationMd(content, agentId) {
   let m;
   while ((m = re.exec(content))) heads.push({ idx: m.index, end: re.lastIndex, ts: Date.parse(m[1]), role: m[2], who: m[3] });
   const out = [];
+  // v3.4.6: older logs contain unprompted companion chatter (idle
+  // comments, ball/snack reactions) written before that was routed
+  // to casual chat. Keep an agent line only if it's a reply — i.e.
+  // within 30 min of a user message on this quest.
+  const REPLY_WINDOW_MS = 10 * 60 * 1000;
+  let lastUserTs = -Infinity;
   for (let i = 0; i < heads.length; i++) {
     const h = heads[i];
+    if (h.role === 'user') lastUserTs = h.ts;
+    else if (h.role === 'agent' && !(h.ts - lastUserTs <= REPLY_WINDOW_MS)) continue;
+    if (h.role === 'agent' && /idle companion\s*[—-]\s*no task/i.test(content.slice(h.end, h.end + 200))) continue;
     const text = content.slice(h.end, i + 1 < heads.length ? heads[i + 1].idx : content.length).replace(/\s+$/, '');
     const who = h.who.split('|');
     if (!who.some(w => want.has(String(w).trim().toLowerCase()))) continue;
@@ -2694,6 +2703,8 @@ async function loadQuestFileHistory(agentId, qk) {
 // can switch to chat manually later and pick up the right
 // bucket via the natural switchActiveChat path.
 window.switchActiveChatQuest = function(newQuestId) {
+  const tb = document.getElementById('chat-quest-toggle-btn');
+  if (tb) tb.classList.remove('has-unread');
   // Just call switchActiveChat with the current agent —
   // it already reads from the active-quest bucket, so
   // updating activeQuestId is enough. The activeChatAgentId
@@ -5302,6 +5313,15 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   if (agentId && activeChatAgentId && agentId !== activeChatAgentId && type !== 'typing') {
     // Mark the channel tab as having unread content
     markChannelUnread(agentId);
+    return null;
+  }
+  // v3.4.6: same for chat context. A casual message (idle chatter,
+  // toy/snack reactions) must not appear in the quest chat the user
+  // is looking at, and vice versa. It's stored in its own bucket;
+  // the ↔ toggle gets an unread dot instead.
+  if (type !== 'typing' && questKeyForStorage(effectiveQuestId) !== questKeyForStorage(activeQuestId)) {
+    const tbtn = document.getElementById('chat-quest-toggle-btn');
+    if (tbtn) tbtn.classList.add('has-unread');
     return null;
   }
 
@@ -9908,11 +9928,9 @@ async function refreshSkillsList() {
     const triggerCount = (s.triggers || []).length;
     return `<div class="skill-row" onclick="openSkillDetail('${escapeAttr(s.id)}')">
       <div class="skill-row-icon">${escapeHtml(s.icon || '🔧')}</div>
-      <div class="skill-row-body">
+      <div class="skill-row-body" title="${escapeAttr(s.description || '')}">
         <div class="skill-row-name">${escapeHtml(s.name)}</div>
-        <div class="skill-row-desc">${escapeHtml(s.description || '(no description)')}</div>
       </div>
-      <div class="skill-row-meta">${triggerCount} trigger${triggerCount === 1 ? '' : 's'}</div>
     </div>`;
   }).join('');
 }
