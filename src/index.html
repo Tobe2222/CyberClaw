@@ -798,7 +798,17 @@
             To connect from outside your home network:<br>
             1. Forward <strong>port 9247 (TCP)</strong> on your router → this PC's local IP<br>
             2. On the phone app, enter your <strong>public IP</strong> (check whatismyip.com)<br>
+            3. This PC's firewall must allow it too (Ubuntu: <code>sudo ufw allow 9247/tcp</code>)<br>
             Pairing is rate-limited (3 wrong codes → 5-min lockout).
+          </div>
+          <!-- v3.4.11: pairing help (Tobe 2026-10-13: phone said Connected!, then hung on Connecting…) -->
+          <div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.25);border-radius:8px;padding:10px;margin:8px 0;font-size:11px;color:#aaa;line-height:1.6;">
+            <strong style="color:#00d4ff;">🔗 Pairing your phone</strong><br>
+            1. Click <strong>Generate Pairing Code</strong> below — a 6-digit code, valid 5 minutes.<br>
+            2. On the phone: Settings → Connection → enter this PC's IP → <strong>Connect</strong> → type the code.<br>
+            3. Done — the phone stays paired and reconnects by itself.<br>
+            <strong style="color:#f7931a;">Says “Connected!” then hangs on “Connecting…”?</strong> The phone is reaching this PC but isn't paired with <em>this</em> install
+            (new computer, reinstall, or Reset to defaults). Forget the old desktop on the phone and pair again with a fresh code.
           </div>
           <div class="settings-row" id="mobile-pairing-row">
             <button class="settings-action-btn" id="mobile-pair-btn" onclick="generatePairingCode()">🔗 Generate Pairing Code</button>
