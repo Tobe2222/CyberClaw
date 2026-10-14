@@ -1,7 +1,4 @@
-/**
- * local-ai.js — Offline STT (whisper.cpp) + TTS (piper) for CyberClaw
- * No API keys required. Downloads binaries + models on first use.
- */
+/** Local-ai.js — Offline STT (whisper.cpp) + TTS (piper) for CyberClaw No API keys required. */
 
 const { execFile, exec: execCb } = require('child_process');
 const { promisify } = require('util');
@@ -15,29 +12,7 @@ const { pipeline } = require('stream');
 const { promisify: prom } = require('util');
 const streamPipeline = prom(pipeline);
 
-// Piper voices from https://huggingface.co/rhasspy/piper-voices
-//
-// v3.2.92: expanded the voice set to 6 (3 female + 3 male)
-// per Tobe's request (2026-08-11 22:43): 'add so there are
-// 3 female and 3 male, lets start with that'. Voice URLs
-// are auto-downloaded on first synthesis request; the .onnx
-// + .onnx.json files live in ~/.local-ai/piper/ and
-// persist across app restarts.
-//
-// Female picks:
-//   - amy        US Midwest, warm + conversational (best
-//                fit for a chat assistant personality)
-//   - kathleen   US, clear + professional
-//   - jenny      GB (British), distinct accent option
-// Male picks:
-//   - lessac     US, default baseline voice
-//   - joe        US, slightly deeper than lessac
-//   - ryan       US, alternative male
-//
-// Tobe (2026-08-11 22:43): voice selection lives in
-// Settings → Voice on the mobile (per-companion override)
-// plus a global default in cyberclaw-settings.ttsVoice on
-// the desktop.
+// Piper voices from https://huggingface.co/rhasspy/piper-voices v3.2.92: expanded the voice set to 6 (3 female + 3 male) per Tobe's request…
 const PIPER_VOICES = {
   // Female (3) — Tobe's pick for chat-assistant personas
   'amy':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium',
@@ -47,30 +22,15 @@ const PIPER_VOICES = {
   'lessac':   'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium',
   'joe':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium',
   'ryan':     'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium',
-  // v3.2.93: sultry/warm voices. Tobe (2026-08-11 23:08):
-  // 'add the most sexy voices also, 1 of each.' Kristin
-  // is piper's go-to low-pitch breathy female; Sam is
-  // the smoothest warm-male option. Both picked on
-  // pitch + warmth + cadence, not name. kathleen is
-  // already a warm female but kristin sits lower and
-  // has more breathy delivery.
+  // Sultry/warm voices.
   'kristin':  'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium',
   'sam':      'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium',
-  // Legacy voice from earlier releases, kept as alias
-  // of amy so existing users don't break when they
-  // upgrade. v3.2.92: removed (no callers reference it
-  // by name; safe to drop).
-  // 'glow-tts': 'https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/glow-tts/medium'
+  // Legacy voice from earlier releases, kept as alias of amy so existing users don't break when they upgrade.
 };
 
 const getVoiceUrls = (voice = 'lessac') => {
   const baseUrl = PIPER_VOICES[voice] || PIPER_VOICES['lessac'];
-  // v3.2.92: derive the voice filename from the baseUrl
-  // path so we can handle voices whose model lives in
-  // a non-standard subdir (e.g. kathleen lives at
-  // `/low/` not `/medium/`). The HF URL structure is
-  // `.../<lang>/<locale>/<voice>/<quality>/<file>`,
-  // and the file basename matches what we need.
+  // Derive the voice filename from the baseUrl path so we can handle voices whose model lives in a non-standard subdir (e.g.
   const urlParts = baseUrl.split('/');
   const quality = urlParts[urlParts.length - 1]; // 'medium' / 'low' / 'high'
   const urlLocale = urlParts[urlParts.length - 3]; // 'en_US' / 'en_GB'
@@ -139,26 +99,7 @@ function downloadFile(url, destPath, progressLabel) {
     let total = 0;
 
     const doRequest = (reqUrl) => {
-      // v3.2.97: resolve relative redirect URLs against the
-      // current request URL before recursing. Hugging Face's
-      // CDN returns 307 with `location: /api/resolve-cache/
-      // ...` (a relative path) for some .onnx.json metadata
-      // files. The previous code passed the raw location to
-      // http.get() which threw "Invalid URL" and crashed the
-      // whole Electron process via Node's uncaughtException
-      // handler. Tobe hit this on 2026-08-13 when he picked
-      // the joe voice for the first time — the .onnx
-      // downloaded fine, the .json 307'd to a relative path,
-      // and the desktop died mid-download.
-      //
-      // new URL(absoluteOrRelative, base) handles both:
-      // - "https://huggingface.co/..." → unchanged
-      // - "/api/resolve-cache/..." → resolved against the
-      //   current URL's origin
-      // - "https://cdn.example.com/foo" → unchanged
-      //
-      // Also bump the redirect hop limit so a hostile or
-      // misconfigured server can't loop us forever.
+      // Resolve relative redirect URLs against the current request URL before recursing.
       let resolved;
       try {
         resolved = new URL(reqUrl, url).toString();
@@ -176,11 +117,7 @@ function downloadFile(url, destPath, progressLabel) {
             fs.unlink(destPath, () => {});
             return reject(new Error(`Redirect without location header from ${url}`));
           }
-          // v3.2.97: wrap the recursive call so any
-          // synchronous throw (invalid URL, etc.) is
-          // captured as a promise rejection instead of an
-          // uncaught exception that takes down the whole
-          // Electron process.
+          // Wrap the recursive call so any synchronous throw (invalid URL, etc.) is captured as a promise rejection instead of an uncaught exception…
           try {
             doRequest(location);
           } catch (e) {
@@ -515,16 +452,6 @@ async function transcribeAudio(audioBase64, mimeType) {
     }
 
     // Run whisper-cli using exec for better error capture.
-    // v3.1.34: wrap with a timeout. Without this, a hung
-    // whisper process (malformed input, voice activity
-    // detector stuck, etc.) holds the whole voice flow
-    // forever and the user sees "transcribing" indefinitely.
-    // Tobe hit this on 2026-06-25 — voice hung for 3+
-    // minutes before he closed out. The actual root cause
-    // was unclear (whisper output looked fine in isolation),
-    // but a defensive timeout here means future hangs are
-    // bounded. 60s is generous: base.en on a 30s clip is
-    // ~15s, so 60s leaves plenty of headroom for slow CPUs.
     let stdout = '';
     try {
       const cmd = `"${binaryPath}" -m "${modelPath}" -f "${tmpWav}" --language en --output-txt --output-file "${tmpWav.replace('.wav', '')}"`;
@@ -541,13 +468,6 @@ async function transcribeAudio(audioBase64, mimeType) {
         console.log(`[transcribeAudio] Whisper completed in ${Date.now() - t0}ms`);
       } catch (raceErr) {
         // On timeout, the underlying exec is still running.
-        // We can't kill it cleanly without child_process.kill
-        // plumbing, but since execFileAsync holds a child
-        // reference inside its internal promise, the child
-        // will be reaped when the process eventually exits.
-        // The next call to transcribeAudio will start a
-        // fresh whisper process, so a stuck one doesn't
-        // block subsequent calls.
         console.error(`[transcribeAudio] Whisper failed/timeout: ${raceErr.message}`);
         throw raceErr;
       }

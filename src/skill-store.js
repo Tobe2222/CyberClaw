@@ -1,45 +1,4 @@
-// v3.3.0: User-managed Skill library.
-//
-// Skills are markdown documents that describe a specific process the
-// companion should follow. Each skill lives in its own directory:
-//
-//   ~/.openclaw/cyberclaw/skills/<skill-id>/SKILL.md
-//
-// The SKILL.md file has YAML frontmatter (machine-readable metadata:
-// name, description, triggers, icon) followed by the markdown body
-// (the actual process). The schema is:
-//
-//   ---
-//   name: Send Screenshots to User
-//   description: How to send screenshots via the chat transport
-//   icon: 📷
-//   triggers:
-//     - user asks for a picture
-//     - user says they can't see something
-//   ---
-//
-//   # When to use
-//   ...
-//
-//   # Process
-//   1. Save to workspace path
-//   ...
-//
-// The companion's enabled skills are stored per-companion in:
-//
-//   ~/.openclaw/cyberclaw/companions/<agentId>/enabled-skills.json
-//
-// = ["send-screenshots", "deploy-via-pm2", ...]
-//
-// On every chat send, enabled skills are appended to the companion's
-// system context block so the LLM sees the process content as part
-// of its prompt.
-//
-// Skills must be PROCESS-SPECIFIC, not generic tasks. "How to deploy
-// to cyberhive.no via pm2" is a skill. "Help with code" is not —
-// that's a category. The skill-store.create flow nudges users toward
-// concrete process content via the schema requirements (triggers,
-// step-by-step body).
+// User-managed Skill library.
 
 const fs = require('fs');
 const path = require('path');
@@ -71,16 +30,7 @@ function ensureSkillsDir() {
   }
 }
 
-// Parse a SKILL.md file into { frontmatter, body }. The frontmatter
-// is a JS object built from the YAML between the leading `---` and
-// trailing `---` lines. The body is everything after the closing
-// `---`. We deliberately keep the YAML parser tiny (no external
-// dependency) and forgiving — unknown keys are preserved as-is, and
-// the parser tolerates extra whitespace.
-//
-// Returns { ok, frontmatter, body, raw, error }. On parse failure
-// (e.g. malformed frontmatter) the file is still returned with the
-// raw content so the caller can show the user a fix-it UI.
+// Parse a SKILL.md file into { frontmatter, body }.
 function parseSkillFile(content) {
   if (!content || typeof content !== 'string') {
     return { ok: false, error: 'empty content', frontmatter: {}, body: '', raw: content || '' };
@@ -106,12 +56,7 @@ function parseSkillFile(content) {
   const afterClose = afterOpen.slice(closeIdx + 4);
   const body = afterClose.replace(/^\n+/, '').trim();
 
-  // Parse the YAML-ish frontmatter. We support:
-  //   key: value
-  //   key: "quoted value"
-  //   key:
-  //     - item one
-  //     - item two
+  // Parse the YAML-ish frontmatter.
   const frontmatter = {};
   const lines = fmText.split('\n');
   let i = 0;
@@ -486,13 +431,7 @@ when the user wants a visual. Save the actual image and attach it.
   the action you're documenting, not before.
 `,
   },
-  // deploy-via-pm2 and manage-cybercomputer-services were removed from
-  // the default seed in v3.3.1 — they're Tobe-specific desktop
-  // workflows that shouldn't ship to other users. Tobe keeps them
-  // as manual skills in his own ~/.openclaw/cyberclaw/skills/.
-  // If we ever want to ship them as opt-in starters, list them under
-  // STARTER_SKILLS with a per-user filter rather than as universal
-  // defaults.
+  // Deploy-via-pm2 and manage-cybercomputer-services were removed from the default seed in v3.3.1 — they're Tobe-specific desktop workflows…
 ];
 
 function seedStarterSkills() {

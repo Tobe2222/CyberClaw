@@ -1,7 +1,4 @@
-/* ============================================================
-   PixelSprite — Animated pixel companion renderer
-   Loads sprite sheets, animates frames on a canvas
-   ============================================================ */
+/* ============================================================ PixelSprite — Animated pixel companion renderer Loads sprite sheets, animates… */
 
 const _path = require('path');
 const _fs = require('fs');
@@ -10,11 +7,7 @@ try { _fs.appendFileSync(_path.join(require('os').homedir(), '.openclaw', 'cyber
 let pixelCatalog = null;
 
 function loadPixelCatalog() {
-  // v3.1.27: ALWAYS re-read the catalog file. We used to cache
-  // it at module level (`pixelCatalog`), but that cached the
-  // OLD version (no iconFile field) across code updates. The
-  // catalog is tiny (<4KB) and read from disk on every call,
-  // so the cost is negligible compared to the bug we just hit.
+  // ALWAYS re-read the catalog file.
   const candidates = [];
   if (window._assetsDir) candidates.push(_path.join(window._assetsDir, 'companions', 'catalog.json'));
   if (typeof __dirname === 'string' && __dirname) {
@@ -42,10 +35,7 @@ function loadPixelCatalog() {
 }
 
 class PixelSprite {
-  /**
-   * @param {HTMLElement} container — DOM element to render into
-   * @param {Object} opts — { scale: 3, direction: 0, animation: 'idle' }
-   */
+  /** @param {HTMLElement} container — DOM element to render into @param {Object} opts — { scale: 3, direction: 0, animation: 'idle' } */
   constructor(container, opts = {}) {
     this.container = container;
     this.scale = opts.scale || 4;

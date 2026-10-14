@@ -25,12 +25,7 @@ const { WebLinksAddon } = require('xterm-addon-web-links');
 // Model name formatting
 // ---------------------------------------------------------------------------
 
-// Lookup the catalog `icon` for a given pixel sprite id. Returns
-// null if the sprite isn't in the catalog or has no icon field.
-// Used to send a per-sprite emoji to the mobile so the wake
-// trainer picker (and chat tabs) can show a consistent icon per
-// companion. The mobile falls back to its own lookup or to
-// '🐾' / '🤖' when this is null.
+// Lookup the catalog `icon` for a given pixel sprite id.
 function getSpriteIcon(pixelId) {
   if (!pixelId) return null;
   try {
@@ -42,10 +37,7 @@ function getSpriteIcon(pixelId) {
   }
 }
 
-// v3.1.26: returns the relative path to the sprite icon SVG
-// (Twemoji-style). Used where we want a guaranteed colorful,
-// smooth icon at any size, independent of the system emoji
-// font. Falls back to null if the sprite has no iconFile.
+// Returns the relative path to the sprite icon SVG (Twemoji-style).
 function getSpriteIconFile(pixelId) {
   if (!pixelId) return null;
   try {
@@ -57,26 +49,9 @@ function getSpriteIconFile(pixelId) {
   }
 }
 
-// v3.1.29: returns the iconFile contents as a base64 data URI
-// so the mobile (React Native) can render it via <Image source={{ uri: dataUri }}>.
-// React Native's Image component doesn't resolve relative file
-// paths from a broadcast payload, but it DOES render data URIs
-// reliably. The SVG is tiny (<3KB) so the base64 overhead is
-// negligible.
+// Returns the iconFile contents as a base64 data URI so the mobile (React Native) can render it via <Image source={{ uri: dataUri }}>.
 
-// v3.2.28: convert an avatar value to a data URI suitable for
-// the mobile. The desktop stores a.avatar as either a file
-// path (read from IDENTITY.md's Avatar: field, or the
-// assets/avatars/ fallback at boot) OR as a base64 data URI
-// (set after saveAvatar in the desktop forge). React Native's
-// <Image> cannot resolve file paths from a broadcast payload,
-// so the broadcast must always be a data URI.
-//
-// Strategy: if it already starts with "data:" we pass it
-// through; otherwise treat it as a file path and read +
-// base64-encode it. Cached at module scope (one read per
-// agent) so the 60s broadcast doesn't re-read the file each
-// tick.
+// Convert an avatar value to a data URI suitable for the mobile.
 let _avatarCache = new Map(); // path -> { dataUri, mtimeMs }
 function getAvatarDataUri(avatar) {
   if (!avatar) return null;
@@ -102,10 +77,7 @@ function getAvatarDataUri(avatar) {
     }
     const buf = _fs2.readFileSync(resolved);
     const b64 = buf.toString('base64');
-    // PNG signature sniff. If the file is something else
-    // (e.g. JPEG, WebP), use the matching data URI prefix.
-    // Default to image/png since the avatar is rendered
-    // through canvas.toDataURL('image/png') in the forge.
+    // PNG signature sniff.
     let mime = 'image/png';
     if (buf[0] === 0xff && buf[1] === 0xd8) mime = 'image/jpeg';
     else if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) mime = 'image/webp';
@@ -149,11 +121,7 @@ function formatModelName(modelId) {
   if (!modelId) return 'Unknown';
   const parts = modelId.split('/');
   const name = parts[parts.length - 1];
-  // v3.3.10: refreshed for the new catalog. The table is
-  // a pretty-print fallback; the generic regex below
-  // produces reasonable output for any other id, so this
-  // list is just for the most common ones the user
-  // actually sees.
+  // Refreshed for the new catalog.
   const pretty = {
     // Anthropic
     'claude-opus-4-8': 'Claude Opus 4.8',
@@ -237,14 +205,7 @@ function defaultStats(rarity) {
 // Skills detection (from workspace skills availability)
 const defaultSkills = ['Coding Agent', 'Weather', 'Healthcheck', 'Skill Creator'];
 
-// v3.2.84: skill taxonomy — single source of truth for the renderer.
-// Mirrors SKILL_DEFS in main.js (classifyTask). The main process
-// owns the keyword lists because that's where classification happens;
-// the renderer reads the names + icons to render the inspect panel
-// + ship the same defs to the mobile broadcast.
-//
-// If you change SKILL_DEFS in main.js, mirror the changes here so the
-// renderer doesn't render a category that has no data, and vice versa.
+// Skill taxonomy — single source of truth for the renderer.
 const SKILL_DEFS = [
   { name: 'Building',     icon: '🔧' },
   { name: 'Writing',      icon: '✍️'  },
@@ -268,22 +229,7 @@ async function loadAgents() {
     agentOrder = [];
     agents = {};
 
-    // Filter out unbound agents with no workspace (like "main")
-    // v3.3.2: only skip the generic default placeholder paths. Don't
-    // hardcode a per-user home dir — the OpenClaw gateway already
-    // expands '~' for us, so any user's default workspace is filtered
-    // the same way regardless of their home directory.
-    // v3.3.7: also drop agents with id === 'main' regardless of
-    // workspace. The OpenClaw default config ships a stub `main`
-    // agent (no binding, no explicit workspace) that the gateway
-    // resolves to the default `~/workspace` — but the literal
-    // string the gateway returns is the post-expansion path
-    // (e.g. `/home/humpsuu/workspace`), which the v3.3.2 filter
-    // compared against `~/workspace` and missed. Result: a ghost
-    // `main` companion was leaking into the agents_list broadcast,
-    // getting cached on the sync-server, and replayed to every
-    // mobile reconnect. The arena `initArenaCompanions` then
-    // assigned it a pixel sprite, making the duplicate visible.
+    // Filter out unbound agents with no workspace (like "main") v3.3.2: only skip the generic default placeholder paths.
     const isDefaultWorkspace = (ws) => !ws || ws === '~/workspace' || /\/workspace$/.test(ws);
     const filtered = result.agents.filter(a => {
       if (a.id === 'main') return false; // OpenClaw default stub — always skip
@@ -292,10 +238,7 @@ async function loadAgents() {
       return false; // unbound + default workspace = skip
     });
 
-    // Sort: by name. (v3.1.3 removed the "party leader" concept — all
-    // agents are treated equally. The arena shows the first non-hidden
-    // companion, or whatever the user selects via the carousel / chat
-    // channel tabs.)
+    // Sort: by name.
     const sorted = filtered.sort((a, b) => a.name.localeCompare(b.name));
 
     sorted.forEach((a, i) => {
@@ -368,13 +311,7 @@ async function loadAgents() {
           // Support both legacy single assignedQuest and new assignedQuests array
           if (cfg.assignedQuests) agents[id].assignedQuests = cfg.assignedQuests;
           else if (cfg.assignedQuest) agents[id].assignedQuests = [cfg.assignedQuest];
-          // v3.1.28: set _pixelCompanionId at load time so the chat
-          // tab icon lookup (which reads agent._pixelCompanionId)
-          // works even if initArenaCompanions hasn't run yet OR if
-          // a later code path replaces the agent object. Without
-          // this, the chat tab falls back to agent.emoji (which
-          // is often "🤖" from older defaults) instead of the
-          // sprite's catalog icon.
+          // Set _pixelCompanionId at load time so the chat tab icon lookup (which reads agent._pixelCompanionId) works even if initArenaCompanions…
           if (cfg.pixelCompanionId) {
             agents[id]._pixelCompanionId = cfg.pixelCompanionId;
           }
@@ -461,16 +398,7 @@ async function initArenaCompanions() {
   const catalog = loadPixelCatalog();
   const defaultCompanions = catalog.companions || [];
 
-  // v3.1.5: every non-hidden companion is rendered in the arena. The
-  // pixelArena spreads them horizontally based on count. The active
-  // chat companion (if visible) is added first so it gets the center slot.
-  // v3.1.18: cap at 6 visible companions. The desktop UI wasn't
-  // designed for a long horizontal scroll bar of 20+ sprites; if
-  // the user has more, only the first 6 (in arena order, with the
-  // active chat companion first) are rendered. Hidden companions
-  // don't count toward the cap. The remaining companions stay
-  // selectable via the agent list / channel tabs but don't get a
-  // sprite on the arena canvas.
+  // Every non-hidden companion is rendered in the arena.
   const MAX_ARENA_COMPANIONS = 6;
   const visibleOrder = [
     ...(activeChatAgentId && !hiddenCompanions.has(activeChatAgentId) ? [activeChatAgentId] : []),
@@ -502,10 +430,7 @@ async function initArenaCompanions() {
 
     if (!pixelId && defaultCompanions.length > 0) {
       pixelId = defaultCompanions[i % defaultCompanions.length].id;
-      // v3.4.1: persist the default sprite. After the computer
-      // migration sprites.json was missing, so the sprite was
-      // re-derived on every boot and the channel tabs (rendered
-      // before the arena) had no sprite to take an icon from.
+      // Persist the default sprite.
       try {
         const prev = await cyberclaw.agents.getSpriteConfig(id);
         await cyberclaw.agents.saveSpriteConfig(id, { ...(prev || {}), pixelCompanionId: pixelId });
@@ -541,36 +466,7 @@ async function initArenaCompanions() {
   broadcastAgentsListToMobile();
 }
 
-// v3.1.20: factored out so saveCompanion (and other code that
-// mutates the agent list) can re-broadcast the mobile list
-// without duplicating the visibleOrder construction. The
-// mobile list is what the mobile arena uses to render
-// companions, so any change to the desktop's agent list
-// (sprite id, scale, name, emoji) needs to push a fresh
-// list to all connected mobiles immediately — otherwise
-// the mobile won't see the change until the next 60s
-// periodic sync. Earlier this only ran on init/reconnect,
-// which is why changing a companion's size in the forge
-// didn't update the mobile until up to 60s later.
-// v3.2.27: now async. We need to await the sprite config
-// read for each agent so the broadcast can include the
-// full per-companion sprite config (traits, scale,
-// chattiness, pixelCompanionId, models). The mobile's
-// Personalize screen was rendering defaults (empty
-// traits) because the agents_list broadcast didn't carry
-// the sprite config — the mobile would only know what the
-// user just SAVED, not what was already set on the
-// desktop. Tobe's v3.10.94 feedback: "i still dont get
-// the current settings. If you see the behaviours, none
-// of them are selected, even tho they are on the
-// desktop. The settings should be consistent between
-// desktop and phone."
-//
-// Each sprite config is ~200 bytes JSON; reading 6 of
-// them in parallel takes ~1ms (disk cache hit on second
-// call). Awaiting in a map() is fine — the Promise.all
-// pattern keeps the broadcast latency at one disk read,
-// not six.
+// Factored out so saveCompanion (and other code that mutates the agent list) can re-broadcast the mobile list without duplicating the…
 async function broadcastAgentsListToMobile() {
   try {
     // Reuse the same visibleOrder construction as
@@ -585,13 +481,7 @@ async function broadcastAgentsListToMobile() {
     const mobileList = (await Promise.all(order.map(async id => {
       const a = agents[id];
       if (!a) return null;
-      // v3.2.27: read the full sprite config so the mobile
-      // can hydrate its Personalize screen with the same
-      // values the desktop has. cyberclaw.agents.getSpriteConfig
-      // reads from sprites.json (cached on second call).
-      // Errors are swallowed: a missing/corrupt file is
-      // treated as "no config" and the mobile falls back
-      // to its own defaults.
+      // Read the full sprite config so the mobile can hydrate its Personalize screen with the same values the desktop has.
       let spriteConfig = null;
       try {
         spriteConfig = await cyberclaw.agents.getSpriteConfig(id);
@@ -601,22 +491,9 @@ async function broadcastAgentsListToMobile() {
         name: a.name,
         sprite: a._pixelCompanionId || null,
         scale: a._pixelCompanionScale || null,
-        // v3.1.30: distinguish "user explicitly set an emoji"
-        // from "no user-set emoji, fell back to the desktop's
-        // 🤖 default". The desktop stores a.emoji = a.emoji ||
-        // '🤖' in its agents dict (so its own UI can render a
-        // robot when nothing else applies), but for the mobile
-        // broadcast we want the sprite catalog icon to be the
-        // fallback, not the desktop's default. Treat the 🤖
-        // default as "not set" and let the mobile's own chain
-        // (emoji → icon → 🐾) decide.
+        // Distinguish "user explicitly set an emoji" from "no user-set emoji, fell back to the desktop's 🤖 default".
         emoji: a.emoji === '🤖' ? null : (a.emoji || null),
-        // v3.1.30: the sprite catalog icon is a separate
-        // concept from the user's per-agent emoji override. A
-        // cat-person wants 🦊 as the sprite icon and 😺 as their
-        // custom emoji; we shouldn't conflate them. Send the
-        // sprite icon independently of the per-agent emoji so
-        // the mobile can compose them in its own chain.
+        // The sprite catalog icon is a separate concept from the user's per-agent emoji override.
         icon: getSpriteIcon(a._pixelCompanionId) || null,
         // v3.1.26: also send iconFile for the Twemoji SVG so
         // the mobile can render the bundled SVG instead of
@@ -626,57 +503,15 @@ async function broadcastAgentsListToMobile() {
         // React Native's <Image> can render it without needing
         // to resolve a relative file path from the broadcast.
         iconDataUri: getSpriteIconDataUri(a._pixelCompanionId),
-        // v3.2.27: the actual pixel-art sprite (not the
-        // Twemoji SVG). This is the first frame of the
-        // idle animation, the same PNG that shows in the
-        // arena + the chat tab icon + the desktop forge
-        // preview. Tobe's v3.10.94 feedback: the mobile
-        // preview was rendering the catalog emoji, not the
-        // pixel sprite. Sending the avatar data URL
-        // (5–11KB per sprite) lets the mobile render the
-        // same art. Null if no avatar yet (legacy companion
-        // or saveAvatar hasn't run).
-        //
-        // v3.2.28: convert file paths to data URIs at
-        // broadcast time. At boot the desktop loads
-        // a.avatar from IDENTITY.md (which holds a file
-        // path, not a data URL) or the assets/avatars/
-        // fallback. The mobile can't render a file path
-        // from a broadcast payload — getAvatarDataUri
-        // reads the file, base64-encodes it, and caches by
-        // mtime so the 60s broadcast is fast.
+        // The actual pixel-art sprite (not the Twemoji SVG).
         avatar: getAvatarDataUri(a.avatar),
-        // v3.10.3: include sleepState so the mobile arena can
-        // render a sleeping-sprite visual (CSS grayscale +
-        // dim) when the desktop considers the companion
-        // sleeping. Without this the mobile stays awake-looking
-        // even when the desktop sprite is dozing, breaking the
-        // "they sleep on the phone" expectation Tobe has. The
-        // mobile also sends `mobile-wake-agent` IPC to flip
-        // this back when the user speaks to a sleeping
-        // companion, triggering a re-broadcast via
-        // broadcastAgentsListToMobile() below.
+        // Include sleepState so the mobile arena can render a sleeping-sprite visual (CSS grayscale + dim) when the desktop considers the companion…
         sleepState: a.sleepState || 'awake',
-        // v3.2.26: chattiness scale (1–5). Mobile Personalize
-        // screen uses this to render the slider's current value
-        // without a separate request. Default 3 if the
-        // companion has no chattiness set yet (legacy
-        // sprite-config without the field).
+        // Chattiness scale (1–5).
         chattiness: typeof a.chattiness === 'number' ? a.chattiness : 3,
-        // v3.2.27: the full sprite config (traits, scale,
-        // pixelCompanionId, models, customName, focusSkills).
-        // The mobile hydrates the Personalize screen from
-        // this so the user sees the same selections the
-        // desktop has, not defaults. Null if no config.
+        // The full sprite config (traits, scale, pixelCompanionId, models, customName, focusSkills).
         spriteConfig: spriteConfig || null,
-        // v3.2.84: companion skill XP + levels (the same
-        // data the desktop inspect panel renders). Read
-        // from companion-stats.json via the existing
-        // `cyberclaw.agents.getStats` IPC. Shape:
-        //   { level, xp, xpTotal, skills: { <name>: { level, xp } } }
-        // Missing stats get the default { level: 1, xp: 0,
-        // xpTotal: 0, skills: {} } from main.js's
-        // `companion:stats` handler.
+        // Companion skill XP + levels (the same data the desktop inspect panel renders).
         skills: await cyberclaw.agents.getStats(id).catch(() => ({ level: 1, xp: 0, xpTotal: 0, skills: {} })),
       };
     }))).filter(Boolean);
@@ -824,13 +659,7 @@ function renderArenaSettingsCompanions() {
     if (agent.avatar && String(agent.avatar).startsWith('data:')) {
       avatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
     } else {
-      // v3.1.21: prefer per-agent emoji, fall back to sprite icon
-      // from the catalog so the avatar matches the sprite.
-      // v3.10.65: strip the desktop's default 🤖 before falling
-      // back to the sprite icon — same pattern as the chat
-      // header, channel tabs, and broadcast paths. Without this,
-      // agents without an explicit emoji show a robot instead of
-      // their companion sprite in the carousel.
+      // Prefer per-agent emoji, fall back to sprite icon from the catalog so the avatar matches the sprite.
       avatar.textContent = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
     }
     row.appendChild(avatar);
@@ -880,23 +709,14 @@ function renderArenaSettingsCompanions() {
   }
 }
 
-// Apply the current hiddenCompanions set to the pixelArena. v3.1.5:
-// each hidden companion is removed from the arena; each newly-visible
-// companion is added. The set is also persisted to localStorage so
-// the choice survives a reload.
+// Apply the current hiddenCompanions set to the pixelArena.
 async function applyCompanionVisibility() {
   if (!pixelArena) return;
   // Remove companions that are now hidden
   for (const c of [...pixelArena.companions]) {
     if (hiddenCompanions.has(c.id)) pixelArena.removeCompanion(c.id);
   }
-  // Add companions that are now visible
-  // v3.1.18: cap the arena at 6. The active chat companion (if
-  // visible and not hidden) is always included; the rest are
-  // taken in `agentOrder` order until we hit the cap. If a
-  // companion is unhidden beyond the cap, we just skip the add
-  // (the user can still chat with them — they're just not
-  // rendered in the arena).
+  // Add companions that are now visible v3.1.18: cap the arena at 6.
   const MAX_ARENA_COMPANIONS = 6;
   let arenaSlotsUsed = pixelArena.companions.length;
   for (const id of agentOrder) {
@@ -934,10 +754,7 @@ async function applyCompanionVisibility() {
   try { localStorage.setItem('cyberclaw-hidden-companions', JSON.stringify([...hiddenCompanions])); } catch {}
 }
 
-// v3.1.3: manual sleep / wake toggle for the currently-focused companion.
-// The button text and sprite animation both reflect the new state. When
-// the user sends a chat message, sendChat() auto-wakes the target so the
-// companion can reply.
+// Manual sleep / wake toggle for the currently-focused companion.
 window.toggleCompanionSleep = function() {
   const id = agentOrder[focusIndex] || pickCurrentCompanionId();
   if (!id) return;
@@ -955,13 +772,7 @@ window.toggleCompanionSleep = function() {
       pixelArena.companion.frame = 0;
       pixelArena.companion.animation = 'idle';
     }
-    // v3.1.16: nudge the night-wake timer too. Without this, if it's
-    // currently night time (22:00–06:30) the arena's _updateCompanion
-    // computes `timeBasedSleep = isNight && !_nightWakeTimer` as true
-    // and the sprite stays in the 'death' pose even though the manual
-    // sleepState is awake. nudgeNightWake() is a no-op during the day
-    // and idempotent at night (it just resets the existing timer), so
-    // calling it from a wake click is always safe.
+    // Nudge the night-wake timer too.
     nudgeNightWake();
     addChatMsg('system', `☀️ ${agent.name} woke up`);
   } else {
@@ -976,11 +787,7 @@ window.toggleCompanionSleep = function() {
   // Refresh the inspect panel and the channel header
   if (window._inspectAgentId === id) updateInspect(id);
   if (activeChatAgentId === id) updateChatHeader(id);
-  // v3.3.32: refresh the green-dot online indicator on
-  // every channel tab — the toggled companion is not
-  // necessarily the active chat companion, and the v3.3.22
-  // path only updated the active tab, leaving the just-
-  // toggled tab stuck on its previous (wrong) colour.
+  // Refresh the green-dot online indicator on every channel tab — the toggled companion is not necessarily the active chat companion, and the…
   refreshChannelTabsOnlineState();
   bumpCompanionInteraction(id); // v3.1.4: manual toggle counts as interaction
   // v3.10.3: push the new sleepState to the mobile via the
@@ -1076,24 +883,7 @@ function updateFocused(agentId) {
 function updateInspect(agentId) {
   const agent = agents[agentId];
   if (!agent) return;
-  // v3.3.29: wrap the whole body in try/catch so any
-  // internal error doesn't take down the renderer's
-  // chat pipeline. Pre-v3.3.29 the renderer log showed
-  // 'Uncaught ReferenceError: sleeping is not defined'
-  // after initArenaCompanions, which was a side effect
-  // of updateInspect being called from an unwrapped
-  // site (e.g. inside the focus-change handler). The
-  // ReferenceError crashed the renderer mid-call and
-  // any subsequent state mutations were skipped,
-  // including the agents_list broadcast that drives
-  // the mobile arena. Wrapping the body means the
-  // worst case is a stale inspect panel — the rest of
-  // the renderer keeps running. Tobe 2026-09-30 15:18:
-  // 'clawsuu is still sleeping on startup' — the
-  // ReferenceError was likely blocking the
-  // broadcastAgentsListToMobile() call that flips
-  // clawsuu's sleepState to 'awake' after a renderer
-  // reload.
+  // Wrap the whole body in try/catch so any internal error doesn't take down the renderer's chat pipeline.
   try {
 
   // v3.1.4: the type badge was removed (every companion is just a
@@ -1255,10 +1045,7 @@ function updateInspect(agentId) {
   const wsEl = document.getElementById('inspect-workspace');
   if (wsEl) { wsEl.textContent = agent.workspace; wsEl.title = agent.workspace; }
   } catch (e) {
-    // v3.3.29: log instead of throwing so a render bug
-    // doesn't take down the chat pipeline or the
-    // agents_list broadcast (which the mobile arena
-    // needs to mirror sleepState and chat history).
+    // Log instead of throwing so a render bug doesn't take down the chat pipeline or the agents_list broadcast (which the mobile arena needs to…
     try { console.warn('[updateInspect] suppressed error:', e?.message); } catch (_) {}
   }
 }
@@ -1276,66 +1063,23 @@ window.openDoctor = function() {
   cyberclaw.agents.openDoctor();
 };
 
-// ---------------------------------------------------------------------------
-// Quest Management
-// ---------------------------------------------------------------------------
-// v3.1.50: `activeQuestId` is now derived from the quest list's
-// `active: true` flag (set in main.js's IPC handler and persisted
-// to disk). It used to be an in-memory variable only, which meant
-// the selection was lost on desktop restart. The variable is still
-// kept as a local cache so the chat-context builder doesn't have
-// to round-trip to disk on every message; it's updated whenever
-// the quest list is rendered or the IPC bridge returns a fresh
-// active quest.
+// --------------------------------------------------------------------------- Quest Management…
 let activeQuestId = null;
-// v3.3.11: single setter for activeQuestId. Routes every
-// write through this function so the chat panel can
-// auto-jump to the new quest's bucket on every change.
-// Returns the previous value so call sites that need
-// it (e.g. the chat-history switch detection) don't have
-// to maintain a parallel variable.
-// v3.4.7: casual view. Toggling to Casual no longer deactivates the
-// quest — it only switches the chat context. _casualFromQuestId
-// remembers which active quest to toggle back to.
+// Single setter for activeQuestId.
 let _casualFromQuestId = null;
 function setActiveQuestId(newId) {
   const prev = activeQuestId;
   activeQuestId = newId || null;
   if (activeQuestId) _casualFromQuestId = null;
   // Auto-jump the chat panel to the new quest's bucket.
-  // We call switchActiveChatQuest, which is a no-op when
-  // the chat panel isn't mounted or there's no active
-  // companion. The chat header's quest pill is updated
-  // inside that function.
   if (prev !== activeQuestId) {
     try { window.switchActiveChatQuest(activeQuestId); } catch (e) { console.warn('[Quests] switchActiveChatQuest failed:', e?.message); }
-    // v3.3.34: also refresh the centered quest toggle
-    // pill above the chat input. The toggle reflects
-    // `activeQuestId` directly, so any change to the
-    // active quest (from the quest panel, the new
-    // toggle button itself, or a quests_list broadcast
-    // reconciliation) needs to re-render the pill.
+    // Also refresh the centered quest toggle pill above the chat input.
     try { updateChatQuestToggle(); } catch (e) { console.warn('[setActiveQuestId->toggle] suppressed:', e?.message); }
   }
   return prev;
 }
-// v3.2.41: pre-warm the quest-instructions cache when a
-// quest becomes active. The cache is populated inside
-// buildActiveQuestContext (sync function) by a
-// fire-and-forget read — which means the FIRST chat send
-// after a quest switch has no instructions file in
-// context. Tobe hit this on 2026-08-02: switched to
-// CYBERHIVE_WEBSITE V3, sent "do it", and the companion
-// replied "you didn't unlock shit" because it didn't see
-// the instructions file. The user did see the file (the
-// quest editor showed it), and they had to nudge the
-// companion to look again.
-//
-// The preheat is a module-level map of `questId -> promise`
-// that selectQuest() populates right after setActive
-// succeeds. buildActiveQuestContext awaits the promise
-// if it's still pending, so the cache is always warm by
-// the time the LLM sees the context.
+// Pre-warm the quest-instructions cache when a quest becomes active.
 const questInstructionsPreheat = new Map();
 // Helper: pull the current active quest id from the quest list
 // without going through disk. Falls back to the in-memory cache
@@ -1345,28 +1089,7 @@ function getActiveQuestId(quests) {
   if (found) setActiveQuestId(found.id);
   return activeQuestId;
 }
-// v3.1.50: build the chat context for the active quest. Used by
-// both the regular chat (line ~1700) and the voice-mode chat
-// (line ~1848) to inject a single, consistent prompt prefix
-// that tells the LLM which quest is the working one and what
-// progress has been made on it.
-//
-// Shape (one bracketed block, prefixed to the user's message):
-//   [Active Quest: "<name>" — <description> | Project dir: <dir>
-//    | Incomplete goals: <goal1>; <goal2>; ...
-//    | Recent changes: <text1> (<time-ago>); <text2> (<time-ago>); ...]
-//
-// Goals listed are INCOMPLETE ones only (completed ones aren't
-// useful for the LLM to act on). If all goals are done we
-// mention that explicitly so the LLM knows the quest is wrapped
-// up.
-//
-// Recent changes is the last 5 entries from latestChanges,
-// formatted as "<text> (<time-ago>)". Time-ago is relative to
-// now (e.g. "2h ago", "3d ago") — easier for the LLM to reason
-// about than absolute timestamps, and the absolute timestamp is
-// still available in the quest JSON if the LLM wants to look
-// it up.
+// Build the chat context for the active quest.
 async function buildActiveQuestContext(quest) {
   if (!quest) return '';
   let ctx = `[Active Quest: "${quest.name}"`;
@@ -1400,52 +1123,14 @@ async function buildActiveQuestContext(quest) {
     const items = recent.map(c => `${c.text} (${fmtAgo(c.timestamp)})`).join('; ');
     ctx += ` | Recent changes: ${items}`;
   }
-  // v3.1.50: teach the agent about the quest-edit tags when
-  // there's an active quest. The hint is one short clause so
-  // it doesn't bloat the context window. The LLM picks up the
-  // tag shape from prior uses in the conversation; the hint
-  // here just reminds it that the tools are available.
-  // v3.2.21: added CREATE_QUEST to the list. Without it, the
-  // agent has no in-context hint that creating a new quest is
-  // possible from a chat reply, so when the user says "create
-  // a quest called X" the agent falls back to scheduling a
-  // cron job or guessing at IPC paths. Tobe hit this on
-  // 2026-07-23: "[CREATE_QUEST: ...]" tag was supported by
-  // the parser but never advertised to the agent. Same
-  // CREATE_QUEST tag is now also injected unconditionally in
-  // sendChatMessage() via buildQuestToolsHint() so the agent
-  // sees it even when there's no active quest.
+  // Teach the agent about the quest-edit tags when there's an active quest.
   ctx += ` | Tools: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] [QUEST_APPEND_CHANGE: text="..."] [QUEST_NOTE: text="..."] [QUEST_MARK_GOAL: index="N" done="true|false"] [QUEST_SET_ACTIVE: id="<id-or-name>"]`;
-  // v3.2.63 (Tobe 2026-08-04 21:16): ALWAYS pair tool tags with
-  // a chat-visible reply. Tags alone are stripped from the
-  // chat bubble before reaching the user, which means a
-  // bare-tag reply leaves the chat silent. The LLM should
-  // either emit NO tags and write a normal reply, or emit
-  // tags PLUS a normal reply sentence / paragraph. The
-  // user sees the reply, not the tag. Tobe: "He does not
-  // need to say in text, the quest append, it can be silent
-  // in the background, it should just respond normaly mostly
-  // in the chat." The exception: short acknowledgement
-  // replies like "logged." are fine if the action was the
-  // main point of the message.
+  // ALWAYS pair tool tags with a chat-visible reply.
   ctx += ` | [QUEST_SUMMARY: text=\"...\"] rewrites this quest's SUMMARY.md (current state, next steps, open problems) — do it after a work session or a milestone, keep it short | [QUEST_DECISION: text=\"...\"] records one settled decision in DECISIONS.md — never contradict a listed decision without asking`;
   ctx += ` | IMPORTANT: tags alone are silent in the user's chat — always pair a tag with a normal chat-visible reply (or a short "logged." ack).`;
   ctx += `] `;
 
-  // v3.2.30: per-quest instructions file. The companion reads
-  // <quest.directory>/QUEST_INSTRUCTIONS.md (or
-  // ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md if no
-  // directory) on every chat send and injects its contents
-  // as a separate context block. This is the place to write
-  // project-specific instructions ("on this quest, never
-  // touch the dev DB", "use British English", "always check
-  // the build before committing") that the LLM should
-  // follow while working on this quest.
-  //
-  // Cached at module scope so the read-on-every-send isn't
-  // a real cost. The cache invalidates on saveQuestInstructions (the
-  // renderer's quest editor calls cyberclaw.quests.saveQuestInstructions
-  // then clears the cache here).
+  // Per-quest instructions file.
   if (!quest._questInstructionsCache) quest._questInstructionsCache = {};
   const cached = quest._questInstructionsCache[quest.id];
   if (cached !== undefined) {
@@ -1453,13 +1138,7 @@ async function buildActiveQuestContext(quest) {
       ctx += `\n[Quest instructions at ${cached.path}]\n${cached.content}\n[/Quest instructions] `;
     }
   } else {
-    // v3.2.41: buildActiveQuestContext is now async so we
-    // can await the read. The first send after a quest
-    // switch waits for the file read (microseconds — the
-    // IPC is fast and the file is small). The preheat
-    // promise seeded by selectQuest() resolves to the same
-    // file content, so if the preheat finished first we
-    // skip the second IPC entirely.
+    // BuildActiveQuestContext is now async so we can await the read.
     const preheat = questInstructionsPreheat.get(quest.id);
     try {
       // Await the preheat if it's still pending; if it's
@@ -1492,32 +1171,7 @@ async function buildActiveQuestContext(quest) {
     }
   }
 
-  // v3.2.59: per-quest conversation log. Every user +
-  // agent chat exchange while this quest was active is
-  // appended to quest.conversationLog automatically by
-  // addChatMsg (fire-and-forget IPC). We inject the
-  // most-recent N exchanges so the companion has
-  // cross-session memory of what was said.
-  //
-  // Tobe 2026-08-04 11:55: 'we need to make the
-  // companion create a log for each project with a
-  // appropriate max size for the companions which they
-  // should read for each reply? Such that it can always
-  // keep the conversation in mind for a specific
-  // project? Such that it does not forget like this.'
-  //
-  // Size limits:
-  //   - CONVERSATION_LOG_CONTEXT_INJECT = 8 exchanges
-  //     (16 messages). This is a hard cap to keep
-  //     the prompt bounded; if the conversationLog has
-  //     more, we drop the oldest.
-  //   - Each line is trimmed to CONVERSATION_LOG_LINE_CHARS
-  //     (300) so a long agent reply doesn't blow the
-  //     context budget.
-  // The empty case (no log yet on a fresh quest) is
-  // silent — we don't say "no prior conversation" because
-  // that's a meta-comment that doesn't help the model.
-  // v3.5.0: SUMMARY.md + DECISIONS.md — the quest's compact memory.
+  // Per-quest conversation log.
   try {
     const mem = await cyberclaw.quests.readQuestMemory(quest.id);
     if (mem && mem.ok) {
@@ -1552,79 +1206,17 @@ async function buildActiveQuestContext(quest) {
   return ctx;
 }
 
-// v3.2.21: standalone quest-tools hint. Always injected in
-// chat messages (regardless of whether there's an active
-// quest) so the agent knows it can create new quests from
-// the chat reply. Without this, the only hint is inside
-// buildActiveQuestContext() which only fires when there's
-// an active quest — so a user asking "create a new quest
-// called X" on a fresh workspace would get no in-context
-// hint that CREATE_QUEST exists, and the agent would fall
-// back to scheduling a cron or hallucinating IPC paths.
-// Tobe hit this on 2026-07-23 ("@Clawsuu any idea why the
-// companion could not create a new quest?").
-//
-// Keep this list in sync with the tag parsers in
-// result.reply parsing blocks below (search for
-// "QUEST_SET_ACTIVE" / "QUEST_APPEND_CHANGE" / "QUEST_NOTE" /
-// "QUEST_MARK_GOAL" / "CREATE_QUEST"). The hint is one
-// short clause to minimize context-window bloat.
+// Standalone quest-tools hint.
 function buildQuestToolsHint() {
   return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_SUMMARY: text="..."] to rewrite the active quest\'s SUMMARY.md, [QUEST_DECISION: text="..."] to record a settled decision, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
 
-// v3.2.48: work-first reminder appended at the END of
-// every user message. The LLM reads top-to-bottom; the
-// system prompt sets the general rules, but the LAST
-// thing it sees in the user message is the most
-// actionable for that specific turn. Tobe 2026-08-02
-// 21:10: 'why did he/you not do the changes? Only
-// talk?' — the LLM was over-applying the 'ask one
-// specific question' clause from the system prompt and
-// replying with clarifying questions instead of doing
-// the work. Putting the rule at the bottom of every
-// user message is the most reliable nudge: it can't be
-// pushed out by a long user message the way the system
-// prompt can, and it's the freshest signal in the
-// prompt window.
-//
-// v3.2.98: relaxed from "ONE specific question" cap —
-// Tobe flagged the cap as too tight when the request
-// genuinely has multiple independent blockers. The
-// rule now allows a short bulleted list when each item
-// is a real blocker; the default is still to act on a
-// stated assumption rather than ask. The companion
-// agent (clawsuu) had a recent session where it asked
-// exactly one question before proceeding and the user
-// wanted more latitude.
-//
-// Keep this short — it's the last thing read, so every
-// word matters. Don't bloat it with examples or context.
+// Work-first reminder appended at the END of every user message.
 function buildWorkFirstSuffix() {
-  // v3.2.98: relaxed from "ONE specific question" — Tobe flagged
-  // the cap as too tight. Allow a short bulleted list when each
-  // item is a real independent blocker; default is to act on a
-  // stated assumption rather than ask.
+  // Relaxed from "ONE specific question" — Tobe flagged the cap as too tight.
   return '[Action rule: do the work in this turn, then reply with the result. Only ask if you genuinely cannot proceed. A short list of clarifying questions is fine when each is a real blocker; default to acting on a stated assumption rather than asking. The user should see your reply when the work is done, not when you start.]';
 }
-// v3.2.36: strip any quest-tool tags from a reply before
-// showing it in the chat. The tag parsers run on the
-// ORIGINAL `result.reply` and still execute the side
-// effect (logged change, marked goal, switched quest,
-// created quest) — this only hides the LLM-facing
-// markup from the user-visible bubble.
-//
-// Tobe's 2026-07-29 complaint: "why does it say the
-// quest append thing? i dont want that."
-// (The full `[QUEST_APPEND_CHANGE: text="..."] Helpful
-// human reply` had the tag showing inline in the chat
-// bubble, with the helpful reply right after it.)
-//
-// The strip also kills the buildQuestToolsHint() string
-// (the "Quest tools available — emit these tags..." line
-// that the hint occasionally re-emits) and any other
-// bracketed tag that LOOKS like a quest tool, so the
-// bubble stays clean.
+// Strip any quest-tool tags from a reply before showing it in the chat.
 function stripQuestTags(reply) {
   if (!reply) return reply;
   return reply
@@ -1638,10 +1230,7 @@ function stripQuestTags(reply) {
     .replace(/\[QUEST_DECISION:[^\]]*\]/g, '')
     .replace(/\[QUEST_MARK_GOAL:[^\]]*\]/g, '')
     .replace(/\[QUEST_SET_ACTIVE:[^\]]*\]/g, '')
-    // v3.2.64: [REMEMBER: text="..."] is the silent-log
-    // structured output (see promptCompanionSilent below).
-    // Strip it from the chat-visible reply but let the
-    // parser (extractRememberTags) act on it first.
+    // [REMEMBER: text="..."] is the silent-log structured output (see promptCompanionSilent below).
     .replace(/\[REMEMBER:[^\]]*\]/g, '')
     // The full hint string the LLM occasionally echoes back.
     .replace(/\[Quest tools available[^\]]*\]/g, '')
@@ -1651,31 +1240,7 @@ function stripQuestTags(reply) {
     .trim();
 }
 
-// v3.2.69: strip tool-call warning lines from agent reply text.
-// Some tool failures (edit, read, exec, etc.) emit verbose
-// output that the LLM echoes verbatim into its user-visible
-// reply. The result is bubbles like:
-//
-//   ⚠️ 📝 Edit: '/path/to/file.html' failed
-//
-// which look like errors to the user but are just OpenClaw
-// structured tool output. Tobe 2026-08-05 11:38: 'this edit
-// fail warning shows up sometimes, even here in discord,
-// and we have talked about it earlier but it was no issue,
-// if it really is no issue, lets hide it.' Verified — the
-// edit/read/exec are still happening correctly, and the agent
-// is chatting around the warning. The warning is cosmetic.
-//
-// We strip:
-// - Lines matching the OpenClaw sanitize pattern for
-//   tool-call output header rows
-//   (📊|🛠️|📖|📝|🔍|🔎|⚙️) Session Status|Exec|Read|Edit|...
-// - Lines matching the OpenClaw "failed" pattern (⚠️ 🛠️ ...
-//   failed)
-//
-// Apply line-by-line so multi-line replies with embedded
-// tool artifacts clean up correctly. Then collapse any
-// resulting 3+ blank lines.
+// Strip tool-call warning lines from agent reply text.
 function stripToolWarnings(reply) {
   if (!reply) return reply;
   // Mirror OpenClaw's own sanitize regexes (see
@@ -1708,12 +1273,7 @@ function getActiveQuestId(quests) {
   return activeQuestId;
 }
 
-// v3.2.64: pull all [REMEMBER: text="..."] tags from an LLM
-// reply and return them as a list of strings (without the
-// tag wrappers). Used by promptCompanionSilent to route
-// silent-log facts to memory.md without exposing the
-// structured-output tag in the chat. Matches the same
-// bracket-close logic as stripQuestTags.
+// Pull all [REMEMBER: text="..."] tags from an LLM reply and return them as a list of strings (without the tag wrappers).
 function extractRememberTags(reply) {
   if (!reply) return [];
   const out = [];
@@ -1829,12 +1389,7 @@ window.createQuest = async function() {
   if (!name) return;
   const desc = document.getElementById('quest-desc-input').value.trim();
   const dir = document.getElementById('quest-dir-input').value.trim();
-  // v3.10.156: forward the user's defaultQuestDir from
-  // cyberclaw-settings so main.js's auto-derive picks
-  // the same place the mobile suggests in its "Suggested:"
-  // hint. Without this the WS path (from mobile) lands
-  // at ~/quests/<name> while the desktop renderer
-  // would land at <defaultDir>/<name> — inconsistent.
+  // Forward the user's defaultQuestDir from cyberclaw-settings so main.js's auto-derive picks the same place the mobile suggests in its…
   let defaultQuestDir = '';
   try {
     const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}');
@@ -1866,13 +1421,7 @@ window.deleteQuest = async function(e, id) {
   renderQuests();
 };
 
-// v3.1.50: toggle a quest as the active (working) one. Persists
-// the choice to disk via the IPC bridge (main.js enforces
-// exactly-one-active invariant and broadcasts the updated list to
-// connected mobiles). The visual `quest-selected` class is still
-// applied locally for instant feedback, but the source of truth
-// is the `active: true` flag on the quest object — re-read on
-// every renderQuests() to stay in sync.
+// Toggle a quest as the active (working) one.
 window.selectQuest = async function(el, questId) {
   const wasSelected = el.classList.contains('quest-selected');
   // Optimistic local update for instant feedback.
@@ -1886,30 +1435,12 @@ window.selectQuest = async function(el, questId) {
     el.classList.add('quest-selected');
     setActiveQuestId(questId);
     try { await cyberclaw.quests.setActive(questId); } catch (e) { console.warn('[Quests] setActive failed:', e?.message); }
-    // v3.2.41: pre-warm the quest-instructions cache so the
-    // first chat send after a quest switch sees the file
-    // content. buildActiveQuestContext awaits the preheat
-    // promise if it's still pending. The preheat kicks off
-    // a single readQuestInstructions IPC; the next call
-    // finds the cache already populated and doesn't
-    // double-read. If a preheat from a previous quest
-    // selection is still in-flight, cancel it (delete)
-    // — stale data is worse than no data.
+    // Pre-warm the quest-instructions cache so the first chat send after a quest switch sees the file content.
     const existing = questInstructionsPreheat.get(questId);
     if (!existing) {
       const preheat = cyberclaw.quests.readQuestInstructions(questId)
         .then((res) => {
-          // Stash into the quest's cache. We don't have a
-          // direct handle to the quest object here, but the
-          // list is small and we'll find it in the next
-          // renderQuests(); meanwhile, when the chat send
-          // happens, buildActiveQuestContext looks it up
-          // by quest.id on the quest object passed in.
-          // The cleanest place to store the in-flight result
-          // is the preheat map itself — buildActiveQuestContext
-          // can await the preheat and then re-read the cache.
-          // The store-on-cache happens INSIDE buildActiveQuestContext
-          // after awaiting the preheat.
+          // Stash into the quest's cache.
           if (res && res.ok) {
             // We need the quest object to write to its
             // cache. list() is the canonical source.
@@ -2024,25 +1555,10 @@ async function renderQuests() {
   // Clear existing items (keep the empty div)
   list.querySelectorAll('.quest-item').forEach(el => el.remove());
 
-  // v3.2.30: invalidate the per-quest instructions-file cache so
-  // the next chat send re-reads the file. (The cache is on
-  // the quest object in buildActiveQuestContext, but the
-  // quest reference is local to the function — we don't
-  // have a stable handle here. Walk the cached promise
-  // resolvers instead by clearing a module-level map. We
-  // set quest._questInstructionsCache = {} per-call inside
-  // buildActiveQuestContext, but that map persists across
-  // calls because quest is a stable reference from the
-  // cached list. So we just set it on every renderQuests.)
+  // Invalidate the per-quest instructions-file cache so the next chat send re-reads the file.
   for (const q of quests) q._questInstructionsCache = {};
 
-  // v3.2.41: preheat the active quest's instructions-file
-  // cache on every render. selectQuest() also preheats,
-  // but renderQuests() fires on desktop restart, mobile
-  // sync, and various save events — all of which might
-  // be the first time the user opens the chat after
-  // the active quest was set elsewhere. The preheat
-  // is idempotent (a no-op if it's already pending).
+  // Preheat the active quest's instructions-file cache on every render.
   const activeQuest = quests.find(q => q.active);
   if (activeQuest && !questInstructionsPreheat.has(activeQuest.id)) {
     const preheat = cyberclaw.quests.readQuestInstructions(activeQuest.id)
@@ -2062,19 +1578,7 @@ async function renderQuests() {
   }
   empty.style.display = 'none';
 
-  // Active first, then completed
-  //
-  // v3.3.27: sort by the `active: true` flag first (the
-  // single quest currently in use), then by status
-  // (active status ahead of completed). Tobe 2026-09-30
-  // 14:41 report: 'on the desktop the current quest is
-  // highlighted now, but its not at the top of the quest
-  // log, it should be.' The pre-v3.3.27 sort only
-  // ranked by `status`, and most quests have status
-  // 'active', so the order was arbitrary — the quest with
-  // `active: true` (the in-use one) didn't reliably land
-  // first. Adding the `q.active` check moves it to the
-  // top consistently.
+  // Active first, then completed v3.3.27: sort by the `active: true` flag first (the single quest currently in use), then by status (active…
   const sorted = [...quests].sort((a, b) => {
     // The currently-active quest goes to the very top.
     if (!!a.active && !b.active) return -1;
@@ -2085,15 +1589,7 @@ async function renderQuests() {
     return 0;
   });
 
-  // v3.1.50: keep the in-memory activeQuestId in sync with the
-  // list's source of truth (`active: true` on the quest). The
-  // variable is also kept for the chat-context builder so it
-  // doesn't have to scan the list on every message.
-  //
-  // v3.3.11: route through setActiveQuestId so the chat panel
-  // auto-jumps to the new quest's bucket when the list
-  // changes (e.g. desktop restart re-reads quests.json with
-  // a different active quest).
+  // Keep the in-memory activeQuestId in sync with the list's source of truth (`active: true` on the quest).
   { const aqId = quests.find(q => q.active)?.id || null;
     // v3.4.7: stay in casual view if the user toggled away from this same quest.
     if (aqId && aqId === _casualFromQuestId) updateChatQuestToggle(); else setActiveQuestId(aqId); }
@@ -2102,22 +1598,12 @@ async function renderQuests() {
     const isComplete = q.status === 'completed';
     const isActive = !!q.active;
     const div = document.createElement('div');
-    // v3.1.50: `quest-selected` is now driven by the quest's
-    // `active` flag, not the local in-memory cache. The class
-    // itself still applies the same visual (cyan border + orange
-    // tint) — the v3.1.50 CSS changes add a thicker gold border
-    // + ⭐ button + ACTIVE badge on top of that, so the marker
-    // is impossible to miss.
+    // `quest-selected` is now driven by the quest's `active` flag, not the local in-memory cache.
     div.className = `quest-item ${isComplete ? 'completed-quest' : 'active-quest'} ${isActive ? 'quest-selected quest-is-active' : ''}`;
     div.onclick = () => selectQuest(div, q.id);
     const companionAvatars = ''; // Companion visuals are shown in the arena, not in the quest list
 
-    // v3.1.50: ⭐ button toggles the active flag. Filled star
-    // when active, outline when not. Tapping the button DOESN'T
-    // propagate to the card's onclick (we stopPropagation in
-    // the inline onclick). The button replaces the "tap the card"
-    // flow that v3.1.50 is deprecating in favor of an explicit
-    // affordance.
+    // ⭐ button toggles the active flag.
     const activeBadge = isActive ? `<span class="quest-active-badge" title="This is the quest the companion is currently working on">⚡ ACTIVE</span>` : '';
 
     div.innerHTML = `
@@ -2147,20 +1633,7 @@ async function renderQuests() {
     list.appendChild(div);
   }
 
-  // v3.3.27: collapse the quest log to show only the active
-  // quest by default. Tobe 2026-09-30 14:41 report: 'it should
-  // only be the current quest visible, there should be an button
-  // under it to open the full quest log where one can change
-  // quests.' The previous behaviour listed all 8 quests in the
-  // left panel which Tobe found visually cluttered. Now we
-  //   1. Hide every quest that's NOT currently active.
-  //   2. Render a single "📜 Switch quest (N more)" button at
-  //      the bottom of the quest list. Clicking it expands the
-  //      hidden quests back into view (and changes the button
-  //      to "📜 Hide other quests").
-  // The collapse state is per-render (not persisted) so it
-  // always resets to collapsed on reload — matches the
-  // 'collapsed by default, expand on demand' mental model.
+  // Collapse the quest log to show only the active quest by default.
   const allItems = list.querySelectorAll('.quest-item');
   let activeCount = 0;
   let hiddenCount = 0;
@@ -2204,38 +1677,14 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Load quests on startup
-//
-// v3.3.28: also seed cachedQuestsList on startup so the
-// per-bubble quest header has a sync source to read from
-// before any quests-updated IPC fires. Pre-v3.3.28 the
-// cache was only populated by the IPC handler at line
-// 7785, which only fires on saveQuests() — so a fresh
-// desktop startup loaded renderQuests() (visible UI),
-// updated activeQuestId, but left cachedQuestsList empty.
-// addChatMsg's `cachedQuestsList.find(...)` lookup
-// returned nothing → activeQuestNameForBubble stayed
-// null → every chat bubble rendered '— No quest' even
-// when the active quest was set on disk. Tobe 2026-09-30
-// 15:18: 'the desktop chat still says no quest but it is
-// the hive control chat.' Read the same source-of-truth
-// renderQuests uses (cyberclaw.quests.list()), seed the
-// cache, then render. Both code paths now agree from
-// tick 1.
+// Load quests on startup v3.3.28: also seed cachedQuestsList on startup so the per-bubble quest header has a sync source to read from before…
 (async () => {
   try {
     const list = await cyberclaw.quests.list();
     if (Array.isArray(list)) cachedQuestsList = list.slice();
   } catch (_) { /* defensive — cache stays empty if load fails */ }
   renderQuests();
-  // v3.3.34: also render the centered quest toggle on
-  // initial load so it appears as soon as the page is
-  // ready. renderQuests() already calls setActiveQuestId,
-  // which refreshes the toggle, but that's a no-op when
-  // activeQuestId is still null and no toggle refresh has
-  // happened yet. Force a refresh here so the pill is
-  // visible from the first paint, not just after the
-  // first quest-list update.
+  // Also render the centered quest toggle on initial load so it appears as soon as the page is ready.
   try { updateChatQuestToggle(); } catch (_) {}
 })();
 // v3.3.0: load skills library on startup
@@ -2284,19 +1733,7 @@ window.openQuestEditor = async function(event, questId) {
   editingQuestId = questId;
   const panel = document.getElementById('panel-left');
 
-  // v3.2.33: load the quest instructions content for this
-  // quest so it can be edited inline in the quest editor.
-  // The file path is <quest.directory>/QUEST_INSTRUCTIONS.md if
-  // a directory is set, else
-  // ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md.
-  // We render a monospace textarea (full width, 12 lines)
-  // directly in the editor. Save writes the file via
-  // cyberclaw.quests.saveQuestInstructions. Tobe's v3.10.98
-  // feedback: "Add such a file creation and edit into the
-  // quest editor. It should be deployed into the
-  // project/quest directory for that quest." The file
-  // path is shown below the textarea so the user can
-  // verify it lives in the expected directory.
+  // Load the quest instructions content for this quest so it can be edited inline in the quest editor.
   const questInstructionsRes = await cyberclaw.quests.readQuestInstructions(questId).catch(() => null);
   const questInstructionsContent = (questInstructionsRes && questInstructionsRes.ok) ? (questInstructionsRes.content || '') : '';
   const questInstructionsFilePath = (questInstructionsRes && questInstructionsRes.ok) ? (questInstructionsRes.path || '') : '<no path>';
@@ -2364,22 +1801,12 @@ window.saveQuestEdit = async function() {
   }).filter(Boolean);
   const directory = document.getElementById('qe-dir').value.trim();
 
-  // v3.1.95: skills field removed from quest model entirely.
-  // Existing quests with `skills` in their JSON keep the field
-  // for backward-compat but the editor no longer surfaces it
-  // and the IPC payload no longer sets it. Goal completion
-  // routes XP to the companion's global skills dict on the
-  // desktop side via the existing companion-stats logic.
+  // Skills field removed from quest model entirely.
 
   // Update quest
   await cyberclaw.quests.update(editingQuestId, { name, description, goals, directory: directory || undefined });
 
-  // v3.2.31: save the quest instructions file (if the editor has
-  // a qe-quest-instructions textarea — older editor versions
-  // don't, in which case skip). The save is fire-
-  // and-forget; we close the editor regardless of
-  // success/failure. A save error is logged to the
-  // events panel.
+  // Save the quest instructions file (if the editor has a qe-quest-instructions textarea — older editor versions don't, in which case skip).
   const questInstructionsTa = document.getElementById('qe-quest-instructions');
   if (questInstructionsTa) {
     const questInstructionsContent = questInstructionsTa.value;
@@ -2405,16 +1832,7 @@ window.closeQuestEditor = function() {
   renderQuests();
 };
 
-// v3.2.33: per-quest instructions file editor. Opens a small
-// modal with a textarea bound to the quest's QUEST_INSTRUCTIONS.md
-// (default: <quest.directory>/QUEST_INSTRUCTIONS.md, or
-// ~/.openclaw/cyberclaw/quests/<id>/QUEST_INSTRUCTIONS.md if no
-// directory). The file content is injected into the chat
-// prompt as a per-quest "behavior" context block, so the
-// LLM sees project-specific instructions before generating
-// a reply. Save writes the file and invalidates the cache
-// in buildActiveQuestContext so the next chat send picks up
-// the new content.
+// Per-quest instructions file editor.
 window.openQuestInstructionsEditor = async function(event, questId) {
   if (event) event.stopPropagation();
   const res = await cyberclaw.quests.readQuestInstructions(questId);
@@ -2423,13 +1841,7 @@ window.openQuestInstructionsEditor = async function(event, questId) {
     return;
   }
 
-  // v3.2.30: build the modal as an overlay in the
-  // body (not the panel) so it sits on top of the
-  // entire UI. The desktop's quest panel is in the
-  // left column, but a textarea + save/cancel buttons
-  // need a fair amount of vertical space — the overlay
-  // model keeps it readable regardless of where the
-  // user is.
+  // Build the modal as an overlay in the body (not the panel) so it sits on top of the entire UI.
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'quest-instructions-editor-overlay';
@@ -2484,11 +1896,7 @@ window.saveQuestInstructionsFile = async function(questId) {
       return;
     }
     addEventMsg(`📋 Saved project instructions (${res.bytes} bytes) — ${res.path}`);
-    // Invalidate the in-memory cache so the next chat send
-    // re-reads the file. We do this on the cached quest
-    // object in buildActiveQuestContext; renderQuests()
-    // also clears the cache, so the next renderQuests (on
-    // any other quest change) will pick up fresh.
+    // Invalidate the in-memory cache so the next chat send re-reads the file.
     closeQuestInstructionsEditor();
   } catch (e) {
     addEventMsg(`⚠️ Quest instructions save failed: ${e?.message || e}`);
@@ -2567,15 +1975,7 @@ window.switchTermTab = function(tabName) {
   setTimeout(() => { mainFit?.fit(); }, 50);
 };
 
-// Switch the chat pane to a specific companion. Re-renders that companion's
-// history into the chat-messages container and updates the channel tabs.
-//
-// v3.3.11: per-quest buckets. We read from the (agent, active-quest)
-// bucket, falling back to the default bucket if the active quest
-// hasn't accumulated any messages yet. Also preserves the user's
-// scroll position per (agent, quest) — the previous version always
-// scrolled to the bottom on switch, which forced the user to scroll
-// back up to wherever they were when they left.
+// Switch the chat pane to a specific companion.
 window.switchActiveChat = function(agentId) {
   if (!agentId) return;
   activeChatAgentId = agentId;
@@ -2600,15 +2000,7 @@ window.switchActiveChat = function(agentId) {
     if (window._chatBootLog) msgs.appendChild(window._chatBootLog);
     const qk = questKeyForStorage(activeQuestId);
     const agentBuckets = chatHistoryByAgentAndQuest[agentId] || {};
-    // Prefer the active quest's bucket. If empty, fall back
-    // to the default bucket so the user sees something (and
-    // doesn't get a confusing blank panel when they first
-    // activate a quest that has no history yet).
-    // v3.4.4: no more fallback to the casual bucket. Tobe
-    // 2026-10-12: activating a quest showed the casual ball-play
-    // chatter because the (empty) quest bucket fell back to the
-    // casual one. A quest chat now shows only that quest: its
-    // quest/CONVERSATION.md history plus this session's messages.
+    // Prefer the active quest's bucket.
     let hist = agentBuckets[qk] || [];
     if (qk !== DEFAULT_QUEST_KEY) {
       const fileHist = questFileHistoryFor(agentId, qk);
@@ -2626,12 +2018,7 @@ window.switchActiveChat = function(agentId) {
     for (const m of hist) {
       _renderStoredChatMsg(m, msgs, agentId);
     }
-    // v3.3.11: restore the saved scrollTop for this (agent,
-    // quest) bucket, instead of forcing scrollTop = scrollHeight.
-    // If no offset was saved (first visit to this bucket),
-    // fall through to the bottom-of-list default — matches
-    // Discord / most chat clients' behavior on a fresh
-    // conversation.
+    // Restore the saved scrollTop for this (agent, quest) bucket, instead of forcing scrollTop = scrollHeight.
     const scrollKey = `${agentId}::${qk}`;
     const savedOffset = chatScrollOffsetByAgentAndQuest[scrollKey];
     if (typeof savedOffset === 'number' && savedOffset > 0) {
@@ -2645,12 +2032,7 @@ window.switchActiveChat = function(agentId) {
   }
 };
 
-// v3.4.4: per-quest chat history from <quest.directory>/quest/CONVERSATION.md.
-// That file is the long-term log (written on every exchange while
-// the quest is active), so it survives reinstalls and computer moves
-// — unlike the renderer's localStorage buckets. Parsed lazily the
-// first time a (companion, quest) chat is opened; kept in memory
-// only (the file stays the source of truth).
+// Per-quest chat history from <quest.directory>/quest/CONVERSATION.md.
 const QUEST_FILE_HISTORY_LIMIT = 150;
 const _questFileHistory = {};   // "agentId::questId" -> [msg] | null (loading)
 function questFileHistoryFor(agentId, qk) {
@@ -2670,10 +2052,7 @@ function parseQuestConversationMd(content, agentId) {
   let m;
   while ((m = re.exec(content))) heads.push({ idx: m.index, end: re.lastIndex, ts: Date.parse(m[1]), role: m[2], who: m[3] });
   const out = [];
-  // v3.4.6: older logs contain unprompted companion chatter (idle
-  // comments, ball/snack reactions) written before that was routed
-  // to casual chat. Keep an agent line only if it's a reply — i.e.
-  // within 30 min of a user message on this quest.
+  // Older logs contain unprompted companion chatter (idle comments, ball/snack reactions) written before that was routed to casual chat.
   const REPLY_WINDOW_MS = 10 * 60 * 1000;
   let lastUserTs = -Infinity;
   for (let i = 0; i < heads.length; i++) {
@@ -2712,61 +2091,23 @@ async function loadQuestFileHistory(agentId, qk) {
   }
 }
 
-// v3.3.11: switch the chat pane to the active quest's bucket for
-// the current companion. Called whenever the desktop's active
-// quest changes (set_quest_active IPC, or quest created/deleted).
-// Auto-jumps the chat panel to that quest's chat history, just
-// like Discord switching channels when you change servers.
-//
-// We DON'T re-render if the new bucket is the same as the
-// current one (e.g. the user is already viewing this quest).
-// We also DON'T re-render if the chat panel isn't visible
-// (the user might be on the Events or Terminal tab) — they
-// can switch to chat manually later and pick up the right
-// bucket via the natural switchActiveChat path.
+// Switch the chat pane to the active quest's bucket for the current companion.
 window.switchActiveChatQuest = function(newQuestId) {
   const tb = document.getElementById('chat-quest-toggle-btn');
   if (tb) tb.classList.remove('has-unread');
-  // Just call switchActiveChat with the current agent —
-  // it already reads from the active-quest bucket, so
-  // updating activeQuestId is enough. The activeChatAgentId
-  // might be null on cold boot; fall back to the first
-  // available agent.
+  // Just call switchActiveChat with the current agent — it already reads from the active-quest bucket, so updating activeQuestId is enough.
   const aid = activeChatAgentId || pickCurrentCompanionId();
   if (!aid) return;
   switchActiveChat(aid);
-  // v3.3.11: also update the chat header's quest
-  // indicator (the quest pill next to the companion
-  // name) so the user sees which quest's chat they're
-  // viewing.
+  // Also update the chat header's quest indicator (the quest pill next to the companion name) so the user sees which quest's chat they're…
   updateChatQuestIndicator();
 };
 
-// v3.3.11: update the chat header's quest pill. Shows the
-// active quest's name (or hides the pill when no quest is
-// active). Called from switchActiveChatQuest.
-//
-// Wraps the existing `updateQuestIndicator` function (which
-// does an async cyberclaw.quests.list() round-trip) with a
-// synchronous local-cache lookup so the pill updates
-// immediately when the user switches quests, instead of
-// waiting for the IPC. The async refresh inside
-// `updateQuestIndicator` still runs to pick up any new
-// metadata (directory, description, etc.).
+// Update the chat header's quest pill.
 function updateChatQuestIndicator() {
   const el = document.getElementById('chat-quest-indicator');
   if (!el) return;
-  // v3.3.35: the small chat-quest-indicator badge is
-  // fully superseded by the v3.3.34 centered quest
-  // toggle. The pre-v3.3.35 code re-set `display: ''`
-  // here on every quest change, which un-hid the
-  // inline `display:none` and showed the legacy small
-  // badge alongside the new toggle. Tobe 2026-10-04
-  // 11:25: 'we can now remove the quest indicator
-  // right above the attach file and user text input
-  // field.' Force the legacy indicator to stay hidden
-  // and let the centered toggle be the single source
-  // of truth for the chat-context marker.
+  // The small chat-quest-indicator badge is fully superseded by the v3.3.34 centered quest toggle.
   el.style.display = 'none';
   el.textContent = '';
   el.title = '';
@@ -2775,39 +2116,11 @@ function updateChatQuestIndicator() {
   if (typeof updateQuestIndicator === 'function') {
     try { updateQuestIndicator(); } catch (_) {}
   }
-  // v3.3.34: also keep the new centered quest toggle in
-  // sync with the active quest id. The toggle is the
-  // user-visible chat-context marker; the small
-  // chat-quest-indicator badge above is now mostly
-  // vestigial but kept for backwards compat.
+  // Also keep the new centered quest toggle in sync with the active quest id.
   try { updateChatQuestToggle(); } catch (e) { console.warn('[updateChatQuestIndicator->toggle] suppressed:', e?.message); }
 }
 
-// v3.3.34: render the centered quest-context toggle pill
-// above the chat input. Three states:
-//   - activeQuestId is set:  [ 📜 <quest-name> ] [ ↔ Casual ]
-//   - activeQuestId is null and ≥1 quest exists:
-//                              [ 💬 Casual      ] [ ↔ <first-quest-name> ]
-//   - no quests in the list: hidden entirely
-//
-// The pill + button are wired up in index.html (id
-// `chat-quest-toggle`, `chat-quest-toggle-pill`,
-// `chat-quest-toggle-btn`). The click handler on the
-// button calls `toggleChatQuestContext()` which performs
-// the actual `cyberclaw.quests.setActive(...)` IPC and
-// updates `activeQuestId` via `setActiveQuestId()`.
-//
-// Tobe 2026-10-04 11:05: 'Lets put that in the middle
-// above that field and add a button for switch to casual
-// chat. Such that the user can always toggle between
-// current quest or casual chat with those two, makes
-// sense?' The pre-v3.3.34 UX was 'I have to navigate
-// out and back to the current quest to see the casual
-// chat' (because toy reactions go to casual per v3.3.31
-// and the visible chat panel stayed on the active
-// quest's bucket). The toggle gives the user a 1-tap
-// way to flip between the two views without opening
-// the quest panel.
+// Render the centered quest-context toggle pill above the chat input.
 function updateChatQuestToggle() {
   const wrap = document.getElementById('chat-quest-toggle');
   if (!wrap) return;
@@ -2815,13 +2128,7 @@ function updateChatQuestToggle() {
   const btn = document.getElementById('chat-quest-toggle-btn');
   if (!pill || !btn) return;
 
-  // Resolve the active quest + the first candidate to
-  // switch to. If the user is on a quest, the toggle
-  // target is 'casual' (null). If the user is on
-  // casual, the toggle target is the first non-completed
-  // quest in the list (prefers active, falls back to any
-  // quest in 'active' status, falls back to the first
-  // quest in any status).
+  // Resolve the active quest + the first candidate to switch to.
   const quests = Array.isArray(cachedQuestsList) ? cachedQuestsList : [];
   if (quests.length === 0) {
     wrap.style.display = 'none';
@@ -2830,12 +2137,7 @@ function updateChatQuestToggle() {
   const activeQuest = activeQuestId
     ? quests.find(q => q && q.id === activeQuestId) || null
     : null;
-  // The 'other side' of the toggle. On a quest, we go to
-  // casual. On casual, we go to the most-relevant active
-  // quest (preferring the one the user has marked
-  // active, then any active-status quest, then any quest
-  // in any status). Mirrors the v3.3.11 chat-panel auto-
-  // jump behavior on quest-list reload.
+  // The 'other side' of the toggle.
   let toggleTarget = null;
   let toggleLabel = '↔ Casual';
   let otherName = 'Casual';
@@ -2864,12 +2166,7 @@ function updateChatQuestToggle() {
     wrap.style.display = '';
     return;
   } else {
-    // v3.4.1: no active quest → no quest alternative. Tobe
-    // 2026-10-12: 'there should not be a quest alternative
-    // when there is no quest active.' The old code offered
-    // the first quest in the list (e.g. NRK) as a toggle
-    // target. Casual chat now just shows the Casual pill;
-    // activate a quest in the Quest Log to get the toggle.
+    // No active quest → no quest alternative.
     pill.classList.add('casual');
     pill.textContent = '💬 Casual';
     pill.title = 'Casual chat — no quest is active. Activate a quest in the Quest Log to chat about it.';
@@ -2888,29 +2185,14 @@ function updateChatQuestToggle() {
   wrap.style.display = '';
 }
 
-// v3.3.34: click handler for the quest-toggle button.
-// Flips between the active quest and the casual chat
-// (null). Calls the existing `cyberclaw.quests.setActive`
-// IPC (same path as the quest panel's ⚡ button) so the
-// state propagates to the mobile via the next
-// quests_list broadcast.
-//
-// Optimistic: update `activeQuestId` locally first via
-// `setActiveQuestId` for instant UI feedback; if the IPC
-// fails, the next quests_list broadcast will reconcile.
+// Click handler for the quest-toggle button.
 window.toggleChatQuestContext = async function() {
   try {
     const btn = document.getElementById('chat-quest-toggle-btn');
     if (!btn || btn.disabled) return;
     const target = (btn.dataset && btn.dataset.target) || '';
     const targetId = target === '' ? null : target;
-    // v3.3.35: log the click + transition for debuggability.
-    // The 2026-10-04 11:25 user report ('dont have the
-    // toggles for current quest and casual switch places
-    // when clicked') was ambiguous — could mean the toggle
-    // doesn't appear, doesn't switch state, or doesn't
-    // switch the chat panel. The log below lets us tell
-    // which call site (if any) fires.
+    // Log the click + transition for debuggability.
     try {
       console.log('[toggleChatQuestContext] click', {
         prev: activeQuestId,
@@ -2929,11 +2211,7 @@ window.toggleChatQuestContext = async function() {
       await cyberclaw.quests.setActive(targetId);
     } catch (e) {
       console.warn('[toggleChatQuestContext] setActive IPC failed:', e?.message);
-      // Best-effort: re-render the toggle to reflect the
-      // local state. A subsequent quests_list broadcast
-      // will reconcile any drift between the desktop's
-      // optimistic state and the persistent source of
-      // truth.
+      // Best-effort: re-render the toggle to reflect the local state.
       try { updateChatQuestToggle(); } catch (_) {}
     }
   } catch (e) {
@@ -2949,35 +2227,7 @@ function _renderStoredChatMsg(m, container, agentId) {
   const id = `chat-msg-${++chatMsgId}`;
   div.id = id;
   div.className = `chat-msg ${m.type}`;
-  // v3.3.34: compute the per-bubble quest pill from the
-  // stored message's `activeQuestId` (which was stamped
-  // by addChatMsg at the time the message was sent) and
-  // the current `cachedQuestsList` (which provides the
-  // quest name). Without this, _renderStoredChatMsg
-  // re-creates bubbles WITHOUT the quest pill on every
-  // renderer reload, and the user's chat history
-  // suddenly loses the per-bubble quest attribution
-  // they had in the previous session.
-  //
-  // Tobe 2026-10-04 11:25: 'Still dont see the chat
-  // watermark on the bottom right of the text bubbles
-  // on desktop, they might be applied forward tho.'
-  // Confirmed: the watermark was applied to NEW
-  // bubbles by addChatMsg (which has the
-  // `questHeaderHtml` prepend), but on every renderer
-  // reload _renderStoredChatMsg re-renders the entire
-  // chat history from localStorage WITHOUT the pill.
-  // The bubbles the user saw five minutes ago had the
-  // pill; the same bubbles after a page reload don't.
-  //
-  // The fix: mirror the questHeaderHtml logic from
-  // addChatMsg. Use the stored `m.activeQuestId` as
-  // the source of truth (not the live `activeQuestId`,
-  // which may have changed since the message was sent).
-  // Look up the quest name from `cachedQuestsList` for
-  // the displayed text; fall back to the stored
-  // `m.activeQuestName` if the quest isn't in the
-  // current list (deleted quest, etc.).
+  // Compute the per-bubble quest pill from the stored message's `activeQuestId` (which was stamped by addChatMsg at the time the message was…
   const storedQid = m.activeQuestId;
   const storedName = (() => {
     if (Array.isArray(cachedQuestsList) && storedQid) {
@@ -2996,28 +2246,14 @@ function _renderStoredChatMsg(m, container, agentId) {
       div.innerHTML = questHeaderHtml + `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'agent':
-      // v3.1.21: the desktop now passes the resolved icon
-      // (per-agent emoji → sprite catalog icon) to addChatMsg,
-      // so m.emoji is set correctly here. Old messages persisted
-      // before this version will fall back to 🤖.
-      // v3.1.96: treat the desktop's default 🤖 the same as
-      // "no emoji set" — show just [name] without the prefix
-      // emoji. Otherwise the mobile's chat history (which was
-      // broadcast earlier) shows a stray robot next to every
-      // message from agents without an explicit emoji.
+      // The desktop now passes the resolved icon (per-agent emoji → sprite catalog icon) to addChatMsg, so m.emoji is set correctly here.
       div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(m.text)}</span>`;
       break;
     case 'error':
-      // v3.3.34: also render the quest pill on error
-      // bubbles when re-rendering from storage. The
-      // pre-v3.3.34 error path skipped the pill entirely,
-      // so error bubbles loaded from history had no quest
-      // attribution even though the same error bubble
-      // (when added in-session by addChatMsg) did have
-      // one. Mirror the live behavior.
+      // Also render the quest pill on error bubbles when re-rendering from storage.
       div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--red)">${escHtml(m.text)}</span>`;
       break;
   }
@@ -3045,12 +2281,7 @@ function updateChatHeader(agentId) {
     if (agent.avatar && String(agent.avatar).startsWith('data:')) {
       headerAvatar.innerHTML = `<img src="${escAttr(agent.avatar)}" alt="${escAttr(agent.name)}">`;
     } else {
-      // v3.1.21: prefer per-agent emoji, fall back to sprite icon
-      // from the catalog so the avatar matches the sprite.
-      // v3.10.65: strip the desktop's default 🤖 before falling
-      // back — agents without an explicit emoji would otherwise
-      // show a robot in the chat header instead of their
-      // companion sprite.
+      // Prefer per-agent emoji, fall back to sprite icon from the catalog so the avatar matches the sprite.
       headerAvatar.innerHTML = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
     }
   }
@@ -3059,55 +2290,16 @@ function updateChatHeader(agentId) {
     headerStatus.textContent = sleeping ? '💤 sleeping' : 'online';
     headerStatus.className = 'chat-header-status ' + (sleeping ? 'sleeping' : 'online');
   }
-  // v3.3.22: drive the channel tab's green-dot indicator
-  // from the same sleepState check. Online (awake + recent
-  // activity) = full green; sleeping / dead = dim grey.
-  // Tobe 2026-09-29 22:10: 'Just have a green dot beside
-  // it on the channel tab.'
-  //
-  // v3.3.32: BUGFIX — pre-v3.3.32 this only updated the
-  // active chat companion's tab. Every other tab kept its
-  // rendered-without-`.online` state and therefore showed
-  // the dim grey dot regardless of whether that companion
-  // was actually awake. Tobe 2026-10-02 07:53: 'the
-  // live/active indicator for the companion chat tab is
-  // gray while the companions are online.' Fix: refresh
-  // the dot on EVERY tab from each agent's sleepState,
-  // not just the one whose chat was opened.
+  // Drive the channel tab's green-dot indicator from the same sleepState check.
   refreshChannelTabsOnlineState();
-  // v3.3.4: refresh the local-LLM status pill for this companion.
-  // The pill only shows up when the agent's model.primary is a
-  // local Ollama model (e.g. "ollama/qwen2.5-coder:32b").
-  // The renderer's agent object exposes primaryModel as the raw
-  // "provider/model" string (formatted name is on agent.model).
+  // Refresh the local-LLM status pill for this companion.
   refreshLlmStatusPill(agent);
   } catch (e) {
     try { console.warn('[updateChatHeader] suppressed error:', e?.message); } catch (_) {}
   }
 }
 
-// v3.3.32: drive the green-dot online indicator on EVERY
-// companion channel tab based on each companion's actual
-// sleepState. Replaces the v3.3.22 behaviour of only
-// updating the active tab (which left every other tab grey
-// regardless of awake/sleeping). Tobe 2026-10-02 07:53:
-// 'the live/active indicator for the companion chat tab
-// is gray while the companions are online.'
-//
-// Called from:
-//   - updateChatHeader() — when the active chat is opened
-//     (covers the most common user-visible case)
-//   - renderCompanionChannelTabs() — after re-rendering
-//     the tab list (covers agent add/remove and first load)
-//   - the sleep/wake toggle handler in toggleCompanionSleep
-//     (covers live state transitions)
-//
-// Iterates over `agentOrder` + `agents` (the same source
-// the tabs themselves were rendered from), so any tab
-// whose data-agent-id matches a known agent gets the
-// right state. Tabs for stale ids (e.g. just-removed
-// agents) are left alone — renderCompanionChannelTabs
-// already handles tab removal on its own.
+// Drive the green-dot online indicator on EVERY companion channel tab based on each companion's actual sleepState.
 function refreshChannelTabsOnlineState() {
   try {
     if (!Array.isArray(agentOrder) || !agents) return;
@@ -3124,33 +2316,12 @@ function refreshChannelTabsOnlineState() {
   }
 }
 
-// ─── Local LLM status pill ───────────────────────────────
-//
-// Shows a small status indicator above the chat input when the
-// active companion's primary model points at a local server
-// (any provider whose baseUrl is localhost/127.0.0.1). Three
-// states (running/cold/down) plus a "too-big" warning when the
-// model can't fit available VRAM. Click the pill to warm /
-// unload / start the local server. Mobile reads the same
-// status through the sync-server chat-state broadcast.
-//
-// We probe on chat-open and after each pill action. We do NOT
-// poll continuously — the user explicitly triggers checks via
-// the pill, and Ollama's /api/ps is fast enough to call on
-// demand.
-//
-// v3.3.5: was ollama-only via /^ollama\// regex. Now uses
-// cyberclaw.llm.ollama.resolveLocal(model) which inspects the
-// provider's baseUrl directly — works for any local provider
-// (ollama, lmstudio, llamacpp, vllm, etc.).
+// ─── Local LLM status pill ─────────────────────────────── Shows a small status indicator above the chat input when the active companion's…
 
 let _llmPillRefreshTimer = null;
 let _localProviderCache = null; // cached resolveLocal result per model string
 
-// Renderer-side mirror of main.js parseModelRef. Splits
-// "provider/model" into { providerId, modelId }. Used only for
-// the startup cache warm-up; the actual "is this local?" check
-// goes through the IPC layer (cyberclaw.llm.ollama.resolveLocal).
+// Renderer-side mirror of main.js parseModelRef.
 function parseModelRef(modelStr) {
   if (!modelStr || typeof modelStr !== 'string') return null;
   const idx = modelStr.indexOf('/');
@@ -3270,10 +2441,7 @@ function renderLlmPillState(pill, model, r, resolved) {
   broadcastLlmStatusToMobile(model, r, resolved);
 }
 
-// v3.3.5: forward the desktop's pill state to mobile clients
-// via the sync-server broadcast. Fire-and-forget — if the
-// mobile isn't connected (or sync-server isn't running), the
-// call returns ok: true and nothing happens.
+// Forward the desktop's pill state to mobile clients via the sync-server broadcast.
 function broadcastLlmStatusToMobile(model, status, resolved) {
   if (!cyberclaw?.sync?.broadcastLlmStatus) return;
   try {
@@ -3378,12 +2546,7 @@ function renderCompanionChannelTabs() {
     tab.dataset.agentId = id;
     tab.title = `Chat with ${agent.name}`;
     tab.onclick = () => { window.switchActiveChat(id); focusIndex = agentOrder.indexOf(id); updateCarousel(); };
-    // v3.1.26: chat tab uses the sprite icon SVG (Twemoji-style)
-    // when available — guaranteed colorful, smooth, consistent
-    // across platforms. Falls back to per-agent emoji text, then
-    // to 🤖. The avatar PNG is no longer used here (it was removed
-    // in v3.1.23 because at chat-tab size the 32x32 pixel-art PNG
-    // didn't read well).
+    // Chat tab uses the sprite icon SVG (Twemoji-style) when available — guaranteed colorful, smooth, consistent across platforms.
     const iconFile = getSpriteIconFile(agent._pixelCompanionId);
     if (iconFile) {
       const img = document.createElement('img');
@@ -3395,11 +2558,7 @@ function renderCompanionChannelTabs() {
     } else {
       const em = document.createElement('div');
       em.className = 'companion-tab-emoji';
-      // v3.10.65: strip the desktop's default 🤖 before falling
-      // back to the sprite icon — same fix as the chat header
-      // avatar. Without this, channel tabs for agents without an
-      // explicit emoji show a robot instead of their companion
-      // sprite.
+      // Strip the desktop's default 🤖 before falling back to the sprite icon — same fix as the chat header avatar.
       em.textContent = (agent.emoji && agent.emoji !== '🤖') ? agent.emoji : (getSpriteIcon(agent._pixelCompanionId) || '🤖');
       tab.appendChild(em);
     }
@@ -3407,26 +2566,12 @@ function renderCompanionChannelTabs() {
     name.className = 'companion-tab-name';
     name.textContent = agent.name;
     tab.appendChild(name);
-    // v3.3.22: green-dot online indicator on the channel
-    // tab. Tobe 2026-09-29 22:10: 'Just have a green dot
-    // beside it on the channel tab.' The dot's color is
-    // driven by the `.online` class on the tab itself
-    // (toggled in refreshChannelTabsOnlineState).
-    // v3.3.32: the initial green/dim state is applied
-    // after appendChild below so every freshly-rendered
-    // tab reflects its companion's current sleepState
-    // rather than starting as the dim default.
+    // Green-dot online indicator on the channel tab.
     const status = document.createElement('span');
     status.className = 'companion-tab-status';
     tab.appendChild(status);
     if (id === activeChatAgentId) tab.classList.add('active');
-    // v3.3.11: per-quest bucketing — the unread badge
-    // should reflect the active quest's bucket only,
-    // not the union across all quests. Otherwise the
-    // badge would persist after switching quests
-    // (because old messages in other quest buckets
-    // are still unread-by-the-user-but-not-currently-
-    // being-viewed).
+    // Per-quest bucketing — the unread badge should reflect the active quest's bucket only, not the union across all quests.
     if (lastReadTsByAgent[id]) {
       const qk = questKeyForStorage(activeQuestId);
       const bucket = (chatHistoryByAgentAndQuest[id] || {})[qk] || [];
@@ -3436,10 +2581,7 @@ function renderCompanionChannelTabs() {
     }
     container.appendChild(tab);
   }
-  // v3.3.32: apply each agent's sleepState to its tab now
-  // that all tabs exist in the DOM. Without this, tabs for
-  // awake companions show the dim grey dot until the user
-  // clicks the tab (the v3.3.22 behaviour Tobe flagged).
+  // Apply each agent's sleepState to its tab now that all tabs exist in the DOM.
   refreshChannelTabsOnlineState();
 }
 
@@ -3498,46 +2640,14 @@ function initMainTerminal() {
 // Chat — message companions
 // ---------------------------------------------------------------------------
 let chatBusy = false;
-// v3.2.45: per-agent send queue. chatBusy was a single
-// boolean, which meant if the user sent message A and then
-// message B before A's LLM call finished, the B call would
-// wait for chatBusy to clear, but once cleared B's IPC
-// would run in parallel with A's. Two openclaw-agent
-// processes sharing the same session log = lost replies.
-// Tobe 2026-08-02 18:49: 'I have to ask whether its done
-// or not, then he tells me he has done them and asks if I
-// have not seen hes replies.' The lie was real: the agent
-// HAD done the work in the first call, the second call's
-// LLM saw the prior tool calls in the shared session log
-// and answered "yeah I finished" — but the user never saw
-// the first call's actual reply, only the second call's
-// meta-reply.
-//
-// The fix: per-agent promise chain. Each call awaits the
-// previous call's promise, so calls are strictly
-// serialized per agent. The user sees one reply per
-// message they sent, in order.
+// Per-agent send queue.
 const chatSendChain = new Map(); // agentId -> Promise
 
 function updateChatTarget() {
   // chat-target element was removed — no-op
 }
 
-// v3.3.8: shared helper — award XP to the best-matching
-// companion based on the LLM-reply's taskSkill. Called from
-// BOTH `sendChat` (typed desktop input) and
-// `__sendChatMessageImpl` (mobile/voice/prompt IPC path).
-//
-// Before this helper existed, XP was only awarded on the
-// desktop's typed-input path (sendChat). The mobile chat
-// IPC path went through `__sendChatMessageImpl`, which was
-// added later and never got the XP block — so mobile chats
-// silently dropped the XP reward, and the mobile Skills
-// panel stayed at level 1 forever even after dozens of
-// real conversations. The fix is to centralize the logic
-// and call it from both reply handlers. Errors are
-// swallowed so a transient IPC failure never breaks the
-// chat reply itself.
+// Shared helper — award XP to the best-matching companion based on the LLM-reply's taskSkill.
 async function awardXpForReply(result, fallbackAgentId) {
   if (!result || !result.ok) return;
   const taskSkill = result.taskSkill;
@@ -3557,23 +2667,9 @@ async function awardXpForReply(result, fallbackAgentId) {
     if (xpAgent) {
       addChatMsg('system', `⚔️ ${xpAgent.name} gained +${xpAmount} ${taskSkill} XP`);
     }
-    // v3.2.84: re-broadcast so the mobile Skills section
-    // sees the new XP without a manual refresh. Same path
-    // as chatty updates — broadcastAgentsListToMobile
-    // picks up the fresh getStats() in the next tick.
+    // Re-broadcast so the mobile Skills section sees the new XP without a manual refresh.
     try { broadcastAgentsListToMobile(); } catch (_) {}
-    // v3.3.22: also refresh the desktop's inspect panel
-    // so the Skills Categories list updates without the
-    // user having to click away and back to the tab.
-    // Previously, the inspect panel only refreshed when
-    // the user switched to a companion tab; if XP was
-    // awarded while the user was sitting on the same
-    // tab, the panel showed stale data and looked
-    // "stuck". Tobe 2026-09-29 22:29: 'it also seemed
-    // like he should have had some xp on more categories
-    // also, it had so few but it might be correct' —
-    // the XP was accumulating on disk but the panel
-    // wasn't re-reading. Now we re-read.
+    // Also refresh the desktop's inspect panel so the Skills Categories list updates without the user having to click away and back to the tab.
     if (xpTarget === activeChatAgentId) {
       try { updateInspect(xpTarget); } catch (_) {}
     }
@@ -3619,29 +2715,13 @@ window.sendChat = async function() {
   // Build message with context
   let fullMessage = message;
 
-  // v3.2.21: always inject the quest-tools hint so the agent
-  // knows it can CREATE_QUEST from the chat reply, regardless
-  // of whether there's an active quest. See buildQuestToolsHint
-  // for the full rationale.
+  // Always inject the quest-tools hint so the agent knows it can CREATE_QUEST from the chat reply, regardless of whether there's an active…
   fullMessage = buildQuestToolsHint() + fullMessage;
 
-  // v3.2.48: append a strong work-first reminder at the
-  // END of the user message. The LLM reads the system
-  // prompt at the top, then the user message; the LAST
-  // thing it sees in the user message is the most
-  // actionable. Tobe 2026-08-02 21:10: 'why did he/you
-  // not do the changes? Only talk?' — the system prompt
-  // rule was being ignored. Putting the rule at the
-  // END of the user message (last thing read, most
-  // salient) is the most reliable fix. We DON'T mark
-  // this as an injection — it's a genuine instruction
-  // to the LLM, just delivered in a different position.
+  // Append a strong work-first reminder at the END of the user message.
   fullMessage = fullMessage + '\n\n' + buildWorkFirstSuffix();
 
-  // Add quest context if active. v3.1.50: use the new
-  // buildActiveQuestContext helper which adds goals + recent
-  // changes to the context, so the LLM has memory of what it
-  // did on this quest and what's left to do.
+  // Add quest context if active.
   if (activeQuestId) {
     const quests = await cyberclaw.quests.list();
     const q = quests.find(q => q.id === activeQuestId);
@@ -3655,55 +2735,18 @@ window.sendChat = async function() {
   document.getElementById('chat-send').disabled = true;
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
-  // v3.2.28: escalate the typing indicator so the user
-  // has a visible signal that the request is still
-  // being processed during long model retries. The
-  // openclaw agent internally retries on transient
-  // failures (model timeout → 2min cooldown → retry),
-  // and the user used to see "is thinking..." for the
-  // entire retry window (could be 15+ minutes if the
-  // model is misbehaving). Tobe's v3.10.96 feedback:
-  // "And it still just says clawsuu is thinking, not
-  // executing etc." Now we step through messages at
-  // 8s, 20s, 45s, and 90s so the user sees progress.
-  // The timers are cleared on the result/catch so the
-  // escalation can't continue past the response.
+  // Escalate the typing indicator so the user has a visible signal that the request is still being processed during long model retries.
   const escalationTimers = [];
   const escalateTyping = (text) => {
-    // Find the typing message's text span and update
-    // it in place. addChatMsg sets the div's `id` to
-    // `chat-msg-{N}` where N is the typed return value
-    // (we capture that as `typingId`). We then select by
-    // that id and update the .msg-text child's text.
-    //
-    // v3.2.29 fix: previous code (v3.2.28) used
-    // `[data-msg-id="${typingId}"]`, but addChatMsg sets
-    // the div's `id` attribute, not a data-* attribute.
-    // The selector matched nothing and the escalation
-    // silently failed — the typing message stayed at
-    // "is thinking..." for the full request duration.
-    // Tobe's v3.10.97 feedback: "It still only says
-    // thinking." Now we use the correct id selector.
+    // Find the typing message's text span and update it in place.
     const el = document.getElementById(typingId);
     if (el) {
       const textSpan = el.querySelector('.msg-text');
       if (textSpan) textSpan.textContent = text;
-      // v3.2.30: debug log so we can see in the desktop
-      // log whether the escalation actually fired when
-      // Tobe reports it isn't. Without this, "I see
-      // 'is thinking' for 2 minutes" is impossible to
-      // distinguish from "the timers fired but the
-      // text update missed" vs "the message div was
-      // removed by a tab switch".
+      // Debug log so we can see in the desktop log whether the escalation actually fired when Tobe reports it isn't.
       console.log(`[typing-escalate] ${typingId} -> "${text}" (div=${!!el}, span=${!!textSpan})`);
     } else {
-      // v3.2.30: the div isn't in the DOM. Either the
-      // message was already removed (response arrived
-      // early), the user switched tabs (the active
-      // agent's chat was re-rendered and the typing
-      // div was dropped), or the typing was skipped
-      // because the agent's channel isn't the active
-      // one. Log so we can tell from the log.
+      // The div isn't in the DOM.
       console.log(`[typing-escalate] ${typingId} -> SKIP (div not found, text="${text}")`);
     }
   };
@@ -3717,18 +2760,7 @@ window.sendChat = async function() {
   };
 
   try {
-    // v3.2.28: cap the openclaw agent call at 2 minutes
-    // on the desktop side too. The openclaw CLI internally
-    // retries with a 2min cooldown each — if the model
-    // is misbehaving, the user used to wait 15-20min
-    // before getting any signal. The desktop's exec
-    // timeout is already 120s but the openclaw agent
-    // stays alive across internal retries, so the
-    // timeout never fires. Promise.race with a
-    // setTimeout-rejected promise caps the total wait
-    // here. On cap, we surface "the request is taking
-    // too long, but you can wait or cancel" and the
-    // openclaw agent keeps running in the background.
+    // Cap the openclaw agent call at 2 minutes on the desktop side too.
     let capHandle;
     const capPromise = new Promise((_, reject) => {
       capHandle = setTimeout(() => reject(new Error('Request timed out after 2 minutes')), 120000);
@@ -3736,10 +2768,7 @@ window.sendChat = async function() {
     let result;
     try {
       result = await Promise.race([
-        // v3.2.51: pass attachments (multimodal content)
-        // through to the IPC. The renderer's sendChatMessage
-        // function passes them here. Empty array for text-
-        // only sends.
+        // Pass attachments (multimodal content) through to the IPC.
         cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         capPromise,
       ]);
@@ -3752,34 +2781,14 @@ window.sendChat = async function() {
     if (result.ok) {
       // Show response from party leader
       const leader = agents[mainAgentId];
-      // v3.1.21: pass the resolved icon (per-agent emoji → sprite
-      // catalog icon) so the message prefix shows the right emoji
-      // even if the user hasn't set a custom emoji on the agent.
-      // v3.1.96: strip the desktop's 🤖 default so the mobile's
-      // chat history doesn't get a stray robot next to every
-      // message from agents without an explicit emoji.
-      // v3.2.83: route through postAgentReplyWithScreenshots so
-      // [SCREENSHOT target=...] directives in the reply fire
-      // image bubbles (see app.js parseScreenshotDirectives).
+      // Pass the resolved icon (per-agent emoji → sprite catalog icon) so the message prefix shows the right emoji even if the user hasn't set a…
       const _leaderName = leader?.name || 'Companion';
       const _leaderEmoji = (leader?.emoji === '🤖') ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
       postAgentReplyWithScreenshots(result, _leaderName, _leaderEmoji);
 
-      // Check for quest commands in the reply. v3.1.50: the agent
-// can read + edit quests via structured-output tags. Three new
-// commands: [QUEST_SET_ACTIVE: id="..."] (switch the working
-// quest), [QUEST_APPEND_CHANGE: text="..."] (log a change to
-// the active quest's journal), [QUEST_MARK_GOAL: index="N" done="true|false"]
-// (toggle a goal on the active quest). All commands act on the
-// currently-active quest EXCEPT set_active, which carries its
-// own id. We use i (case-insensitive) so the LLM has a bit of
-// flexibility in how it emits the tags.
+      // Check for quest commands in the reply.
       if (result.reply) {
-        // [QUEST_SET_ACTIVE: id="abc123"] — switch the active
-        // quest. The LLM emits this when the user starts a
-        // conversation about a different project. We require an
-        // id; if the LLM passes the quest name instead, we try
-        // to resolve it as a fallback.
+        // [QUEST_SET_ACTIVE: id="abc123"] — switch the active quest.
         const setActiveMatch = result.reply.match(/\[QUEST_SET_ACTIVE:\s*id="([^"]+)"\]/i);
         if (setActiveMatch) {
           const targetId = setActiveMatch[1];
@@ -3802,11 +2811,7 @@ window.sendChat = async function() {
             addChatMsg('system', '⚠️ Failed to set active quest: ' + e.message);
           }
         }
-        // [QUEST_APPEND_CHANGE: text="..."] — append to the
-        // active quest's latestChanges journal. The LLM uses
-        // this after a meaningful step (e.g. "set up DNS A
-        // record") so future turns have a memory of what it
-        // did on this quest. No-op if there's no active quest.
+        // [QUEST_APPEND_CHANGE: text="..."] — append to the active quest's latestChanges journal.
         const appendMatch = result.reply.match(/\[QUEST_APPEND_CHANGE:\s*text="([^"]+)"\]/i);
         if (appendMatch) {
           if (activeQuestId) {
@@ -3820,24 +2825,7 @@ window.sendChat = async function() {
             addChatMsg('system', '⚠️ No active quest to log the change against');
           }
         }
-        // [QUEST_NOTE: text="..."] — append a timestamped
-        // markdown note to the ACTIVE quest's
-        // QUEST_QUEST_INSTRUCTIONS.md (the same file the
-        // quest editor shows under "Quest instructions").
-        // The companion uses this to leave notes for itself
-        // (SSH paths, deploy commands, "don't touch this
-        // file", etc.) so future turns AND future sessions
-        // have a memory of project-specific knowledge.
-        // Tobe's 2026-08-02 15:45 ask: "as it works within
-        // the quests it should leave notes for itself, and
-        // update key info in the quest instructions for
-        // itself, how to do things etc."
-        //
-        // The IPC handler appends under a "## Companion
-        // notes" section. We invalidate the in-memory
-        // cache here so the next chat send sees the new
-        // note in the context block.
-        // v3.5.0: quest memory tags
+        // [QUEST_NOTE: text="..."] — append a timestamped markdown note to the ACTIVE quest's QUEST_QUEST_INSTRUCTIONS.md (the same file the quest…
         const summaryMatch = result.reply.match(/\[QUEST_SUMMARY:\s*text="([\s\S]*?)"\]/i);
         if (summaryMatch && activeQuestId) {
           try { const r = await cyberclaw.quests.writeQuestSummary(activeQuestId, summaryMatch[1]); if (r && r.ok) addChatMsg('system', '🧭 Quest summary updated'); } catch (e) { addChatMsg('system', '⚠️ Summary update failed: ' + e.message); }
@@ -3853,13 +2841,7 @@ window.sendChat = async function() {
             try {
               const res = await cyberclaw.quests.appendQuestInstructions(activeQuestId, noteMatch[1]);
               if (res && res.ok) {
-                // Invalidate the cache so the next chat
-                // send sees the new note. We do this by
-                // clearing the cache on the quest object
-                // — the next renderQuests() call will
-                // also clear it (it does on every
-                // render). The cache map is keyed by
-                // quest id, so we just delete the entry.
+                // Invalidate the cache so the next chat send sees the new note.
                 const quests = await cyberclaw.quests.list();
                 const q = quests.find(qq => qq.id === activeQuestId);
                 if (q && q._questInstructionsCache) {
@@ -3877,10 +2859,7 @@ window.sendChat = async function() {
             addChatMsg('system', '⚠️ No active quest to save the note against');
           }
         }
-        // [QUEST_MARK_GOAL: index="N" done="true"] — toggle a
-        // goal's completed flag by 0-based index on the active
-        // quest. The LLM emits this when it finishes a step
-        // it had previously broken out as a goal.
+        // [QUEST_MARK_GOAL: index="N" done="true"] — toggle a goal's completed flag by 0-based index on the active quest.
         const markGoalMatch = result.reply.match(/\[QUEST_MARK_GOAL:\s*index="(\d+)"\s+done="(true|false)"\]/i);
         if (markGoalMatch) {
           if (activeQuestId) {
@@ -3928,21 +2907,7 @@ window.sendChat = async function() {
       // Award XP to the best-matching companion based on task type
       await awardXpForReply(result, mainAgentId);
     } else {
-      // v3.3.17: surface the verbose stderr / output from
-      // the failed agent run so the user can see what
-      // actually went wrong. Previously the renderer only
-      // showed `result.error` (the friendly summary like
-      // "agent CLI exited with code 1") and dropped
-      // `result.cliStderr` / `result.output` on the floor,
-      // leaving the user with no clue. Tobe 2026-09-24:
-      // "this error dont say much ... I remember we had a
-      // fancier error earlier at some point."
-      //
-      // The verbose output is appended in a collapsible
-      // block under the friendly summary. Truncated to
-      // ~600 chars to keep the bubble readable; full output
-      // is still available in the desktop log via the
-      // `[chat:send/cli] child failed:` log line.
+      // Surface the verbose stderr / output from the failed agent run so the user can see what actually went wrong.
       const friendly = result.error || 'Failed to get response';
       const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
         || (typeof result.output === 'string' && result.output)
@@ -3967,32 +2932,9 @@ window.sendChat = async function() {
   input.focus();
 };
 
-/**
- * Send a chat message programmatically (used by mobile sync, voice, etc.)
- * Unlike sendChat() which reads from the DOM input, this takes text directly.
- *
- * v3.2.45: serialize per agent via chatSendChain. Without
- * this, two messages sent in quick succession would each
- * run their own openclaw-agent process in parallel, sharing
- * one session log. The first process's final assistant text
- * was never broadcast — only the second process's reply
- * (which always lied "yeah I already did that" because it
- * saw the first's tool calls in the log) was visible. Tobe
- * 2026-08-02 18:49.
- *
- * The wrapper awaits the previous call's chain promise for
- * this agent before starting its own work. Different agents
- * can still run in parallel.
- */
+/** Send a chat message programmatically (used by mobile sync, voice, etc.) Unlike sendChat() which reads from the DOM input, this takes text… */
 window.sendChatMessage = async function(message, attachments) {
-  // Resolve the chain key without running any IPC. We use
-  // the same selection logic as the body (agentOrder[focusIndex]
-  // → first agent → null) but without side effects. If we
-  // pre-pick wrong and the body later picks a different
-  // agent, the worst case is that the wait is wrong by one
-  // turn (the call still runs; just not serialized with
-  // the right prior call). For Tobe's case (one active
-  // agent) this is fine.
+  // Resolve the chain key without running any IPC.
   const chainKey = (agentOrder && agentOrder[focusIndex])
     || (agentOrder && agentOrder[0])
     || '_default';
@@ -4003,14 +2945,7 @@ window.sendChatMessage = async function(message, attachments) {
   if (prev) {
     try { await prev; } catch (_) { /* swallow; the prev call surfaced its own error */ }
   }
-  // Now the queued body runs. Wrap the original function
-  // body in a try/finally so the chain promise always
-  // resolves, even on error.
-  // v3.2.55: pass `attachments` through to the impl.
-  // Tobe 2026-08-02 22:35: attachments were silently
-  // dropped here — the wrapper took only `message` and
-  // the impl's `attachments` parameter was always
-  // undefined. Fixed by forwarding the second arg.
+  // Now the queued body runs.
   try {
     await __sendChatMessageImpl(message, attachments);
   } finally {
@@ -4024,31 +2959,14 @@ window.sendChatMessage = async function(message, attachments) {
   }
 };
 
-// v3.2.51: accepts an optional attachments array
-// for multimodal (text + image) chat. Each attachment
-// is { dataUri, mimeType, fileName, size, path? }.
-// Passed through to cyberclaw.chat.sendMessage which
-// sends them to main.js's chat:send-message IPC, which
-// in turn builds the OpenAI multimodal content array.
+// Accepts an optional attachments array for multimodal (text + image) chat.
 const __sendChatMessageImpl = async function(message, attachments) {
   window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}" atts=${(attachments||[]).length}`, 'info');
-  // v3.2.51: allow empty message when attachments are
-  // present (an image-only send). The user pasted an
-  // image and tapped send with no text — the model
-  // should see the image, not get a silent no-op.
+  // Allow empty message when attachments are present (an image-only send).
   if (!message && (!attachments || attachments.length === 0)) return;
   // Wake companion if sleeping
   nudgeNightWake();
-  // v3.10.3: ALSO explicitly flip sleepState from 'sleeping'
-  // to 'awake' for the active companion. sendChat() does this
-  // for DOM-typed input; sendChatMessage() (the IPC caller
-  // from the mobile and the voice_transcript handler) needs
-  // the same handling. Without it, the user can chat with a
-  // sleeping companion and the reply lands fine, but the
-  // sprite stays in 'death' pose until something else nudges
-  // the night-wake timer — looks broken from the user's POV.
-  // Mirror the same logic as sendChat() exactly so behavior
-  // is consistent regardless of who initiates the message.
+  // ALSO explicitly flip sleepState from 'sleeping' to 'awake' for the active companion.
   const wakeTargetId = agentOrder[focusIndex] || pickCurrentCompanionId();
   if (wakeTargetId && agents[wakeTargetId] && agents[wakeTargetId].sleepState === 'sleeping') {
     agents[wakeTargetId].sleepState = 'awake';
@@ -4066,33 +2984,9 @@ const __sendChatMessageImpl = async function(message, attachments) {
   bumpCompanionInteraction(wakeTargetId); // reset auto-sleep timer
   if (chatBusy) {
     console.warn('[sendChatMessage] chatBusy=true, queuing message:', message.substring(0, 60));
-    // v3.2.36: also surface this in the desktop log so the
-    // user can see when a message is being held up. The
-    // mobile user often sees "clawsuu not answering" with
-    // no clue that the previous request is still in
-    // flight. The reasoning was the same in v3.2.28 (the
-    // 2-min cap) — make the wait visible.
+    // Also surface this in the desktop log so the user can see when a message is being held up.
     window.addDesktopLog?.('⏳', 'Waiting for previous AI reply', message.substring(0, 60), 'warn');
-    // v3.2.45: bumped 15s → 90s. The previous 15s cap was
-    // a UX safety net for hung requests, but the actual
-    // IPC timeout in main.js is 90s. A complex tool-use
-    // task (like "edit 7 files" — Tobe's 2026-08-02 18:49
-    // "make hive control look cyber" request) can easily
-    // take 30-60s. Cutting it off at 15s and force-resetting
-    // chatBusy let the second user message ("Hello?")
-    // interrupt the first, which fired a SECOND
-    // openclaw-agent process. The first process's reply
-    // (or lack thereof) was effectively lost — the user
-    // only saw the second process's reply, which (because
-    // it shared the same session log) was a lie ("yeah I
-    // finished the cleanup") even though the work WAS
-    // done, just never reported.
-    //
-    // The right cap is the IPC's own 90s. If the first
-    // process doesn't return within 90s, the IPC will
-    // also time out and clean up. We mirror that. The
-    // hard ceiling is 95s to give the IPC a few seconds
-    // to clean up before we declare it stuck.
+    // Bumped 15s → 90s.
     const startWait = Date.now();
     while (chatBusy && Date.now() - startWait < 95000) {
       await new Promise(r => setTimeout(r, 200));
@@ -4139,10 +3033,7 @@ const __sendChatMessageImpl = async function(message, attachments) {
 
   let fullMessage = message;
 
-  // v3.2.21: always inject the quest-tools hint. See
-  // buildQuestToolsHint for the full rationale. Mirror of the
-  // sendChat() injection above so voice/mobile/typed paths
-  // all see the available quest tags.
+  // Always inject the quest-tools hint.
   fullMessage = buildQuestToolsHint() + fullMessage;
 
   // v3.2.48: append the work-first reminder. See the
@@ -4152,17 +3043,7 @@ const __sendChatMessageImpl = async function(message, attachments) {
   // Add quest context if active
   if (activeQuestId) {
     try {
-      // v3.2.36: cap the quest-list IPC at 3s. Tobe hit
-      // "Why wont you answer?" on 2026-07-29 — the log
-      // showed the message reached `sendChatMessage`,
-      // reached the chatBusy queue, was force-reset, but
-      // then no `AI thinking` log ever appeared. The most
-      // likely culprit is the IPC `cyberclaw.quests.list()`
-      // hanging: the `await` blocks indefinitely if the
-      // renderer is wedged, and the existing `try/catch`
-      // only catches throws, not hangs. With a 3s timeout
-      // we either get the data or we proceed without it,
-      // and the chat reply goes through either way.
+      // Cap the quest-list IPC at 3s.
       const quests = await Promise.race([
         cyberclaw.quests.list(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('quests.list timeout')), 3000)),
@@ -4180,94 +3061,13 @@ const __sendChatMessageImpl = async function(message, attachments) {
   }
 
   chatBusy = true;
-  // v3.2.36: log here so the user can see the message
-  // actually reached the agent-call stage. Pre-this log,
-  // a hang in `cyberclaw.quests.list()` (line ~2540) would
-  // look identical to a hang in the openclaw agent call
-  // itself, because no log line appeared between the
-  // chatBusy reset and the agent response. With both
-  // stage markers visible, future "why wont you answer"
-  // reports can pinpoint which stage is stuck.
+  // Log here so the user can see the message actually reached the agent-call stage.
   window.addDesktopLog?.('🧠', 'AI thinking', message.substring(0, 60), 'voice');
   console.log('[sendChatMessage] dispatching to agent, mainAgentId:', mainAgentId);
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
   try { ipcRenderer.invoke('sync-broadcast-typing', { active: true }); } catch {}
 
-  // v3.2.37: typed inputs sometimes left the "thinking..."
-  // bubble stuck on the user's screen when the openclaw
-  // call hung or was abandoned. With `try { ... } catch`,
-  // only thrown errors trigger the cleanup path. A silent
-  // hang / abandoned promise / unexpected code path would
-  // leave the typing indicator showing forever. The
-  // `finally` block makes the cleanup unconditional; the
-  // additional 110-second `setTimeout` is the
-  // failsafe-in-failsafe for the case where even the
-  // `finally` doesn't run (e.g. the renderer's JS thread
-  // is wedged — at that point the indicator is the least
-  // of our problems, but we don't want a permanently-
-  // stuck "thinking" bubble in recovered state).
-  //
-  // v3.2.37 also caps the agent call itself with a
-  // Promise.race against an explicit timeout,
-  // so even if the openclaw process is genuinely wedged
-  // (e.g. waiting on a model that's hung server-side),
-  // the renderer returns from the await within a bounded
-  // time and the cleanup runs. The desktop logs the
-  // timeout as a warning so the user can see "openclaw
-  // took > N s, please retry" instead of a silent hang.
-  //
-  // v3.2.46: bumped 90s → 180s. Tobe hit a 90s timeout on
-  // 2026-08-02 20:16 with a 7-file edit task. The openclaw
-  // process was clearly making progress (20+ tool calls
-  // visible in SessionTail), it just hadn't finished yet.
-  // The IPC killed the process at 90s, the result came back
-  // ok:false with the timeout error, and the error message
-  // only went to the renderer's chat — the mobile's
-  // typing bubble just vanished, leaving Tobe with no
-  // signal of what happened. The error message is now also
-  // broadcast to the mobile (v3.2.46 broadcast fix), but
-  // 180s gives complex multi-step tasks a fair shot at
-  // completing without being killed mid-edit.
-  // v3.2.58: bumped from 180s to 600s (10 min). The 180s
-  // cap was firing too often on long-running tasks like
-  // multi-tool code refactors (Tobe 2026-08-03 11:18 saw
-  // "Error: agent call timed out (90s+ legacy string; actual
-  // cap is AGENT_TIMEOUT_MS=180000ms)" mid-task). The
-  // underlying LLM call keeps running on the gateway — the
-  // 180s was just a UI-side Promise.race that surfaced an
-  // error to the user while the LLM continued in the
-  // background. The openclaw gateway's default
-  // timeoutSeconds is 172800 (48h), so 600s is well below
-  // that and matches Discord's effective timeout (Discord
-  // channel adapter doesn't enforce a per-message cap; the
-  // 180s was a desktop-only choice). 600s gives complex
-  // tasks room without making the user wait forever.
-  // v3.10.179: bumped to 900s (15 min) per Tobe 2026-08-30
-  // 11:56. The 600s cap fired on a multi-fix request that
-  // actually completed at ~11:09 — the LLM call did NOT
-  // hang, it was just slow because it had several distinct
-  // sub-tasks (kpow save flow probe + brand colors +
-  // cache buster) and a git tag/push/verify loop. Bumping
-  // to 15 min gives those multi-step tasks headroom without
-  // leaving the user staring at a wedged bubble forever.
-  // The typingFailsafe is bumped proportionally (600s) so
-  // the typing bubble survives long enough to cover a
-  // full legitimate run.
-  //
-  // v3.3.33: bumped to 1800s (30 min) per Tobe 2026-10-04
-  // 10:46: 'And lets extend the time cap since the error
-  // we seem to get often now is timeout.' The 15-min cap
-  // was still firing on multi-tool code-refactor /
-  // git-tag-please-actually-ship-this style workflows. The
-  // underlying LLM call keeps running on the gateway
-  // (openclaw default `timeoutSeconds` is 172800 = 48h),
-  // so extending the UI-side cap is purely a UX decision
-  // about how long we want the user to wait before we
-  // surface an error — the actual work still completes.
-  // 30 min covers the realistic worst-case Tobe's tasks
-  // have hit so far. typingFailsafe bumped to 1500s
-  // (25 min) so the typing bubble survives a full
-  // legitimate run.
+  // Typed inputs sometimes left the "thinking..." bubble stuck on the user's screen when the openclaw call hung or was abandoned.
   const AGENT_TIMEOUT_MS = 1800000; // 1800s = 30 min
   const typingFailsafe = setTimeout(() => {
     console.warn('[sendChatMessage] typing bubble > 1500s, force-clearing');
@@ -4283,19 +3083,7 @@ const __sendChatMessageImpl = async function(message, attachments) {
         // v3.2.51: pass attachments (multimodal content).
         cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
         new Promise((_, reject) =>
-          // v3.10.179: AGENT_TIMEOUT_MS is 900s (900000).
-          // The 90s in the legacy error string is historical;
-          // the actual cap is AGENT_TIMEOUT_MS. If the LLM call
-          // exceeds this, the chat bubble shows the error
-          // but the underlying LLM call continues on the
-          // gateway (this is a UI-side Promise.race, not an
-          // abort signal). The reply, when it eventually
-          // arrives, gets picked up via the OpenClaw tail
-          // session-log watcher and broadcast back to the
-          // mobile. So the user doesn't lose the reply —
-          // just sees a confusing error message in the
-          // interim. Tobe 2026-08-03 11:18 hit this
-          // repeatedly on multi-tool code refactors.
+          // AGENT_TIMEOUT_MS is 900s (900000).
           setTimeout(() => reject(new Error('agent call timed out (current cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms=' + (AGENT_TIMEOUT_MS/1000) + 's) — the LLM call may still complete in the background')), AGENT_TIMEOUT_MS)
         ),
       ]);
@@ -4311,27 +3099,17 @@ const __sendChatMessageImpl = async function(message, attachments) {
 
     if (result.ok) {
       const leader = agents[mainAgentId];
-      // v3.1.96: see sibling site — strip the desktop's 🤖
-      // default before sending.
-      // v3.2.83: route through postAgentReplyWithScreenshots
-      // so [SCREENSHOT] directives fire image bubbles.
+      // See sibling site — strip the desktop's 🤖 default before sending.
       const _leaderName = leader?.name || 'Companion';
       const _leaderEmoji = (leader?.emoji === '🤖') ? null : (leader?.emoji || getSpriteIcon(leader?._pixelCompanionId));
       postAgentReplyWithScreenshots(result, _leaderName, _leaderEmoji);
       window.addDesktopLog?.('💬', 'AI responded', stripAgentReplyDecorations(result.reply).substring(0, 60), 'success');
       // Notify main process for mobile TTS response
       try { ipcRenderer.send('mobile-tts-response', { text: stripAgentReplyDecorations(result.reply) }); } catch {}
-      // v3.3.8: award XP for this reply. Same logic as
-      // sendChat() now — mobile/voice/prompt chats were
-      // silently bypassing XP because this code path was
-      // added in v3.2.51 without the v3.2.84 XP block.
+      // Award XP for this reply.
       await awardXpForReply(result, mainAgentId);
     } else {
-      // v3.3.17: surface the verbose stderr / output from
-      // the failed agent run (mirrors the v3.3.17 fix in
-      // the desktop sendChatMessage path above). Tobe
-      // 2026-09-24: "this error dont say much" — the
-      // friendly summary alone leaves the user guessing.
+      // Surface the verbose stderr / output from the failed agent run (mirrors the v3.3.17 fix in the desktop sendChatMessage path above).
       const friendly = result.error || 'Failed to get response';
       const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
         || (typeof result.output === 'string' && result.output)
@@ -4348,11 +3126,7 @@ const __sendChatMessageImpl = async function(message, attachments) {
   } catch (err) {
     addChatMsg('error', `Error: ${err.message}`);
   } finally {
-    // v3.2.37: clear the typing bubble + chatBusy flag
-    // unconditionally. Before this, a hung openclaw call
-    // left "still thinking" stuck on the user's mobile +
-    // desktop, and chatBusy=true meant the next message
-    // got queued for up to 15s before being force-reset.
+    // Clear the typing bubble + chatBusy flag unconditionally.
     clearTimeout(typingFailsafe);
     try { removeChatMsg(typingId); } catch {}
     try { ipcRenderer.invoke('sync-broadcast-typing', { active: false }); } catch {}
@@ -4370,21 +3144,7 @@ let chatHistory = []; // Backwards-compat flat history (also kept in sync for mo
 // header (v3.11.5). Falls back to null name if the
 // cache is cold.
 let cachedQuestsList = [];
-// Each (companion, quest) pair has its own chat history. Keys are
-// agent ids; values are Records keyed by quest id, with the special
-// key `__default__` for the no-quest / default-chat bucket. The view
-// shows only the active (companion, quest) pair's messages. We also
-// keep the flat `chatHistory` mirror in sync for mobile sync (which
-// is pre-per-quest and doesn't need this nested shape).
-//
-// v3.3.11: per-quest bucketing. Pre-v3.3.11 was
-//   Record<agentId, ChatMessage[]>
-// with all messages for an agent in a single flat list regardless
-// of which quest was active. Now each quest has its own list. The
-// default bucket (`__default__`) catches messages sent when no
-// quest is active — and is also where migrated history from the
-// pre-v3.3.11 shape lands, since that history has no quest
-// attribution.
+// Each (companion, quest) pair has its own chat history.
 const DEFAULT_QUEST_KEY = '__default__';
 function questKeyForStorage(qid) {
   return qid == null ? DEFAULT_QUEST_KEY : qid;
@@ -4393,11 +3153,7 @@ function questKeyFromStorage(key) {
   return key === DEFAULT_QUEST_KEY ? null : key;
 }
 let chatHistoryByAgentAndQuest = {};
-// v3.3.11: keep the old name as a getter for any reader that
-// hasn't been updated yet. Reads return the active quest's
-// bucket for backward-compat with single-bucket consumers
-// (currently none, but defensive). New code should use
-// chatHistoryByAgentAndQuest directly.
+// Keep the old name as a getter for any reader that hasn't been updated yet.
 function chatHistoryByAgent(aid) {
   // Return the active quest's bucket for this agent, falling
   // back to the default bucket if no quest is active.
@@ -4406,13 +3162,7 @@ function chatHistoryByAgent(aid) {
   return buckets[qid] || buckets[DEFAULT_QUEST_KEY] || [];
 }
 let activeChatAgentId = null;
-// v3.3.11: scroll offset per (agent, quest) pair. The chat is a
-// plain div with innerHTML rendering (not virtualized), so we
-// preserve the user's scrollTop across companion / quest switches
-// by saving it on scroll and restoring it on render. Keys are
-// `agentId::questKey` (or `agentId::__default__` for the default
-// bucket). Replaces the implicit "scroll to bottom on switch"
-// behavior that was annoying on long histories.
+// Scroll offset per (agent, quest) pair.
 let chatScrollOffsetByAgentAndQuest = {};
 // v3.3.11: debounced persist for the scroll-offset map.
 let _persistChatScrollTimer = null;
@@ -4442,12 +3192,7 @@ function restoreChatScroll() {
       }
       return;
     }
-    // v3.3.11: migrate from the old per-agent-only key. Old
-    // shape was Record<agentId, number>; new shape is
-    // Record<agentId::questKey, number>. We upgrade each
-    // entry by prefixing with `::default__` (the old
-    // pre-quest-attribution history all lives in the default
-    // bucket).
+    // Migrate from the old per-agent-only key.
     const rawOld = localStorage.getItem('cyberclaw-chat-scroll-byagent');
     if (rawOld) {
       const parsed = JSON.parse(rawOld);
@@ -4540,14 +3285,7 @@ function pickCurrentCompanionId() {
   return agentOrder[0] || null;
 }
 
-// v3.1.17: debounced persist for chatHistoryByAgent. Writes the
-// whole Record to localStorage on every change, but throttles to
-// once per 2s to avoid hammering storage on rapid messages.
-//
-// v3.3.11: extended for per-quest buckets. Persists under
-// `cyberclaw-chat-byagent-byquest` (the new key) and removes the
-// old `cyberclaw-chat-byagent` key after a successful write so
-// the next launch skips the migration path.
+// Debounced persist for chatHistoryByAgent.
 let _persistChatHistoryTimer = null;
 function schedulePersistChatHistory() {
   if (_persistChatHistoryTimer) return;
@@ -4587,16 +3325,7 @@ function schedulePersistChatHistory() {
   }, 2000);
 }
 
-// v3.1.17: restore chatHistoryByAgent from localStorage on app
-// start. Without this, the in-memory history is wiped on every
-// desktop restart, which leaves the mobile companion tab bar
-// showing empty chats until the user has a fresh conversation.
-//
-// v3.3.11: extended for per-quest buckets. Reads the new key
-// `cyberclaw-chat-byagent-byquest` first; falls back to the old
-// per-agent-only key `cyberclaw-chat-byagent` and migrates its
-// contents into the default bucket for each agent. On successful
-// migration the old key is deleted.
+// Restore chatHistoryByAgent from localStorage on app start.
 function restoreChatHistory() {
   try {
     // v3.3.11: prefer the new per-quest key.
@@ -4625,16 +3354,7 @@ function restoreChatHistory() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      // v3.10.65: one-shot migration — rewrite any legacy
-      // `emoji: '🤖'` entries to the resolved sprite icon (or
-      // null) so the chat message prefix shows the companion
-      // sprite instead of the desktop's default robot. Older
-      // histories were persisted before the v3.1.96 strip
-      // pattern was applied at the render site, so the messages
-      // showed no prefix at all. After this migration they'll
-      // show the sprite icon — matching what new messages
-      // already do via the same strip pattern at addChatMsg
-      // call sites.
+      // One-shot migration — rewrite any legacy `emoji: '🤖'` entries to the resolved sprite icon (or null) so the chat message prefix shows the…
       let migrated = 0;
       const migratedBuckets = {};
       for (const [agentId, msgs] of Object.entries(parsed)) {
@@ -4649,10 +3369,7 @@ function restoreChatHistory() {
             m.emoji = fallbackIcon || null;
             migrated++;
           }
-          // v3.2.69: one-shot strip — clean any legacy
-          // tool-warning lines from old chat history. New
-          // messages are stripped at addChatMsg entry, so
-          // only old persisted entries need cleanup here.
+          // One-shot strip — clean any legacy tool-warning lines from old chat history.
           if (m && m.type === 'agent' && typeof m.text === 'string') {
             const cleanedText = stripAgentReplyDecorations(m.text);
             if (cleanedText !== m.text) {
@@ -4664,10 +3381,7 @@ function restoreChatHistory() {
       if (migrated > 0) {
         console.log(`[Restore] Migrated ${migrated} legacy 🤖 emoji(s) in chat history to sprite icons`);
       }
-      // v3.3.11: migrate the old per-agent shape into the
-      // new per-(agent, default-bucket) shape. Pre-v3.3.11
-      // messages have no quest attribution, so they all
-      // land in the default bucket.
+      // Migrate the old per-agent shape into the new per-(agent, default-bucket) shape.
       for (const [agentId, msgs] of Object.entries(parsed)) {
         if (!Array.isArray(msgs) || msgs.length === 0) continue;
         if (!chatHistoryByAgentAndQuest[agentId]) chatHistoryByAgentAndQuest[agentId] = {};
@@ -4703,29 +3417,7 @@ function restoreChatHistory() {
   }
 }
 
-// v3.2.83: parse [SCREENSHOT target=...] directives out of
-// an agent's reply. Returns { cleanedText, directives } where:
-//   cleanedText — the reply with the directive lines removed
-//   directives  — array of { target, windowName } extracted
-//
-// Recognized shapes:
-//   [SCREENSHOT]                      → defaults to target=cyberclaw
-//   [SCREENSHOT target=desktop]
-//   [SCREENSHOT target=window windowName="Settings"]
-//   [SCREENSHOT target=cyberclaw]
-//
-// Tobe 2026-08-06 18:25: "can cyberclaw send that images in
-// the cyberclaw chat?". We use a text directive rather than
-// registering a real OpenClaw tool because (a) the LLM emits
-// directives it already understands in this codebase (see
-// [QUEST_*], [REMEMBER:*]), (b) it doesn't require touching
-// agent tools config, (c) the directive is just text the
-// renderer parses client-side — no round-trip through the
-// gateway for tool dispatch.
-//
-// Multi-shot: a single reply can contain multiple directives.
-// We strip ALL of them from the visible text and fire one
-// screenshot IPC per directive.
+// Parse [SCREENSHOT target=...] directives out of an agent's reply.
 function parseScreenshotDirectives(reply) {
   const directives = [];
   // Match [SCREENSHOT ...] on its own line. The regex allows
@@ -4756,20 +3448,11 @@ function parseScreenshotDirectives(reply) {
   return { cleanedText: cleaned, directives };
 }
 
-// v3.2.83: process an agent reply, strip screenshot
-// directives, render the cleaned text via addChatMsg, then
-// fire one screenshot IPC per directive and post each result
-// as an agent-image bubble. Replaces the call sites that
-// previously called `addChatMsg('agent', stripAgentReplyDecorations(result.reply), ...)`
-// directly.
+// Process an agent reply, strip screenshot directives, render the cleaned text via addChatMsg, then fire one screenshot IPC per directive…
 function postAgentReplyWithScreenshots(result, name, emoji) {
   const baseReply = stripAgentReplyDecorations(result.reply || '');
   const { cleanedText, directives } = parseScreenshotDirectives(baseReply);
-  // v3.2.83: also strip the directives before passing the
-  // text down to quest-tag parsing. The directive lines
-  // would otherwise be treated as decorations and possibly
-  // re-stripped (idempotent) or leak into the chat history
-  // if some other code path reads result.reply raw.
+  // Also strip the directives before passing the text down to quest-tag parsing.
   result.reply = cleanedText;
   // Render the cleaned text as a regular agent bubble.
   // We pass null emoji when the agent's emoji is the
@@ -4801,40 +3484,14 @@ function postAgentReplyWithScreenshots(result, name, emoji) {
 }
 
 function addChatMsg(type, text, name, emoji, attachments, questOverride = null) {
-  // v3.3.31: optional quest routing override. When truthy,
-  // the message routes to that specific quest bucket
-  // instead of the active quest. Used by toy/snack
-  // companion-reaction paths (see promptCompanionReaction)
-  // to keep the toy chatter in the no-quest chat rather
-  // than cluttering whatever quest the user happens to
-  // be working on. Tobe 2026-10-01 12:20: "I just want
-  // that speech the companion does into the no quest chat,
-  // not any quest so it does not clutter those
-  // conversations."
-  //
-  // When `questOverride` is the string '__no_quest__',
-  // the message routes to the no-quest bucket
-  // (DEFAULT_QUEST_KEY). When null/undefined (default),
-  // the message routes to the active quest (current
-  // behavior — used by every existing call site).
-  //
-  // Effective quest id used everywhere below:
+  // Optional quest routing override.
   const effectiveQuestId = (questOverride === '__no_quest__') ? null : (questOverride || activeQuestId);
   // System messages go to the Events tab
   if (type === 'system') {
     return addEventMsg(text);
   }
 
-  // v3.2.69: strip quest tags and tool-warning lines from
-  // agent replies before persisting or broadcasting. The
-  // pipeline call sites already strip before calling us,
-  // but tail-routed messages (Discord, OpenClaw tail
-  // broadcaster) don't go through the same code path —
-  // strip here so persisted history and the mobile
-  // broadcast also get cleaned. Tobe 2026-08-05 11:38:
-  // 'this edit fail warning shows up sometimes, even
-  // here in discord'. User replies and tool errors are
-  // passed through unchanged.
+  // Strip quest tags and tool-warning lines from agent replies before persisting or broadcasting.
   if (type === 'agent') {
     text = stripAgentReplyDecorations(text || '');
   }
@@ -4842,77 +3499,11 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   // Resolve the agent id for per-companion bucketing
   const agentId = agentIdForName(name) || activeChatAgentId || (agentOrder[focusIndex]) || null;
 
-  // Keep in-memory chat history for mobile sync
-  //
-  // v3.3.20: persist `agent-image` bubbles alongside
-  // `agent` and `user`. Previously only text bubbles
-  // were stored — image bubbles lived only in the
-  // renderer's DOM and the broadcast WS frame. They
-  // vanished on desktop restart and never appeared in
-  // the mobile's chat_history / agent_history responses.
-  //
-  // For Tobe's 2026-09-29 15:49 report ('clawsuu is
-  // posting pictures in the desktop app but they dont
-  // come through to the mobile end. They should.' —
-  // this is the third iteration of the same problem;
-  // the desktop fix and the mobile fix from the first
-  // iteration were both verified, but the bubble still
-  // didn't arrive on the phone because the realtime
-  // broadcast landed during a WS reconnect window where
-  // the mobile wasn't connected). Persisting in the
-  // per-quest bucket means the bubble also rides along
-  // on chat_history / agent_history responses and
-  // arrives on every subsequent mobile reconnect, not
-  // only on the realtime broadcast window.
-  //
-  // Note: agent-image bubbles still trigger the realtime
-  // sync-broadcast-chat broadcast (see the type guard at
-  // line ~4352, extended in v3.3.20). Persisting is in
-  // ADDITION to the broadcast — belt and braces.
-  //
-  // The bubble carries attachments but the underlying
-  // dataUri may be hundreds of KB to ~1MB base64. To
-  // keep localStorage healthy (5-10MB cap, 200-entry
-  // per-bucket cap), we persist only a reference
-  // (filePath + size + mime + name) and re-resolve the
-  // dataUri from the file on read. The file lives at
-  // /tmp/clawsuu-shot-*.png with a 14:32+ timestamp
-  // for the current desktop run; subsequent runs have
-  // different file paths. We don't have a guaranteed
-  // way to keep those files alive across restarts yet
-  // (see CHANGES_3.3.20.md "Persistence (intentional
-  // non-fix)").
-  //
-  // For now we persist attachments inline (yes, the
-  // localStorage cap is tight — but with the per-bucket
-  // 200-cap and a typical user session of <50 image
-  // bubbles, we stay under 5MB on average). If we ever
-  // see localStorage eviction in the wild, we'll
-  // downgrade to filePath references only. The
-  // attachments field is omitted from the bucket entry
-  // when the dataUri is too large to fit safely (>200KB
-  // base64) — see the size guard below.
-  //
-  // Layer 12 in MEMORY.md's "chat-projection decay
-  // modes" list — the broadcast path alone was not
-  // sufficient because the WS frame can race against
-  // mobile reconnects. Persisting in the bucket makes
-  // the bubble a durable artifact, not a transient
-  // network event.
+  // Keep in-memory chat history for mobile sync v3.3.20: persist `agent-image` bubbles alongside `agent` and `user`.
   let attachmentsForPersistence = null;
-  // v3.3.22: also accept attachments passed via the 5th arg
-  // (user-attachment send path from the desktop's image-send
-  // button, where text is the user's typed message and
-  // attachments is the array of images). For type==='user'
-  // and type==='agent', attachments may be the array; for
-  // type==='agent-image', text is an object with dataUri
-  // (legacy path, still works).
+  // Also accept attachments passed via the 5th arg (user-attachment send path from the desktop's image-send button, where text is the user's…
   if (Array.isArray(attachments) && attachments.length > 0) {
-    // Normalize desktop's image-send attachment shape to the
-    // same `{ uri, data, type, name, size }` shape the mobile
-    // already understands. Input may be either the mobile
-    // shape `{ dataUri, mimeType, fileName, size }` or the
-    // simpler `{ uri, type, name, size, data }` — accept both.
+    // Normalize desktop's image-send attachment shape to the same `{ uri, data, type, name, size }` shape the mobile already understands.
     attachmentsForPersistence = attachments.map((a) => {
       const dataUri = a.dataUri || a.uri || null;
       const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
@@ -4930,14 +3521,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       };
     });
   } else if (type === 'agent-image' && text && typeof text === 'object' && text.dataUri) {
-    // Cap the persisted attachment size so a single
-    // screenshot doesn't blow the bucket cap. Screenshots
-    // over 200KB base64 (the common case for a 1024x768+
-    // window capture) get a thumbnail-style stripped
-    // reference instead. The full dataUri still rides on
-    // the realtime broadcast, so the user sees the full
-    // image when their mobile is online; on history sync
-    // they get the small thumbnail.
+    // Cap the persisted attachment size so a single screenshot doesn't blow the bucket cap.
     const dataUri = text.dataUri;
     const base64Part = dataUri.split(',')[1] || '';
     if (base64Part.length <= 200 * 1024) {
@@ -4950,11 +3534,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
         size: base64Part.length,
       }];
     } else {
-      // File-reference fallback. The desktop's renderer
-      // can still render the bubble from the in-memory
-      // text.dataUri; the bucket entry carries the path
-      // for history sync so the mobile at least shows a
-      // small "screenshot saved to <path>" notice.
+      // File-reference fallback.
       attachmentsForPersistence = [{
         uri: dataUri,
         data: base64Part.slice(0, 50 * 1024), // tiny thumb
@@ -4967,47 +3547,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
     }
   }
   if (type === 'agent' || type === 'user' || type === 'agent-image' || type === 'error') {
-    // v3.3.19: stamp activeQuestId and activeQuestName on
-    // the flat mirror so the mobile can route each message
-    // to the correct per-quest bucket on history fetch (the
-    // chat_history response is now per-quest-aware on the
-    // mobile side; this stamping is what makes that
-    // routing possible). Without this, every message in
-    // chat_history lands in the legacy DEFAULT bucket and
-    // the user's active-quest view stays empty after a
-    // cold start even though the desktop has the right
-    //
-    // v3.3.33: BUGFIX — also push `error` bubbles into
-    // the flat mirror. Previously the guard only matched
-    // agent / user / agent-image, so the realtime
-    // broadcast of the error (handled by the separate
-    // block at line ~4736) reached the mobile if it was
-    // online, but if the mobile was disconnected at the
-    // moment of broadcast (Android doze, app in
-    // background, brief network drop), the WS frame was
-    // lost. On reconnect, the mobile sent
-    // request_chat_history and got a chatHistory mirror
-    // that did NOT contain the error — so the user
-    // never saw the error on their phone even though
-    // it was clearly visible on the desktop.
-    // Tobe 2026-10-04 10:46: 'The errors still dont
-    // show on the mobile end ... see image. But Its an
-    // error i can see on the desktop and it does not
-    // reach the mobile chat.' The desktop log confirmed
-    // the broadcast fired (`[IPC] Message broadcast to
-    // mobile clients`) but the next client-connection
-    // was 20+ seconds later, by which time the realtime
-    // frame was gone and the chat_history replay had
-    // nothing to give back. Errors must persist in the
-    // mirror so chat_history replays them on every
-    // reconnect, not just on the realtime window.
-    // per-quest history.
-    //
-    // activeQuestName is read sync from cachedQuestsList
-    // (same lookup pattern as the per-quest bucket push
-    // below — we can't go async here without touching
-    // every addChatMsg call site, and the v3.3.13 lesson
-    // is "don't make addChatMsg async").
+    // Stamp activeQuestId and activeQuestName on the flat mirror so the mobile can route each message to the correct per-quest bucket on history…
     let activeQuestNameAtAppendForMirror = null;
     try {
       if (typeof effectiveQuestId === 'string' && effectiveQuestId && Array.isArray(cachedQuestsList)) {
@@ -5028,54 +3568,12 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
     if (chatHistory.length > 100) {
       chatHistory = chatHistory.slice(-100);
     }
-    // Per-companion history
-    //
-    // v3.3.11: per-quest bucketing. Each (agent, quest) pair
-    // has its own bucket. The active quest is read at append
-    // time (so the bucket reflects which quest was active
-    // when the message actually exchanged, not which is
-    // active now). `null` (no active quest) maps to the
-    // default bucket. The flat `chatHistory` mirror (above)
-    // is unchanged because the mobile sync layer is
-    // pre-per-quest and stamps its own quest attribution
-    // from its own activeQuestRef.
+    // Per-companion history v3.3.11: per-quest bucketing.
     if (agentId) {
       const qk = questKeyForStorage(effectiveQuestId);
       if (!chatHistoryByAgentAndQuest[agentId]) chatHistoryByAgentAndQuest[agentId] = {};
       if (!chatHistoryByAgentAndQuest[agentId][qk]) chatHistoryByAgentAndQuest[agentId][qk] = [];
-      // v3.3.13: drop the `activeQuestName` enrichment.
-      // v3.3.11 added it with a bare `quests` reference
-      // that was never declared in this function's scope,
-      // so addChatMsg threw `ReferenceError: quests is
-      // not defined` on every chat message and crashed
-      // the renderer's chat pipeline before the message
-      // could reach the agent. Tobe 2026-09-23 18:09:
-      // "I sent the message but no clawsuu thinking etc
-      // and no response." — the renderer died at line
-      // 4144 before the LLM call even started.
-      //
-      // We can't load `quests` here without making
-      // addChatMsg async (it's called from many sync
-      // fire-and-forget paths — agent reply handlers,
-      // typing-bubble inserts, system message pushes,
-      // mobile echoes, etc.). Making it async would
-      // require touching all of those call sites for
-      // ordering guarantees they don't currently need.
-      //
-      // Drop the enrichment. The activeQuestId is
-      // still stamped below, so per-quest bucket
-      // routing continues to work (which was the
-      // v3.3.18: also stamp the active quest name so the
-      // mobile's chat-bubble header (v3.11.5) can render
-      // the quest label on each bubble without an
-      // additional lookup. The activeQuestName is read
-      // synchronously from the in-memory `activeQuestId`
-      // by looking it up in the quest list cached in
-      // module-scope `cachedQuestsList` (populated by
-      // quests_list broadcasts; falls back to a fresh
-      // cyberclaw.quests.list() if the cache is cold).
-      // This is a sync code path so we use the cached
-      // value to avoid making addChatMsg async.
+      // Drop the `activeQuestName` enrichment.
       let activeQuestNameAtAppend = null;
       try {
         if (typeof effectiveQuestId === 'string' && effectiveQuestId && Array.isArray(cachedQuestsList)) {
@@ -5089,44 +3587,10 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       }
     }
 
-    // v3.1.17: persist per-companion chat history to localStorage
-    // so it survives a desktop restart. The mobile companion app
-    // also persists its own copy (cyberclaw-chat-byagent) so this
-    // is belt-and-braces — the desktop copy is the source of
-    // truth for the on-screen chat, the mobile copy is the
-    // source of truth for the tab-switch UX. Debounced to
-    // avoid hammering storage on every keystroke.
+    // Persist per-companion chat history to localStorage so it survives a desktop restart.
     schedulePersistChatHistory();
 
-    // v3.2.59: per-quest conversation log. When there's an
-    // active quest, every chat exchange is automatically
-    // stamped with the quest id and persisted to that quest's
-    // `conversationLog` array (capped at 200 entries, FIFO;
-    // text capped at 1000 chars). buildActiveQuestContext reads
-    // the most-recent N entries on every reply and injects
-    // them into the LLM prompt, so the companion has
-    // cross-session memory of what was said on this project.
-    // Tobe 2026-08-04 11:55: 'we need to make the companion
-    // create a log for each project with a appropriate max
-    // size for the companions which they should read for
-    // each reply? Such that it can always keep the
-    // conversation in mind for a specific project? Such
-    // that it does not forget like this.'
-    //
-    // Fire-and-forget: the IPC is async but the chat render
-    // must not block on it. If the IPC fails (e.g. quest
-    // deleted mid-write, transient disk error), we just
-    // skip — the user-visible chat already updated; only
-    // the project memory misses this turn.
-    //
-    // v3.3.31: use effectiveQuestId for the conversation
-    // log too. Toy/snack companion-reaction paths
-    // (questOverride='__no_quest__') skip the active
-    // quest's conversation log entirely — the toy chatter
-    // shouldn't pollute project memory, and there's no
-    // "no-quest conversation log" to append to (logging
-    // to the active quest would defeat the purpose of
-    // the override).
+    // Per-quest conversation log.
     if (effectiveQuestId) {
       try {
         cyberclaw.quests.appendConversationLog(
@@ -5145,91 +3609,15 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
     }
   }
 
-  // Broadcast to mobile companion app
-  // v3.2.46: also broadcast error messages. Previously only
-  // 'agent' and 'user' messages went to the mobile, so an
-  // IPC timeout or other failure left the mobile with the
-  // typing bubble and no follow-up — the user thought the
-  // agent went silent. Tobe 2026-08-02 20:16: 'It appeared
-  // for a few seconds then its gone. He cant possibly
-  // have done the task so fast.' The agent hadn't done
-  // anything — the IPC had timed out and the error message
-  // only went to the renderer's chat, not the mobile.
-  //
-  // v3.3.20: also broadcast 'agent-image' bubbles (and any
-  // future visual-only bubble type). Previously these were
-  // rendered into the desktop chat but never sent to the
-  // mobile — the mobile stayed blank while the desktop
-  // showed screenshot thumbnails. Tobe 2026-09-29 11:38:
-  // 'clawsuu is posting pictures in the desktop app but
-  // they dont come through to the mobile end. They
-  // should.' Root cause: the type guard below only matched
-  // 'agent' / 'user' / 'error' — the renderer-side
-  // addChatMsg('agent-image', {dataUri, target, ...}) call
-  // hit the early return at the broadcast block and the
-  // mobile's WS never saw the event. We pass the image
-  // through as an `attachments` array (same shape the
-  // mobile already understands for outbound user
-  // attachments) so the mobile's renderMessage bubble
-  // shows the thumbnail without a new bubble component.
-  //
-  // Persistence: agent-image bubbles are NOT written to
-  // the per-quest bucket (no addChatMsg('agent'/'user')
-  // branch fires) and therefore won't survive a desktop
-  // restart or appear in mobile history sync. That
-  // matches the desktop's current behavior — the
-  // screenshot file is written to /tmp/clawsuu-shot-*.png
-  // and the in-memory bubble shows once. Mobile history
-  // sync is unchanged. If we later want images to
-  // survive restarts, we'll persist a reference (file
-  // path) and re-resolve on demand — out of scope here
-  // because base64-encoded screenshots are 50KB-500KB
-  // each and would blow out localStorage's 5-10MB cap.
+  // Broadcast to mobile companion app v3.2.46: also broadcast error messages.
   if (type === 'agent' || type === 'user' || type === 'error' || type === 'agent-image') {
     try {
       const { ipcRenderer } = require('electron');
-      // v3.1.15: send the resolved agentId (not just the display name)
-      // plus the display name separately, so the mobile can label chat
-      // messages correctly when multiple companions are present.
-      //
-      // v3.3.18: include the active quest id so the mobile's
-      // chat-bubble header (v3.11.5) can render the quest
-      // label per-bubble. The mobile looks up the name from
-      // its own cached quest list (received via the
-      // quests_list broadcast the QuestsScreen subscribes
-      // to). Sending the name from the renderer would
-      // require an async lookup on every broadcast; the id
-      // is the cheap part and the name is derivable.
-      //
-      // Tobe 2026-09-24 21:33: 'Let us put in the current
-      // quest name at the upper right of each text bubble so
-      // one can see what chat it actually is.'
-      //
-      // v3.3.20: for agent-image, the second arg to
-      // addChatMsg is an object { dataUri, target, width,
-      // height, filePath }. The mobile doesn't render that
-      // shape, so translate to the standard `attachments`
-      // array used by the user-attachment path. The mobile
-      // bubble renderer (HomeScreen.tsx renderMessage,
-      // v3.10.20) already accepts `attachments: [{uri,
-      // type, name, data}]` and renders a tap-to-expand
-      // image preview. We re-use that.
+      // Send the resolved agentId (not just the display name) plus the display name separately, so the mobile can label chat messages correctly…
       let broadcastText = text;
       let broadcastAttachments = null;
       let broadcastIsUser = type === 'user';
-      // v3.3.22: forward user-side attachments (desktop
-      // image-send) on the chat_message broadcast. The
-      // user bubble carries an `attachments` array; the
-      // mobile already renders it for inbound user
-      // messages, but the WS broadcast previously
-      // dropped the field. Tobe 2026-09-29 22:10: 'The
-      // text i sent on the desktop also did not appear
-      // on the phone end for some reason' — partly
-      // because the desktop's image-send path skipped
-      // addChatMsg entirely (rendered DOM-directly),
-      // which means no chat_message broadcast fired.
-      // Now that addChatMsg accepts attachments, the
-      // broadcast below carries them.
+      // Forward user-side attachments (desktop image-send) on the chat_message broadcast.
       if (Array.isArray(attachments) && attachments.length > 0) {
         broadcastAttachments = attachments.map((a) => {
           const dataUri = a.dataUri || a.uri || null;
@@ -5247,11 +3635,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
         const img = text || {};
         const dataUri = img.dataUri || null;
         if (dataUri) {
-          // Strip the `data:<mime>;base64,` prefix into the
-          // shape the mobile's AttachmentItem expects. The
-          // mobile renders `data:${type};base64,${data}`
-          // (see HomeScreen.tsx around line 6210) — same
-          // convention.
+          // Strip the `data:<mime>;base64,` prefix into the shape the mobile's AttachmentItem expects.
           const m = /^data:([^;]+);base64,(.*)$/.exec(dataUri);
           const mime = (m && m[1]) || 'image/png';
           const data = (m && m[2]) || dataUri;
@@ -5266,35 +3650,11 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
             size: data.length,
           }];
         }
-        // Image bubbles are agent-side. Don't put anything
-        // in `text` — the mobile bubble already shows the
-        // image preview, an empty caption keeps the bubble
-        // layout consistent with user-attachment sends
-        // (which also send `text: ''`).
+        // Image bubbles are agent-side.
         broadcastText = '';
         broadcastIsUser = false;
       }
-      // v3.3.29: compute the broadcast quest id with a
-      // fallback before the object literal so we don't
-      // need to use let inside the literal.
-      //
-      // v3.3.31: when questOverride is set (toy/snack
-      // companion-reaction paths want to route to the
-      // no-quest bucket), use the override's effective
-      // quest id directly — DO NOT fall back to
-      // cachedQuestsList.find(active=true). That fallback
-      // exists to recover from a stale module-scope
-      // activeQuestId at broadcast time, but for an
-      // explicit override (toy reactions) the user's
-      // intent is "this message is no-quest chat",
-      // regardless of whether the desktop happens to
-      // have a quest marked active. Falling back to the
-      // active quest would route the toy bubble back to
-      // a quest bucket on the mobile, defeating the
-      // whole point of the override. Tobe 2026-10-01
-      // 12:20: "I just want that speech the companion
-      // does into the no quest chat, not any quest so it
-      // does not clutter those conversations."
+      // Compute the broadcast quest id with a fallback before the object literal so we don't need to use let inside the literal.
       let broadcastActiveQuestId = (typeof effectiveQuestId === 'string' && effectiveQuestId) ? effectiveQuestId : null;
       if (!broadcastActiveQuestId && questOverride == null && Array.isArray(cachedQuestsList)) {
         const fallbackQ = cachedQuestsList.find(qq => qq && qq.active === true);
@@ -5307,51 +3667,11 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
         agentName: name || null,
         text: broadcastText,
         isUser: broadcastIsUser,
-        // v3.3.18: stamp the active quest on the broadcast
-        // so the mobile can label each bubble with its
-        // quest. `null` means "no active quest" (the user
-        // deactivated); mobile renders '— No quest'.
-        //
-        // v3.3.29: fallback to the most-recent active
-        // quest from cachedQuestsList if the module-scope
-        // `activeQuestId` is null. Pre-v3.3.29 the
-        // broadcast sent `null` in that case, which on
-        // the mobile routes the message to the DEFAULT
-        // bucket. If the user has an active quest
-        // anchor (e.g. HIVE_CONTROL) on the mobile, the
-        // DEFAULT bucket is invisible to them — so
-        // errors broadcast with null activeQuestId
-        // appeared on the desktop but not on the mobile.
-        // Tobe 2026-09-30 17:29: 'the rate limit error
-        // appears, but again that does not come through
-        // to the mobile, only on desktop for some
-        // reason.' With the fallback, if the user has
-        // ANY active quest on the desktop but the
-        // module-scope activeQuestId is stale/null (e.g.
-        // mid-reload), the broadcast still carries the
-        // right quest id and the mobile routes it to
-        // the visible bucket. Stays null only if no
-        // quest is active anywhere.
+        // Stamp the active quest on the broadcast so the mobile can label each bubble with its quest.
         activeQuestId: broadcastActiveQuestId,
-        // v3.3.31: explicit "force to no-quest" flag for
-        // companion-reaction bubbles (toy dropped, snack
-        // eaten, etc.). The mobile's v3.11.26 anchor
-        // fallback normally re-routes null-stamped
-        // messages to the user's active-quest bucket when
-        // the user has an anchor set — but that fallback
-        // would defeat the v3.3.31 intent for toy
-        // reactions (we want them in the no-quest chat,
-        // not the active quest). The mobile checks this
-        // flag and skips its anchor fallback when it's
-        // true. Tobe 2026-10-01 12:20: "I just want that
-        // speech the companion does into the no quest
-        // chat, not any quest so it does not clutter
-        // those conversations."
+        // Explicit "force to no-quest" flag for companion-reaction bubbles (toy dropped, snack eaten, etc.).
         forceNoQuest: questOverride === '__no_quest__',
-        // v3.3.20: include attachments for image bubbles
-        // so the mobile's renderMessage can show the
-        // thumbnail. `null` for text bubbles — the mobile
-        // already handles that case.
+        // Include attachments for image bubbles so the mobile's renderMessage can show the thumbnail.
         attachments: broadcastAttachments,
       });
     } catch {}
@@ -5364,10 +3684,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
     markChannelUnread(agentId);
     return null;
   }
-  // v3.4.6: same for chat context. A casual message (idle chatter,
-  // toy/snack reactions) must not appear in the quest chat the user
-  // is looking at, and vice versa. It's stored in its own bucket;
-  // the ↔ toggle gets an unread dot instead.
+  // Same for chat context.
   if (type !== 'typing' && questKeyForStorage(effectiveQuestId) !== questKeyForStorage(activeQuestId)) {
     const tbtn = document.getElementById('chat-quest-toggle-btn');
     if (tbtn) tbtn.classList.add('has-unread');
@@ -5384,44 +3701,9 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   div.id = id;
   div.className = `chat-msg ${type}`;
 
-  // v3.3.22: per-bubble quest pill (matches the mobile's
-  // v3.11.5 activeQuestName pill). Tobe 2026-09-29 22:13:
-  // 'the chat does not say either. But the text is the
-  // same as the hive control chat on mobile so it seems
-  // like thats the chat active. It should say in the text
-  // bubble like it does in on mobile also.' We render a
-  // small dim header above each bubble showing the quest
-  // name (or "— No quest" if the message was sent with
-  // no active quest). Reads from the in-memory
-  // `cachedQuestsList` by id; falls back to "(unknown
-  // quest)" if the id is stale.
-  //
-  // v3.3.28: BUGFIX — pre-v3.3.28 this lookup used
-  // `typeof quests !== 'undefined'` to defend against the
-  // quest list not being loaded yet, but there is NO
-  // module-scope `quests` variable at all — `quests` is
-  // always declared as a function-local `const` inside
-  // other functions. The `typeof` guard returned
-  // 'undefined' (correct), but then `Array.isArray(quests)`
-  // is `false` because `quests` is genuinely undefined in
-  // module scope, so `activeQuestNameForBubble` ALWAYS
-  // returned null, which is why EVERY desktop chat bubble
-  // rendered '— No quest' even when an active quest was
-  // set. Tobe 2026-09-30 15:18 report: 'the desktop chat
-  // still says no quest but it is the hive control chat.'
-  // Switched to the existing module-scope
-  // `cachedQuestsList` (populated by quests_list
-  // broadcasts at line 7765), which is the correct source
-  // for sync lookups inside addChatMsg. Matches the
-  // pattern already used at line 4410 / 4478 for the
-  // bucket-stamp `activeQuestNameAtAppend`.
+  // Per-bubble quest pill (matches the mobile's v3.11.5 activeQuestName pill).
   const activeQuestNameForBubble = (() => {
-    // v3.3.31: use effectiveQuestId (the questOverride-
-    // aware variant) so the per-bubble quest header
-    // reflects the override. A toy-reaction bubble with
-    // questOverride='__no_quest__' renders '— No quest'
-    // (the no-quest label) even when the user has an
-    // active quest — matching the bucket routing.
+    // Use effectiveQuestId (the questOverride- aware variant) so the per-bubble quest header reflects the override.
     const qid = effectiveQuestId;
     if (!qid) return null;
     const q = (Array.isArray(cachedQuestsList) ? cachedQuestsList : []).find(qq => qq && qq.id === qid);
@@ -5433,14 +3715,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
 
   switch (type) {
     case 'user':
-      // v3.3.22: render user-side attachments inline. Same
-      // shape as the agent-image bubble: tap-to-expand
-      // thumbnail with optional caption. The attachments
-      // come from the desktop image-send path (paperclip
-      // button) or from the mobile's image-pick flow
-      // forwarded via `mobile-chat-with-attachments`.
-      // Both shapes normalize to `{dataUri, mimeType,
-      // fileName, size}` upstream.
+      // Render user-side attachments inline.
       if (Array.isArray(attachments) && attachments.length > 0) {
         let html = questHeaderHtml + `<span class="msg-prefix">[You]</span>`;
         if (text) html += `<span class="msg-text">${escHtml(text)}</span>`;
@@ -5456,49 +3731,19 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       }
       break;
     case 'agent':
-      // v3.1.96: same fix as the other render site — don't
-      // show the prefix emoji if it's the desktop's 🤖 default.
-      // Show just [name] in that case (matches the user-style
-      // prefix shape).
+      // Same fix as the other render site — don't show the prefix emoji if it's the desktop's 🤖 default.
       div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
       break;
     case 'typing':
-      // v3.3.34: include the quest pill on typing bubbles
-      // too. Pre-v3.3.34 the typing case skipped the pill
-      // (it was thought to be visual noise), but the
-      // per-bubble quest pill is now the user's primary
-      // affordance for knowing which quest the typing
-      // indicator is for. Same shape as the other cases.
+      // Include the quest pill on typing bubbles too.
       div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(text)}</span>`;
       break;
     case 'error':
-      // v3.3.34: include the quest pill on error bubbles
-      // so the per-bubble quest attribution is consistent
-      // across all bubble types. Pre-v3.3.34 the error
-      // case skipped the pill, so an error fired while
-      // chatting on a quest (the most common case) had
-      // no quest attribution. Now: stamp it just like
-      // agent / user bubbles.
+      // Include the quest pill on error bubbles so the per-bubble quest attribution is consistent across all bubble types.
       div.innerHTML = questHeaderHtml + `<span class="msg-text" style="color:var(--red)">${escHtml(text)}</span>`;
       break;
     case 'agent-image':
-      // v3.2.83: image attachment bubble. Renders a thumbnail
-      // of a captured screenshot with click-to-expand. Used
-      // when the agent's reply contained a [SCREENSHOT
-      // target=...] directive and the screenshot IPC
-      // returned a dataUri. The bubble shows the image plus
-      // a small caption (target + capture timestamp).
-      //
-      // text: { dataUri, target, width, height, filePath }
-      // name: agent display name (e.g. "clawsuu")
-      // emoji: agent's sprite emoji
-      //
-      // The expand happens by replacing the thumbnail src
-      // with the full-resolution dataUri on click — no
-      // modal needed because the dataUri is already in
-      // memory and the image is bounded by the chat width
-      // (so "full size" means "max-width: 100%" which
-      // shows the original resolution).
+      // Image attachment bubble.
       const img = (text && text.dataUri) || '';
       const meta = [];
       if (text && text.target) meta.push(escHtml(text.target));
@@ -5516,25 +3761,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       break;
   }
 
-  // v3.2.47: right-click → Copy menu on chat messages. The
-  // CSS user-select: text fix is the primary path for
-  // drag-to-select; this is the bulletproof fallback (and
-  // also lets the user copy without having to drag-select
-  // precisely). Tobe 2026-08-02 20:27: 'I noticed that i
-  // cannot Click the messages, as in mark and copy etc,
-  // fix so i can do that.'
-  //
-  // The handler reads the visible text (no HTML markup),
-  // strips the [prefix] tag, and writes it to the system
-  // clipboard via the Electron clipboard module (exposed
-  // in preload.js). The text-extraction function also lives
-  // below as `getChatMessageText` so other call sites can
-  // reuse it.
-  //
-  // We also store the text on the div via a data attribute
-  // so future right-click menu items (e.g. "Copy as quote",
-  // "Copy with timestamp") can read it without re-parsing
-  // the DOM.
+  // Right-click → Copy menu on chat messages.
   const messageText = getChatMessageText(div);
   div.setAttribute('data-msg-text', messageText);
   div.addEventListener('contextmenu', (e) => {
@@ -5680,13 +3907,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Discover agents from OpenClaw
   await loadAgents();
 
-  // v3.3.5: warm the local-LLM provider cache at startup. This
-  // makes the pill appear instantly the first time the user opens
-  // a local-model companion chat, instead of after a 2s probe.
-  // Fire-and-forget — if Ollama isn't running yet (post-reboot
-  // scenario) we still want the chat UI to be ready; the pill
-  // will render in its loading state and update once the probe
-  // completes.
+  // Warm the local-LLM provider cache at startup.
   (async () => {
     try {
       const providers = await cyberclaw.llm.ollama.probeAllLocal();
@@ -5803,12 +4024,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      // The resizer sits at the TOP of the input area. When the user drags
-      // DOWN by +delta, the resizer should follow the mouse down (so its
-      // Y position on screen increases), which means the input area must
-      // get TALLER. Conversely, dragging up should make it shorter.
-      // In the flex column, taller input = resizer moves up on screen.
-      // So the sign is INVERTED vs. a typical bottom-edge resize handle.
+      // The resizer sits at the TOP of the input area.
       const delta = e.clientY - startY;
       let newH = Math.max(MIN_INPUT, Math.min(MAX_INPUT, startH - delta));
       inputArea.style.flexBasis = newH + 'px';
@@ -5871,14 +4087,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Also add to chat (no agent call — instant reaction)
           var agentId = pickCurrentCompanionId();
           var agent = agentId ? agents[agentId] : null;
-          // v3.1.96: strip the desktop's 🤖 default before sending.
-          //
-          // v3.3.31: route this companion-reaction bubble to
-          // the no-quest bucket via the questOverride param
-          // (same reason as promptCompanionReaction below —
-          // it's a system-level reaction, not project
-          // content, and shouldn't clutter whatever quest
-          // the user is working on).
+          // Strip the desktop's 🤖 default before sending.
           if (agent) addChatMsg('agent', msg, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)), null, '__no_quest__');
         }
         typingTimer = null;
@@ -5916,11 +4125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     t: `> CyberClaw v${APP_VERSION} online.`
   });
 
-  // v3.4.1: boot lines live in their own block that is always the
-  // first child of #chat-messages (switchActiveChat re-attaches it).
-  // Before, they were appended on 400–2000 ms timers, so the
-  // companion's greeting / restored history landed ABOVE the
-  // startup lines and the chat looked mangled.
+  // Boot lines live in their own block that is always the first child of #chat-messages (switchActiveChat re-attaches it).
   const bootLog = document.createElement('div');
   bootLog.id = 'chat-boot-log';
   window._chatBootLog = bootLog;
@@ -5985,12 +4190,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // v3.2.1: render provider presets on boot so they're already in the DOM
   // before the user opens settings (saves a paint flicker).
   try { renderProviderPresets(); } catch (e) { console.warn('renderProviderPresets:', e); }
-  // v3.3.11: restore the persisted chat scroll-offset map
-  // and wire the chat-messages scroll listener that saves
-  // scrollTop per (agent, quest). The listener updates the
-  // in-memory map immediately (cheap) and schedules a
-  // debounced localStorage write (500ms) so rapid scroll
-  // gestures don't hammer storage.
+  // Restore the persisted chat scroll-offset map and wire the chat-messages scroll listener that saves scrollTop per (agent, quest).
   try { restoreChatScroll(); } catch (e) { console.warn('restoreChatScroll:', e); }
   const chatMsgs = document.getElementById('chat-messages');
   if (chatMsgs) {
@@ -6124,13 +4324,7 @@ window.openCompanionEditor = function() {
   openCompanionForge(agentId);
 };
 
-// Open the forge pre-configured for a brand-new companion. This is a true
-// "create" — saving will register a new agent in the openclaw config
-// (under `agents.list`) AND create the corresponding sprite/avatar data,
-// then reload the agent list so the new companion appears in the carousel
-// and the arena.
-//
-// The save flow is patched with a guard requiring both a sprite and a name.
+// Open the forge pre-configured for a brand-new companion.
 let _creatingNewAgent = false; // true while the editor is in "create" mode
 let pendingNewCompanionId = null; // set by createNewCompanion's patched save; consumed by saveCompanion
 
@@ -6172,10 +4366,7 @@ window.createNewCompanion = function() {
   // Open the picker so the user MUST pick a sprite before saving
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.remove('hidden');
-  // v3.3.10: reset the new model panel to empty so the
-  // user starts fresh on a new companion. They pick a
-  // provider + type a model id (or fall back to the
-  // desktop default if they leave it empty).
+  // Reset the new model panel to empty so the user starts fresh on a new companion.
   hydrateForgeModelPanel('');
 
   // Patch saveCompanion briefly so it refuses to save without a sprite
@@ -6244,10 +4435,7 @@ let forgeCompanionSprite = null;
 // Forge sprite size — stored per-companion on the sprite config. Default 4.
 let currentForgeScale = 4;
 
-// v3.2.26: chattiness scale (1–5). Default 3 = current 60–90
-// min. The idle chatter scheduler reads this from the
-// companion's stored sprite config on every tick (cheap lookup)
-// so changes apply on the next schedule after save.
+// Chattiness scale (1–5).
 let currentForgeChattiness = 3;
 
 // 1=Silent, 2=Quiet, 3=Balanced, 4=Chatty, 5=Very chatty
@@ -6259,33 +4447,7 @@ const CHATTINESS_DESCRIPTIONS = {
   5: 'Very chatty — comments every 15–30 minutes.',
 };
 
-// v3.3.9: live soul regeneration when the user toggles
-// behaviour traits in the forge. Before this, the soul
-// textarea was decoupled from the trait checkboxes:
-// toggling a trait updated the saved spriteConfig but
-// the soul.md on disk (and the textarea) stayed whatever
-// it was before. The companion's character drifted out
-// of sync with the traits the user explicitly picked
-// (Tobe 2026-09-04 15:08).
-//
-// The fix has three pieces:
-//   1. `currentTraitSoulMap` — the TRAIT_TO_SOUL table
-//      loaded once when the forge opens. The desktop
-//      forge's checkbox handler reads from this map to
-//      rebuild the soul preview in O(n) where n = trait
-//      count.
-//   2. `buildSoulFromTraits(traits, name)` — pure
-//      function, no DOM access. Mirrors the migration
-//      logic in companion-prompts.js so the textarea
-//      content stays byte-identical to what
-//      migrateAllSouls would have written.
-//   3. `currentSoulIsCustom` flag — tracks whether the
-//      user has hand-edited the soul. While false, every
-//      trait toggle regenerates the soul preview. The
-//      moment the user types in the textarea, the flag
-//      flips to true and trait toggles stop touching the
-//      soul (the user's words win). Apply-preset resets
-//      the flag to false.
+// Live soul regeneration when the user toggles behaviour traits in the forge.
 let currentTraitSoulMap = {};
 let currentSoulIsCustom = false;
 
@@ -6309,18 +4471,10 @@ function updateForgeSize(value) {
   if (lbl) lbl.textContent = currentForgeScale + '×';
   // Re-create the preview at the new scale (preserves the picked sprite)
   if (selectedPixelCompanion) showForgeCompanion(selectedPixelCompanion);
-  // v3.1.6: don't write to the sprite config here — the value is
-  // captured in currentForgeScale and saved by saveCompanion together
-  // with the rest of the form. (Previously we'd write the scale
-  // immediately, but that raced with the final saveCompanion write
-  // and the user-visible bug was that the size "didn't stick".)
+  // Don't write to the sprite config here — the value is captured in currentForgeScale and saved by saveCompanion together with the rest of…
 }
 
-// v3.2.26: live chattiness slider update. Same pattern as
-// updateForgeSize — update local state + the label, defer the
-// write to saveCompanion. The label text is mirrored from the
-// CHATTINESS_DESCRIPTIONS table so the user sees the human
-// translation of the number.
+// Live chattiness slider update.
 function updateForgeChattiness(value) {
   const v = parseInt(value, 10);
   currentForgeChattiness = (v >= 1 && v <= 5) ? v : 3;
@@ -6341,12 +4495,7 @@ function openCompanionForge(agentId) {
   const picker = document.getElementById('companion-picker');
   if (picker) picker.classList.add('hidden');
 
-  // v3.3.10: hydrate the new provider-first model panel.
-  // The old refreshForgeModelDropdowns() is gone — the
-  // new panel reads/writes primaryModel directly. We still
-  // call refreshForgeModelDropdowns() once for
-  // backward-compat with any external code that watches
-  // the (now-hidden) #forge-model-primary hidden input.
+  // Hydrate the new provider-first model panel.
   hydrateForgeModelPanel(agent.primaryModel || '');
   refreshForgeModelDropdowns().catch(e => console.warn('refreshForgeModelDropdowns:', e));
 
@@ -6378,19 +4527,9 @@ function openCompanionForge(agentId) {
     document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
       cb.checked = savedTraits.includes(cb.id.replace('trait-', ''));
     });
-    // v3.3.9: wire trait-checkbox changes to live soul
-    // regeneration. attachTraitSoulListeners is idempotent —
-    // it overwrites any prior handler so re-opening the forge
-    // (openCompanionForge called twice for the same companion
-    // after edits) doesn't accumulate stale handlers.
+    // Wire trait-checkbox changes to live soul regeneration.
     attachTraitSoulListeners();
     // Load models — prefer saved config, fall back to agent's stored model.
-    // v3.3.10: the old <select>-based dropdown is gone; the new
-    // provider-first panel was hydrated at the top of openCompanionForge
-    // with agent.primaryModel. Re-hydrate here too in case the saved
-    // spriteConfig has a different primaryModel than the agent record
-    // (e.g. user edited on mobile then opened desktop forge before the
-    // agents_list broadcast landed).
     const desiredPrimary = (config && config.primaryModel) || agent.primaryModel;
     if (desiredPrimary) hydrateForgeModelPanel(desiredPrimary);
   });
@@ -6433,22 +4572,7 @@ async function loadCompanionSoulEditor(agentId) {
     const name = nameEl ? nameEl.value.trim() : '';
     const auto = buildSoulFromTraits(traits, name);
     const loaded = (ta.value || '').trim();
-    // v3.3.9: STALE-SOUL DETECTION. If the loaded soul
-    // exists, is not empty, but doesn't match what we'd
-    // generate from the current traits, there are two
-    // possible reasons:
-    //   (a) the user hand-edited the soul (custom — keep)
-    //   (b) the soul is stale — written by an older
-    //       version of the forge that didn't regenerate
-    //       on trait toggle. Multi-paragraph soul text
-    //       with more than one blank line, or soul length
-    //       dramatically different from the auto-gen, is
-    //       a strong signal of (b) — the new auto-gen is
-    //       always a single short paragraph joined by
-    //       spaces (per the v3.2.63 tightening). When we
-    //       detect this, regenerate the textarea to match
-    //       the current traits and surface a toast so the
-    //       user knows it happened.
+    // STALE-SOUL DETECTION.
     const looksStale = looksLikeStaleSoul(loaded, auto);
     if (loaded.includes(_cpSoul.SOUL_BLOCK_START)) {
       // v3.4.9: refresh just the personality block from current traits.
@@ -6476,11 +4600,7 @@ function updateSoulStatus() {
   const status = document.getElementById('forge-soul-status');
   if (!ta || !status) return;
   const bytes = new Blob([ta.value]).size;
-  // v3.3.9: when the soul is hand-edited (custom),
-  // surface that in the status label so the user knows
-  // future trait toggles won't auto-regenerate the
-  // preview. The byte count stays on the same line so
-  // the layout doesn't shift.
+  // When the soul is hand-edited (custom), surface that in the status label so the user knows future trait toggles won't auto-regenerate the…
   const customTag = currentSoulIsCustom ? ' · custom (won’t sync to traits)' : '';
   if (bytes === 0) {
     status.textContent = 'Empty';
@@ -6497,28 +4617,7 @@ function updateSoulStatus() {
   }
 }
 
-// v3.3.9: read the currently-checked traits from the
-// forge's checkbox grid and return them as an array of
-// bare trait ids (stripping the `trait-` prefix). Cheap;
-// the grid has at most ~9 checkboxes.
-// v3.3.9: heuristic for 'is this soul.md from an older
-// desktop forge that didn't regenerate on trait toggle?'.
-// The v3.2.63 tightening set the auto-gen format to a
-// single short paragraph (no blank lines, sentences joined
-// with spaces). Older souls are multi-paragraph with
-// blank lines and elaborate prose — when we see one of
-// those against traits that should produce a different
-// short paragraph, we know it's stale.
-//
-// Two heuristics, either of which is enough:
-//   - The loaded soul contains 2+ blank-line paragraph
-//     breaks. The new auto-gen never has them.
-//   - The loaded soul length is more than 2x the auto-gen
-//     length AND differs by at least 200 chars (so short
-//     custom souls for tiny trait sets aren't false-
-//     positive flagged).
-//
-// Returns true if BOTH conditions are likely stale.
+// Read the currently-checked traits from the forge's checkbox grid and return them as an array of bare trait ids (stripping the `trait-`…
 function looksLikeStaleSoul(loaded, auto) {
   if (!loaded) return false;
   const blankLines = (loaded.match(/\n\s*\n/g) || []).length;
@@ -6535,14 +4634,7 @@ function getCheckedForgeTraits() {
   return out;
 }
 
-// v3.3.9: rebuild the soul textarea from the current
-// trait selection, IF the user hasn't hand-edited the
-// soul. Called on every trait-checkbox change. If the
-// user has typed in the textarea (`currentSoulIsCustom`
-// is true), we leave the soul alone — the user's words
-// win, even if they conflict with the traits. The user
-// can always tap "Apply preset" or hit the new "Reset
-// from traits" button to force regeneration.
+// Rebuild the soul textarea from the current trait selection, IF the user hasn't hand-edited the soul.
 function regenerateSoulFromTraits() {
   // v3.4.9: always update — only the personality block changes;
   // the user's own text around it is preserved.
@@ -6558,29 +4650,15 @@ function regenerateSoulFromTraits() {
   }
 }
 
-// v3.3.9: idempotent wiring of trait-checkbox listeners.
-// Replaces any prior listener with a fresh closure so
-// opening the forge twice in a row doesn't double-fire.
-// Also wires the textarea input listener once (so the
-// user typing flips `currentSoulIsCustom` to true) and
-// captures the TRAIT_TO_SOUL map from the most-recent
-// `companion:get-soul` IPC result (called from
-// loadCompanionSoulEditor).
+// Idempotent wiring of trait-checkbox listeners.
 function attachTraitSoulListeners() {
   document.querySelectorAll('#forge-traits-grid input[type=checkbox]').forEach(function(cb) {
     // Remove any prior listener by replacing the node.
-    // cloneNode preserves checked state + attributes but
-    // drops the listeners — cheaper than tracking
-    // references and avoids subtle duplicate-fire bugs
-    // when the forge is reopened mid-edit.
     const fresh = cb.cloneNode(true);
     cb.parentNode.replaceChild(fresh, cb);
     fresh.addEventListener('change', regenerateSoulFromTraits);
   });
-  // Soul textarea input — the user's own typing marks the
-  // soul as custom so subsequent trait toggles stop
-  // regenerating. The user can clear the field (empty
-  // textarea + trait changes = empty soul, which is fine).
+  // Soul textarea input — the user's own typing marks the soul as custom so subsequent trait toggles stop regenerating.
   const ta = document.getElementById('forge-soul-editor');
   if (ta && !ta._soulCustomListenerAttached) {
     ta.addEventListener('input', function() {
@@ -6589,13 +4667,7 @@ function attachTraitSoulListeners() {
     });
     ta._soulCustomListenerAttached = true;
   }
-  // v3.3.9: companion name input — renaming while the
-  // soul is auto-generated should update the `# Name`
-  // header in the soul preview. The user's name typing
-  // does NOT mark the soul as custom (only direct edits
-  // to the soul textarea do that). We attach once via a
-  // _nameSoulSyncAttached flag so we don't double-fire
-  // on reopens.
+  // Companion name input — renaming while the soul is auto-generated should update the `# Name` header in the soul preview.
   const nameEl = document.getElementById('editor-name');
   if (nameEl && !nameEl._nameSoulSyncAttached) {
     nameEl.addEventListener('input', function() {
@@ -6619,10 +4691,7 @@ window.applySoulPreset = async function() {
     const r = await cyberclaw.agents.applySoulPreset(editorAgentId, preset);
     if (!r.ok) { alert('Could not apply preset: ' + (r.error || 'unknown')); return; }
     ta.value = r.content || '';
-    // v3.3.9: a preset is a clean regeneration, so the
-    // soul is back in sync with the trait toggle list.
-    // Future trait changes should once again regenerate
-    // the preview — flip the flag back to false.
+    // A preset is a clean regeneration, so the soul is back in sync with the trait toggle list.
     currentSoulIsCustom = false;
     updateSoulStatus();
     discordLog('🎭', 'Soul preset applied', preset + ' → ' + editorAgentId);
@@ -6723,24 +4792,13 @@ window.saveCompanion = async function() {
       customName: newName || undefined,
       focusSkills: agent.focusSkills || [],
       traits: getCheckedTraits(),
-      // v3.3.10: read primaryModel from the new
-      // provider-first panel. Tobe 2026-09-07: drop
-      // the secondary model entirely. One model per
-      // companion — the chat pipeline uses OpenClaw's
-      // gateway fallback chain (configured via
-      // models.providers.<id>.fallbacks) if the
-      // primary is down, so a per-companion
-      // secondary isn't needed.
+      // Read primaryModel from the new provider-first panel.
       primaryModel: readForgePrimaryModel() || agent.primaryModel,
       scale: currentForgeScale, // v3.1.6: persist the size slider value
       chattiness: currentForgeChattiness, // v3.2.26: persist the chattiness slider value
       voice: (document.getElementById('forge-voice') || {}).value || undefined, // v3.4.9
     });
-    // v3.2.32: persist the soul.md alongside the sprite config.
-    // Soul failures don't block the rest of the save — we warn
-    // but continue. (Bad soul = bad character, but the user can
-    // edit it later. A 5KB+ save failure shouldn't kill the
-    // avatar/name/etc. updates.)
+    // Persist the soul.md alongside the sprite config.
     const soulResult = await saveCompanionSoul(editorAgentId);
     if (!soulResult.ok) {
       console.warn('[save] soul save failed:', soulResult.error);
@@ -6758,13 +4816,7 @@ window.saveCompanion = async function() {
     if (savedModel) {
       agent.primaryModel = savedModel;
       agent.model = formatModelName(savedModel);
-      // v3.1.33: actually persist the model choice to
-      // openclaw.json so the runtime picks it up next
-      // session. Pre-v3.1.33, the model was stored in
-      // agent.spriteConfig but never propagated to
-      // openclaw.json's agents.list[i].model.primary.
-      // Result: every companion silently used the
-      // global default regardless of the forge picker.
+      // Actually persist the model choice to openclaw.json so the runtime picks it up next session.
       try {
         const fallbacks = document.getElementById('forge-model-secondary')?.value
           ? [document.getElementById('forge-model-secondary').value]
@@ -6792,10 +4844,7 @@ window.saveCompanion = async function() {
     }
     renderCompanionChannelTabs();
     closeCompanionEditor();
-    // v3.1.20: re-broadcast the agents list to the mobile so
-    // changes (sprite id, scale, name, emoji) appear
-    // immediately. Without this, the mobile wouldn't see
-    // the new size until the next 60s periodic sync.
+    // Re-broadcast the agents list to the mobile so changes (sprite id, scale, name, emoji) appear immediately.
     broadcastAgentsListToMobile();
   } catch (e) {
     debugLog('[Save] ERROR: ' + e.message + '\n' + e.stack);
@@ -7019,11 +5068,7 @@ window.confirmEquip = async function(skillName, agentId) {
 
 const SETTINGS_KEY = 'cyberclaw-settings';
 
-// v3.2.1: removed dead legacy provider-key fields (keyAnthropic, keyOpenai,
-// keyGoogle, ollamaUrl). These were orphaned when the new provider manager
-// landed; nothing in the codebase reads them anymore. They were being
-// silently re-saved on every saveSettings() call, perpetuating dead state.
-// One-time migration below strips them from any persisted saved blob.
+// Removed dead legacy provider-key fields (keyAnthropic, keyOpenai, keyGoogle, ollamaUrl).
 const LEGACY_PROVIDER_KEYS = ['keyAnthropic', 'keyOpenai', 'keyGoogle', 'ollamaUrl'];
 
 const DEFAULT_SETTINGS = {
@@ -7041,32 +5086,7 @@ const DEFAULT_SETTINGS = {
   userGender: '' // 'male', 'female', or ''
 };
 
-// v3.2.1: shared well-known-model catalog. Was duplicated inline in
-// refreshDefaultModelDropdown() and refreshForgeModelDropdowns() with
-// subtle drift (forge omitted the Ollama entry). Both call sites now
-// derive their options from this single list.
-// v3.3.10: well-known model catalog. Used by the global
-// "Default Model" dropdown in Settings (not the forge —
-// the forge has a generic free-text input). This list is
-// a curated subset; users can type any provider/model id
-// they want in the forge's free-text field, but the global
-// default dropdown benefits from having a few safe picks.
-//
-// Tobe 2026-09-07: "the catalog is not up to date. There
-// have been several releases lately." Refreshed to:
-//   - Anthropic Claude Opus 4.8 (current top — replaces
-//     4.6)
-//   - Anthropic Claude Sonnet 4.6 (kept — current mid)
-//   - OpenAI GPT-5.5 + GPT-5.4-mini (replaces GPT-4o line
-//     which is now legacy)
-//   - Google Gemini 2.5 Pro / Flash (kept — current
-//     stable; Gemini 3.x is still preview-only)
-//   - MiniMax MiniMax-M3 (added — Tobe explicitly named
-//     this provider; gateway supports it via MINIMAX_API_KEY)
-//   - OpenRouter `openrouter/auto` (added — generic router
-//     entry; users can pick specific models in the forge)
-//   - Ollama Llama 3 (kept — only entry that means
-//     something without an endpoint probe)
+// Shared well-known-model catalog.
 const WELL_KNOWN_MODELS = [
   { provider: 'Anthropic',  model: 'anthropic/claude-opus-4-8',     label: 'Claude Opus 4.8' },
   { provider: 'Anthropic',  model: 'anthropic/claude-sonnet-4-6',   label: 'Claude Sonnet 4.6' },
@@ -7179,23 +5199,11 @@ window.openSettings = function() {
   // Gateway status
   const gwEl = document.getElementById('settings-gateway-status');
   if (gwEl) gwEl.textContent = typeof cyberclaw !== 'undefined' ? '🟢 Connected' : '🔴 Not connected';
-  // v3.2.26: render the per-companion Chatti list with quick
-  // chattiness sliders. One slider per companion + full Edit
-  // button. Slider changes write directly to sprites.json via
-  // cyberclaw.agents.saveSpriteConfig and re-broadcast the
-  // agents_list so the mobile's Personalize screen stays in sync.
+  // Render the per-companion Chatti list with quick chattiness sliders.
   try { renderSettingsCompanionsList(); } catch (e) { console.warn('renderSettingsCompanionsList:', e); }
 };
 
-// v3.2.26: render the Settings → Companions list. Each row
-// shows the companion's emoji/icon, name, and a 1–5 chattiness
-// slider + Edit button. The slider is the same scale the
-// mobile's Personalize screen uses; values are clamped 1–5
-// and persisted to sprites.json via the existing surface.
-// v3.4.1: Settings → Companions list, mobile-style. One row per
-// companion (sprite icon, name, sprite · model, ›) that opens the
-// companion's page (the forge), plus a ➕ Create new companion row.
-// Chattiness lives on the companion page itself.
+// Render the Settings → Companions list.
 async function renderSettingsCompanionsList() {
   const listEl = document.getElementById('settings-companions-list');
   if (!listEl) return;
@@ -7315,10 +5323,7 @@ window.showSettingsSection = function(keyOrEl) {
   content.scrollTop = 0;
 };
 
-// v3.4.9: the companion page is one scrolling page, mobile-style:
-// hero (sprite preview + name + sprite picker) → Size & chattiness →
-// Behaviour → Voice → Wake & exit → Brain (model, memory, soul,
-// channel). Tobe 2026-10-13: 'It should look more like the mobile end'.
+// The companion page is one scrolling page, mobile-style: hero (sprite preview + name + sprite picker) → Size & chattiness → Behaviour →…
 const COMPANION_PAGE_LAYOUT = [
   { group: null, cards: [
     { title: '📐 Size & chattiness', parts: ['.forge-size-section', '.forge-chattiness-section'] },
@@ -7523,10 +5528,7 @@ async function renderSettingsCompanionsListLegacy() {
       : (typeof cfg.chattiness === 'number') ? cfg.chattiness
       : 3;
     const emoji = (a.emoji && a.emoji !== '🤖') ? a.emoji : (getSpriteIcon(a._pixelCompanionId) || '🐾');
-    // Use data-id on the wrapper so the slider's oninput can
-    // resolve the agent without a global lookup. Also expose
-    // the original value so the description line can be
-    // updated without re-rendering.
+    // Use data-id on the wrapper so the slider's oninput can resolve the agent without a global lookup.
     html.push(`
       <div class="settings-companion-row" data-agent-id="${id}">
         <div class="settings-companion-row-head">
@@ -7555,11 +5557,7 @@ window.updateSettingsCompanionChattiness = function(agentId, value) {
   if (lbl) lbl.textContent = v + '/5';
 };
 
-// v3.2.26: persist the slider value to sprites.json. Same
-// surface as the forge + mobile Personalize screen. On success,
-// re-broadcast agents_list so the mobile's Personalize slider
-// reflects the new value (and the idle chatter scheduler picks
-// up the new interval on its next tick).
+// Persist the slider value to sprites.json.
 window.saveSettingsCompanionChattiness = async function(agentId, value) {
   const v = Math.max(1, Math.min(5, parseInt(value, 10) || 3));
   try {
@@ -7586,10 +5584,7 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-// v3.2.32: CyberClaw.md editor — the overarching system
-// prompt shared by every companion. Saved/loaded via the
-// `cyberclaw.system.*` IPC bridge. Restore default deletes
-// the file so the next read returns DEFAULT_SYSTEM_PROMPT.
+// CyberClaw.md editor — the overarching system prompt shared by every companion.
 async function loadCyberclawEditor() {
   const ta = document.getElementById('settings-cyberclaw-editor');
   const status = document.getElementById('settings-cyberclaw-status');
@@ -7696,12 +5691,7 @@ window.resetSettings = function() {
   openSettings();
 };
 
-// ── Custom LLM Providers ────────────────────────────────────────
-// Each provider: { id, name, baseUrl, apiKey?, defaultModel?, api }
-// `api` is the wire format: 'openai-completions' (most) or 'anthropic-messages'.
-// CyberClaw companions mirror openclaw agents, so we read LLM providers
-// directly from `~/.openclaw/openclaw.json → models.providers`. Falls back
-// to the local CyberClaw providers.json if openclaw config is unavailable.
+// ── Custom LLM Providers ──────────────────────────────────────── Each provider: { id, name, baseUrl, apiKey?, defaultModel?, api } `api`…
 async function fetchProviders() {
   try {
     const fromOpenClaw = await cyberclaw.openclaw.listProviders();
@@ -7737,10 +5727,7 @@ async function refreshDefaultModelDropdown() {
   const current = sel.value;
   const providers = await fetchProviders();
   const settings = loadSettings();
-  // Build options: keep the "Use OpenClaw default" entry, then a group per provider
-  // We list the *default model* from each provider, but also include a few
-  // common well-known models so the dropdown remains useful even before any
-  // provider is saved.
+  // Build options: keep the "Use OpenClaw default" entry, then a group per provider We list the *default model* from each provider, but also…
   const wellKnown = WELL_KNOWN_MODELS;
   const groups = {};
   for (const w of wellKnown) {
@@ -7805,12 +5792,7 @@ window.addProvider = async function() {
   addChatMsg('system', '✅ Provider saved to openclaw config: ' + name);
 };
 
-// v3.2.1: one-click provider presets. Each preset fills the add-form's
-// name / baseUrl / defaultModel / api style so the user only has to type
-// their API key and click Save. OpenRouter / Groq / Together / Fireworks /
-// Mistral / DeepSeek cover ~95% of "I want to use a model that's not
-// Anthropic or OpenAI" — Ollama lives in the Local LLM Endpoints section
-// below because it needs model discovery.
+// One-click provider presets.
 const PROVIDER_PRESETS = [
   { id: 'openrouter', name: 'OpenRouter',  baseUrl: 'https://openrouter.ai/api/v1',            defaultModel: 'openrouter/auto',       api: 'openai-completions', emoji: '🧭' },
   { id: 'groq',       name: 'Groq',        baseUrl: 'https://api.groq.com/openai/v1',           defaultModel: 'llama-3.3-70b-versatile', api: 'openai-completions', emoji: '⚡' },
@@ -7873,17 +5855,7 @@ window.deleteProvider = async function(id) {
   addChatMsg('system', '🗑️ Provider deleted');
 };
 
-// ─── LLM Endpoints (v3.1.33) ────────────────────────────────────
-// User-managed OpenAI-compatible HTTP endpoints (Ollama, LM
-// Studio, llama.cpp server, Jan.ai, vLLM, etc.). The
-// companion model picker reads from this list, prefixed
-// with the endpoint id so the runtime can route the
-// request to the right baseUrl.
-//
-// Unlike providers (which are API-key cloud services),
-// endpoints serve models the user has already downloaded
-// locally. CyberClaw doesn't manage downloads — the user
-// brings their own model, we just point at it.
+// ─── LLM Endpoints (v3.1.33) ──────────────────────────────────── User-managed OpenAI-compatible HTTP endpoints (Ollama, LM Studio,…
 
 async function renderLlmEndpoints() {
   const list = await cyberclaw.llm.endpoints.list();
@@ -7958,16 +5930,7 @@ window.testLlmEndpoint = async function() {
     return;
   }
   if (status) status.textContent = '🔄 Testing...';
-  // Save without committing, just probe. We use the add
-  // IPC with autoDetected flag and a tmp name; on cancel
-  // we delete it. Simpler: just probe via a synthetic
-  // fetch in main process. Use the add path with the
-  // entered URL but mark it as a test by NOT calling
-  // cancelAddLlmEndpoint afterwards.
-  //
-  // Actually, the cleanest approach: a dedicated probe
-  // IPC. For now, fake it via the add IPC and the
-  // user sees the result in the probe status field.
+  // Save without committing, just probe.
   try {
     // Probe via a temp endpoint, then remove if user cancels.
     const r = await cyberclaw.llm.endpoints.add({
@@ -8039,14 +6002,7 @@ async function refreshForgeModelDropdowns() {
     if (!model) continue;
     wellKnown.push({ group: p.name || p.id, options: [{ value: model, label: model }] });
   }
-  // v3.1.33: per-endpoint model picker. Each model
-  // discovered on a configured endpoint becomes an option
-  // under a group named for the endpoint. The value is
-  // namespaced as `<endpointId>/<modelId>` so the
-  // runtime can route the request to the right baseUrl.
-  // (Note: this assumes the runtime understands the
-  // namespaced syntax. If not, we may need to convert
-  // at write time — see setAgentModel fallback.)
+  // Per-endpoint model picker.
   for (const e of endpoints) {
     if (!e.models || !e.models.length) continue;
     wellKnown.push({
@@ -8086,45 +6042,9 @@ function escapeAttr(s) { return String(s == null ? '' : s).replace(/[&"'<>]/g, c
 // ── Mobile Companion ──
 let pairingTimerInterval = null;
 
-// ───────────────────────────────────────────────────────────────
-// v3.3.10: New forge model panel (provider-first + free-text
-// model). Replaces refreshForgeModelDropdowns() + the
-// forge-model-primary/secondary <select> dropdowns. Catalog
-// drift was a constant problem (new models shipped faster
-// than we updated the list) and the user couldn't use
-// OpenRouter / MiniMax / Mistral / Kimi / etc. without editing
-// the source. New flow: pick a provider, paste a key, type any
-// model id. Tobe 2026-09-07: "lets remove fallbacks and update
-// the catalog, and make it easy for the user so it just needs
-// to select a provider and then their keys or similar. Do
-// this for both desktop and mobile. ... Could we add a generic
-// input also? Where the user can input Whatever he has? As
-// user friendly as possible. Or just one good setup for
-// generic so we dont have to update them constantly with new
-// releases."
-//
-// Wire model: the panel writes a single `primaryModel` string
-// of the form `provider/model` (e.g. `anthropic/claude-opus-4-8`).
-// The desktop's sprite_config_sync handler accepts it
-// verbatim. No model catalog lives in the desktop anymore —
-// the desktop just routes whatever string the user typed to
-// the OpenClaw gateway, which validates against its own
-// configured provider registry.
+// ─────────────────────────────────────────────────────────────── v3.3.10: New forge model panel (provider-first + free-text model).
 
-// v3.3.10: provider metadata. Maps the curated provider id
-// (matches the <option value=""> of #forge-model-provider)
-// to:
-//   prefix  — the `provider/` prefix shown in the model
-//             input prefix badge
-//   keyEnv  — the env var name we surface as a hint to the
-//             user ("Set MINIMAX_API_KEY in your shell OR
-//             paste it here"). The desktop doesn't read the
-//             env var directly — it uses whatever's in the
-//             providers.json registry. The hint just helps
-//             the user know "this is the standard name for
-//             this provider".
-//   placeholder — sensible model id hint shown in the input.
-//             User can type anything; this is just a hint.
+// Provider metadata.
 const FORGE_PROVIDERS = {
   anthropic:  { prefix: 'anthropic',  keyEnv: 'ANTHROPIC_API_KEY',  placeholder: 'claude-opus-4-8' },
   openai:     { prefix: 'openai',     keyEnv: 'OPENAI_API_KEY',     placeholder: 'gpt-5.5' },
@@ -8139,12 +6059,7 @@ const FORGE_PROVIDERS = {
   custom:     { prefix: '',           keyEnv: '',                   placeholder: 'my-model-id' },
 };
 
-// v3.3.10: hydrate the forge model panel from a saved
-// primaryModel string (e.g. 'anthropic/claude-opus-4-8').
-// Splits provider from model, picks the matching provider
-// from the curated list, falls back to 'custom' for unknown
-// providers. Called on forge open (openCompanionForge) and
-// after each save.
+// Hydrate the forge model panel from a saved primaryModel string (e.g.
 function hydrateForgeModelPanel(primaryModel) {
   const pm = (primaryModel || '').trim();
   const providerEl = document.getElementById('forge-model-provider');
@@ -8171,11 +6086,7 @@ function hydrateForgeModelPanel(primaryModel) {
     return;
   }
 
-  // Split "provider/model" on the first slash. Handles
-  // values like 'openrouter/anthropic/claude-sonnet-4-6'
-  // by treating everything after the FIRST slash as the
-  // model id — openrouter's model ids are themselves
-  // namespaced.
+  // Split "provider/model" on the first slash.
   const idx = pm.indexOf('/');
   const provider = idx > 0 ? pm.slice(0, idx) : '';
   const modelId = idx > 0 ? pm.slice(idx + 1) : pm;
@@ -8214,13 +6125,7 @@ function hydrateForgeModelPanel(primaryModel) {
   }
 }
 
-// v3.3.10: hydrate the API key field from the saved
-// providers.json entry for the given provider id.
-// The desktop's existing providers:list IPC returns the
-// full provider object including apiKey (if saved). We
-// display it masked (••••) so the user can see a key
-// is saved without leaking it; they can click 👁 to
-// toggle visibility.
+// Hydrate the API key field from the saved providers.json entry for the given provider id.
 async function hydrateForgeProviderKey(providerId) {
   const keyEl = document.getElementById('forge-model-key');
   if (!keyEl) return;
@@ -8234,10 +6139,7 @@ async function hydrateForgeProviderKey(providerId) {
   }
 }
 
-// v3.3.10: onChange handler for #forge-model-provider.
-// Updates the prefix badge + placeholder + visibility of
-// the custom baseUrl row + status text. Bound in markup
-// via onchange="onForgeProviderChange()".
+// OnChange handler for #forge-model-provider.
 window.onForgeProviderChange = function() {
   const providerEl = document.getElementById('forge-model-provider');
   const provider = providerEl?.value || '';
@@ -8282,11 +6184,7 @@ window.toggleForgeKeyVisibility = function() {
   }
 };
 
-// v3.3.10: save the API key for the chosen provider.
-// Writes/updates the providers.json entry via the existing
-// providers:save IPC. The desktop's IPC already sanitizes
-// + persists; we just send the right shape. Falls back to
-// fetching the existing entry to preserve name + baseUrl.
+// Save the API key for the chosen provider.
 window.saveForgeProviderKey = async function() {
   const providerEl = document.getElementById('forge-model-provider');
   const keyEl = document.getElementById('forge-model-key');
@@ -8347,11 +6245,7 @@ function readForgePrimaryModel() {
   const modelId = (idEl?.value || '').trim();
   if (!modelId) return '';
   if (provider === 'custom') {
-    // Custom provider: write "baseUrl/modelId" so the
-    // runtime can route. If no baseUrl is set, just
-    // write "custom/modelId" (the user typed the full
-    // value into the model field themselves in that
-    // case, since they didn't fill baseUrl).
+    // Custom provider: write "baseUrl/modelId" so the runtime can route.
     const baseUrl = (baseUrlEl?.value || '').trim();
     if (baseUrl) {
       // Convert baseUrl to a safe provider id (host
@@ -8524,80 +6418,18 @@ try {
   ipcRenderer.on('mobile-disconnected', () => { updateMobileStatus(); window.addDesktopLog('📴', 'Mobile disconnected', '', 'warn'); });
   ipcRenderer.on('mobile-paired', () => { updateMobileStatus(); window.addDesktopLog('🔗', 'Mobile paired', '', 'success'); });
 
-  // v3.2.21: OpenClaw session tailer pushes assistant
-  // text messages from Discord-routed agent runs into
-  // the renderer's chat history so the mobile can see
-  // them on the next request_chat_history pull. We add
-  // the message to chatHistory + chatHistoryByAgent so
-  // both the flat history (mobile tab) and the per-
-  // companion history (mobile companion tab) get it.
-  //
-  // v3.2.22 fix: do NOT call addChatMsg here. The
-  // session tail in main.js ALREADY broadcasts the
-  // message to currently-connected mobiles via
-  // syncServer.broadcastChatMessage. addChatMsg would
-  // re-broadcast via sync-broadcast-chat IPC, causing
-  // the mobile to receive each message TWICE. Tobe
-  // reported (2026-07-23 17:54) that the mobile was
-  // "spamming" — 91 addChatMsg broadcasts in a single
-  // debug session because the tail was firing for
-  // EVERY assistant message in the Discord session
-  // (including my own internal exec-driven runs that
-  // ended with a final text reply, all of which got
-  // pushed to the mobile).
-  //
-  // The session tail is also refined in main.js to
-  // skip non-Discord sessions (the desktop's own chat
-  // pipeline handles those via sync-broadcast-chat
-  // already). Combined with this fix, the flow is:
-  //
-  //   user → mobile chat → desktop chat pipeline →
-  //   addChatMsg → sync-broadcast-chat → mobile
-  //
-  //   user → Discord → OpenClaw Discord routing →
-  //   agent reply → tailer onChatMessage →
-  //   syncServer.broadcastChatMessage → mobile
-  //                                + this IPC handler →
-  //   chatHistory push (no broadcast)
-  //
-  // Each path is broadcast-once. No more double-broadcast.
+  // OpenClaw session tailer pushes assistant text messages from Discord-routed agent runs into the renderer's chat history so the mobile can…
   ipcRenderer.on('openclaw-session-chat-message', (e, { agentId, agentName, text, isUser, ts }) => {
     try {
       const resolvedAgentId = agentName || agentId || 'companion';
-      // v3.3.25: do NOT push Discord tail messages to the
-      // flat chatHistory mirror. Pre-v3.3.25 this code
-      // pushed WITHOUT an activeQuestId field, which made
-      // the mobile's `every((m) => 'activeQuestId' in m)`
-      // per-quest routing check fail. The fall-through
-      // legacy path then landed EVERYTHING (including
-      // addChatMsg messages from the user's actual quest
-      // chat) in the DEFAULT bucket on the mobile. Tobe
-      // 2026-09-30 09:26: 'The quest chats seems better
-      // but it still randomly jumped to another chat
-      // when i reopened... it had your last message
-      // [Discord content] in it, which is Odd because
-      // that should not be there at all.' The fix is
-      // to leave Discord-routed content out of the
-      // mobile-visible flat mirror entirely — desktop
-      // users see it via the per-quest DEFAULT bucket
-      // (chatHistoryByAgentAndQuest populated below),
-      // but the mobile chat_history sync no longer
-      // leaks it into the active-quest view.
+      // Do NOT push Discord tail messages to the flat chatHistory mirror.
       const bucketedAgentId =
         agentIdForName(resolvedAgentId) ||
         activeChatAgentId ||
         (agentOrder[focusIndex]) ||
         null;
       if (bucketedAgentId) {
-        // v3.3.11: per-quest bucketing. Discord-routed
-        // messages land in the default bucket because
-        // Discord has no quest context (we deliberately
-        // skip the active-quest log stamp below for the
-        // same reason — the per-quest conversation log
-        // comment block). The same reasoning applies to
-        // the per-quest chat bucket: putting Discord
-        // messages into a specific quest's chat would
-        // silently pollute that quest's history.
+        // Per-quest bucketing.
         if (!chatHistoryByAgentAndQuest[bucketedAgentId]) {
           chatHistoryByAgentAndQuest[bucketedAgentId] = {};
         }
@@ -8620,22 +6452,7 @@ try {
         }
         schedulePersistChatHistory();
 
-        // v3.2.59: intentionally does NOT stamp this
-        // Discord-routed message onto the active quest's
-        // conversation log. Discord is a separate channel
-        // — if the user happens to have a quest active on
-        // the desktop at the moment a Discord message
-        // arrives, the Discord conversation has no
-        // project meaning to that quest. Auto-stamping
-        // would silently corrupt cross-project context
-        // (Tobe's 2026-08-04 12:37 directive: "No need
-        // for discord to update quest logs, it does not
-        // necessarily know which quest we are working
-        // with."). The chat panel still mirrors Discord
-        // messages via chatHistoryByAgent / mobile
-        // broadcast, but they stay OUT of
-        // quest.conversationLog. The chat pipeline
-        // (addChatMsg path) is the only writer.
+        // Intentionally does NOT stamp this Discord-routed message onto the active quest's conversation log.
       }
       window.addDesktopLog?.('💬', 'OpenClaw tail', text.substring(0, 60));
     } catch (err) {
@@ -8643,35 +6460,14 @@ try {
     }
   });
   ipcRenderer.on('openclaw-session-typing', (e, { active }) => {
-    // The tailer emits typing-off when it sees an
-    // assistant text message. We don't have an agent-
-    // run in-flight via the chat pipeline (this came
-    // from Discord), so we don't add a typing bubble
-    // to the chat history. Just update the typing
-    // broadcast so the mobile's "thinking" indicator
-    // clears.
+    // The tailer emits typing-off when it sees an assistant text message.
     if (active === false) {
-      // The chat pipeline owns the typing indicator
-      // when it's in flight. When it isn't, the
-      // indicator should already be off — this is
-      // belt-and-suspenders. The main process's
-      // broadcastTyping IPC handler fires the actual
-      // sync-server broadcast; we don't need to
-      // re-broadcast from here.
+      // The chat pipeline owns the typing indicator when it's in flight.
     }
   });
 
   ipcRenderer.on('mobile-request-chat-history', () => {
-    // Send current chat history to mobile. v3.2.63
-    // (Tobe 2026-08-04 21:16): strip quest tags on the
-    // way out. Pre-v3.2.36 entries in chatHistory
-    // persisted with the raw tag text because the
-    // stripper didn't exist back then; we clean them
-    // here on read so the mobile doesn't show a
-    // [QUEST_APPEND_CHANGE: ...] bubble for historical
-    // messages. Stripping is idempotent (already-stripped
-    // text stays clean) so we don't need a one-shot
-    // migration of the localStorage data.
+    // Send current chat history to mobile.
     const recentMessages = chatHistory.slice(-50).map(m => ({
       ...m,
       text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
@@ -8686,94 +6482,19 @@ try {
   // Mobile sends this when the user taps a different companion tab;
   // we send back the last 50 messages for that companion only.
   ipcRenderer.on('mobile-request-agent-history', (e, { agentId }) => {
-    // v3.2.9: normalize the message shape before sending to
-    // mobile. The internal `chatHistoryByAgent` entries are
-    // stored as `{type, text, name, emoji, ts}` (the legacy
-    // desktop format), but the mobile's renderMessage guard
-    // rejects any message where `typeof item.isUser !==
-    // 'boolean'`. Without this normalization, ALL messages
-    // from agent_history (including voice-mode transcripts
-    // captured while HomeScreen was unmounted) render as an
-    // empty <View /> — the chat shows historical messages
-    // that came through the typed-message path / chat_history
-    // / chat events (all of which set isUser properly) but
-    // anything that ONLY landed in chatHistoryByAgent (i.e.
-    // voice-mode sessions captured while WakeModeScreen was
-    // the active screen) appears to be missing.
-    //
-    // Tobe's report on v3.2.8: "voice mode chats should
-    // appear in the chat aswell." Every voice transcript
-    // and LLM response during voice mode is in
-    // chatHistoryByAgent on the desktop (via
-    // addChatMsg → chatHistoryByAgent push), but the
-    // mobile's agent_history response shape was
-    // `{type, text, name, emoji, ts}` which failed the
-    // `typeof item.isUser === 'boolean'` render guard.
-    //
-    // Fix: map each entry to `{text, isUser, agentId,
-    // agentName, ts}` before sending. `type === 'user'`
-    // becomes `isUser: true`; everything else (including
-    // 'agent' and 'system') becomes `isUser: false`.
-    // The agentName comes from the entry's `name` field
-    // (the desktop stores display names like 'Clawsuu',
-    // 'Lamasuu' there); if missing, falls back to the
-    // requested agentId.
-    // v3.3.11: per-quest bucketing. The mobile's
-    // agent_history request is pre-per-quest (no quest
-    // attribution), so we always send the default bucket.
-    // Pre-attribution messages from before this version
-    // all live there too.
-    //
-    // v3.3.19: BREAKING CHANGE. Send ALL quest buckets
-    // for the agent, not just DEFAULT. Previously the
-    // mobile's per-quest bucket design assumed the
-    // history fetches would bring over per-quest
-    // messages, but in practice only the DEFAULT bucket
-    // reached the mobile. That meant after a cold start,
-    // the user's active-quest view was empty (no
-    // history) and the DEFAULT-bucket content showed up
-    // under "— No quest" pills because the mobile had
-    // no way to know the active quest without the
-    // attributions.
-    //
-    // Response shape change: the `messages` field is
-    // replaced by `buckets`. Each key is a questKeyForStorage
-    // value (DEFAULT_QUEST_KEY for no-active-quest,
-    // questId for active). The mobile's onAgentHistory
-    // (v3.11.12) stores each bucket into its
-    // corresponding messageByAgentAndQuest slot.
-    //
-    // Backwards compat: mobile builds before v3.11.12
-    // expect `messages`. The sync-server's sendAgentHistory
-    // now accepts EITHER `messages` or `buckets` and tags
-    // the response so old mobile builds fall back to
-    // the legacy flat-bucket path. v3.3.19 sending
-    // `buckets` is additive on the wire.
-    //
-    // The 50-message per-bucket cap from v3.2.63 is also
-    // raised here — per-bucket, so the user can have 50
-    // messages in 5 different quests. The total is still
-    // bounded by the existing 200-message cap on the
-    // desktop's `chatHistoryByAgentAndQuest` push.
+    // Normalize the message shape before sending to mobile.
     const agentBuckets = chatHistoryByAgentAndQuest[agentId] || {};
     const buckets = {};
     for (const [bucketKey, msgs] of Object.entries(agentBuckets)) {
       if (!Array.isArray(msgs) || msgs.length === 0) continue;
-      // v3.2.63 strip + v3.3.11 normalize + v3.3.19
-      // quest attribution. The questId is encoded in the
-      // bucket key itself; we reverse it back to a real id
-      // for the mobile to route on.
+      // V3.2.63 strip + v3.3.11 normalize + v3.3.19 quest attribution.
       buckets[bucketKey] = msgs.slice(-50).map((m) => ({
         text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
         isUser: m.type === 'user',
         agentId: m.name || agentId,
         agentName: m.name || null,
         ts: m.ts,
-        // v3.3.19: stamp the quest on each message so the
-        // mobile can route to the right bucket even if
-        // the bucket key is ever lost in a future IPC
-        // shape change. Null when the bucket is
-        // DEFAULT_QUEST_KEY (no active quest at append).
+        // Stamp the quest on each message so the mobile can route to the right bucket even if the bucket key is ever lost in a future IPC shape…
         activeQuestId: questKeyFromStorage(bucketKey),
         activeQuestName: m.activeQuestName ?? null,
       }));
@@ -8784,71 +6505,22 @@ try {
       .catch(err => console.log(`[App] Error sending agent history for ${agentId}:`, err));
   });
 
-  // v3.1.16: the sync server can ask us to re-broadcast the
-  // current agents list. This happens when a mobile reconnects and
-  // the server's cache is empty (e.g. the mobile connected before
-  // the renderer's first arena-init broadcast, or the cache was
-  // cleared). We re-run the same broadcast path that
-  // initArenaCompanions uses, which goes through the
-  // 'sync-broadcast-agents-list' IPC and lands in the server's
-  // broadcastAgentsList — populating the cache and sending the
-  // list to the requesting mobile (and any others).
+  // The sync server can ask us to re-broadcast the current agents list.
   ipcRenderer.on('mobile-request-agents-list', () => {
-    // v3.2.27: delegate to broadcastAgentsListToMobile so
-    // both broadcast sites use the SAME list shape (with
-    // spriteConfig + avatar). Previously this handler
-    // built its own list without those fields, which meant
-    // a late-reconnecting client got a stripped-down
-    // payload until the next 60s sync. The unified list
-    // shape is small (~10-15KB per companion with the
-    // avatar data URL) and the same code path that runs
-    // on every periodic sync. The .catch is defense in
-    // depth for the floating promise.
+    // Delegate to broadcastAgentsListToMobile so both broadcast sites use the SAME list shape (with spriteConfig + avatar).
     console.log('[App] Sync server requested agents list refresh');
     broadcastAgentsListToMobile().catch((e) => {
       console.log('[App] Error re-broadcasting agents list:', e?.message);
     });
   });
 
-  // v3.2.26: mobile-initiated companion edit (Personalize screen).
-  // The mobile sends a sprite_config_sync with a partial patch;
-  // main.js forwards it here. We merge the patch into the existing
-  // sprite config, persist via the existing cyberclaw.agents.
-  // saveSpriteConfig (which writes sprites.json + regenerates the
-  // avatar if the sprite changed), then broadcast the updated
-  // agents_list so every connected client (including the phone
-  // that initiated the edit) sees the change.
-  // v3.2.42: re-render quests when the list changes
-  // externally. Without this, the renderer's in-memory
-  // activeQuestId stays stale after a mobile-side quest
-  // edit (set-active, update, delete, etc.) because the
-  // renderer only re-reads disk state when something IT
-  // does triggers renderQuests(). The next chat send then
-  // builds the context with the stale active quest and
-  // the companion replies with the wrong quest name.
-  // Tobe hit this on 2026-08-02 17:27: the mobile
-  // switched to CYBERHIVE_WEBSITE V3, but Clawsuu's
-  // reply said "Yeah it says Cyber_Music is active"
-  // because the renderer still had Cyber_Music cached.
+  // Mobile-initiated companion edit (Personalize screen).
   ipcRenderer.on('quests-updated', (e, list) => {
     try {
       if (!Array.isArray(list)) return;
-      // v3.3.18: cache the full quest list so addChatMsg
-      // (a sync function called from many fire-and-forget
-      // paths) can look up the active quest name when
-      // stamping chat messages for the mobile. The mobile's
-      // bubble header uses the name to label each bubble.
+      // Cache the full quest list so addChatMsg (a sync function called from many fire-and-forget paths) can look up the active quest name when…
       cachedQuestsList = list.slice();
-      // Update the module-level activeQuestId from the
-      // canonical list. renderQuests() also does this,
-      // so re-rendering covers the visual side.
-      //
-      // v3.3.11: route through setActiveQuestId so the chat
-      // panel auto-jumps to the new quest's bucket when the
-      // list changes via IPC (e.g. mobile sent
-      // set_quest_active). Without this, a quest switch
-      // initiated from the mobile wouldn't be reflected in
-      // the desktop's chat panel until the next renderQuests.
+      // Update the module-level activeQuestId from the canonical list.
       { const aqId = list.find(q => q.active)?.id || null;
         if (aqId && aqId === _casualFromQuestId) updateChatQuestToggle(); else setActiveQuestId(aqId); }
       renderQuests();
@@ -8870,50 +6542,7 @@ try {
       const merged = Object.assign({}, existing, patch);
       // Persist via the same surface the desktop forge uses.
       await cyberclaw.agents.saveSpriteConfig(agentId, merged);
-      // v3.2.86: regenerate soul.md from the merged
-      // traits. Tobe's report (2026-08-07 20:20):
-      // "Behaviour traits effectively edits the
-      // behaviour md. it reset to default or
-      // something, removed the traits, remained a
-      // boar and chattiness to middle, which is
-      // not what i selected, and the behaviour md
-      // looks the same".
-      //
-      // The previous code only regenerated soul.md
-      // from traits during MIGRATION (when soul.md
-      // didn't exist yet). After that, editing
-      // traits via the mobile would update
-      // sprites.json but leave soul.md untouched —
-      // so the personality in chat didn't change,
-      // even though the UI showed the new traits.
-      //
-      // Now: if the patch includes traits (which
-      // it always does from the mobile), regenerate
-      // soul.md to match. We use the same TRAIT_TO_SOUL
-      // map that migrateAllSouls uses, so the
-      // generated soul matches what the user would
-      // see at first-migration time.
-      //
-      // Trade-off: this OVERWRITES any hand-edited
-      // soul.md content. We accept that because:
-      //   1. Tobe's mental model is "traits drive
-      //      behaviour" (his words, 2026-08-07).
-      //   2. The mobile edit screen doesn't have a
-      //      soul.md text editor — it ONLY edits
-      //      traits. So if the user wants to change
-      //      personality from the mobile, they MUST
-      //      use traits. Hand-edited soul.md is a
-      //      desktop-only path.
-      //   3. If we DON'T overwrite, the user's
-      //      mobile edits silently do nothing
-      //      (which is what Tobe just hit).
-      //
-      // Future: the desktop forge has a soul editor
-      // that bypasses this regeneration. Mobile
-      // trait changes are the only path that
-      // triggers soul.md regeneration. If both
-      // happen, the most recent wins (which is
-      // correct semantics).
+      // Regenerate soul.md from the merged traits.
       if (Array.isArray(merged.traits) && merged.traits.length) {
         try {
           // eslint-disable-next-line global-require
@@ -8969,14 +6598,7 @@ try {
           console.warn('[mobile-sprite-config-saved] avatar regen failed:', e?.message);
         }
       }
-      // Re-broadcast agents list so the change syncs back to
-      // the phone that initiated it (and any other connected
-      // client). broadcastAgentsListToMobile uses the unified
-      // map that includes chattiness + sleepState. v3.2.27:
-      // the function is now async (reads sprite config per
-      // agent). The catch covers the floating-promise case
-      // — the function's own try/catch handles inner errors,
-      // but we add .catch as defense in depth.
+      // Re-broadcast agents list so the change syncs back to the phone that initiated it (and any other connected client).
       broadcastAgentsListToMobile().catch((e) => {
         console.warn('[mobile-sprite-config-saved] rebroadcast failed:', e?.message);
       });
@@ -8991,10 +6613,7 @@ try {
   ipcRenderer.on('mobile-chat', (e, { text, agentId, meta }) => {
     console.log('[mobile-chat] received:', text?.substring(0, 60), 'agentId:', agentId, 'sendChatMessage defined:', typeof window.sendChatMessage);
     window.addDesktopLog?.('💬', 'Mobile chat → AI', text?.substring(0, 50), 'info');
-    // v3.1.17: if the mobile told us which companion the user is
-    // chatting with, switch the desktop's active chat companion to
-    // match. This keeps `pickCurrentCompanionId()` and the response
-    // `agentId` in sync with the mobile's tab bar.
+    // If the mobile told us which companion the user is chatting with, switch the desktop's active chat companion to match.
     if (agentId && agents[agentId] && agentId !== activeChatAgentId) {
       try {
         switchActiveChat(agentId);
@@ -9006,25 +6625,9 @@ try {
       }
     }
     addChatMsg('user', text, null);
-    // v3.2.40: strip the `[From: <deviceName>]` prefix from the
-    // text before forwarding to the LLM. The sync-server adds
-    // it so the chat-history bubble shows the source, but the
-    // LLM doesn't need it (and gets confused by it — Tobe
-    // reported 2026-08-01: "clawsuu seems a bit confused
-    // still of where to respond"). The chat-history bubble
-    // already got the prefixed text via the addChatMsg call
-    // above; only the LLM-facing copy is stripped. Same rule
-    // for the voice transcript path (mobile sends voice
-    // transcripts prefixed too, see HomeScreen.tsx ~line
-    // 2533 for the matching mobile-side prefix).
+    // Strip the `[From: <deviceName>]` prefix from the text before forwarding to the LLM.
     const llmText = (text || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
-    // v3.2.56: the merge logic now lives in main.js (it has
-    // access to pendingAttachments + the buffered text).
-    // If attachments arrived in the same mobile send, the
-    // desktop will send a `mobile-chat-with-attachments`
-    // IPC instead of plain `mobile-chat`. By the time we
-    // get here, main.js has decided this is text-only —
-    // so send it.
+    // The merge logic now lives in main.js (it has access to pendingAttachments + the buffered text).
     const doSend = () => {
       if (typeof window.sendChatMessage === 'function') {
         window.sendChatMessage(llmText);
@@ -9037,17 +6640,7 @@ try {
     doSend();
   });
 
-  // v3.2.56: combined text + image IPC. main.js sends this
-  // when the mobile sends text and attachments close
-  // together — instead of two separate LLM calls (text-only
-  // then image-only), the renderer gets one combined IPC and
-  // fires one multimodal LLM call. Tobe's 2026-08-03 09:23
-  // test confirmed the v3.2.55 renderer-side merge didn't
-  // catch the batch reliably because the desktop's 700ms
-  // attachment-flush timer fires AFTER the renderer's 600ms
-  // hold expired. Buffering in main.js (which has visibility
-  // into both pendingAttachments and the buffered text) is
-  // the only layer that can merge deterministically.
+  // Combined text + image IPC.
   ipcRenderer.on('mobile-chat-with-attachments', (e, { text, agentId, meta, attachments }) => {
     console.log('[mobile-chat-with-attachments] received:', text?.substring(0, 60), 'agentId:', agentId, 'attachments:', attachments?.length);
     window.addDesktopLog?.('💬📎', 'Mobile chat + images → AI', `${text?.substring(0, 30) || '(no text)'} + ${attachments?.length || 0} image(s)`, 'info');
@@ -9071,28 +6664,7 @@ try {
       size: a.size || 0,
       path: a.path || '',
     })).filter((a) => a.dataUri);
-    // v3.3.36 FIX (Tobe 2026-10-05 08:32): pass
-    //   attachments to addChatMsg so the chat_history
-    //   mirror and the sync-broadcast-chat broadcast
-    //   both carry them. Previously addChatMsg was
-    //   called with `null` as the attachments arg,
-    //   which meant the desktop's chatHistoryByAgent
-    //   stored the bubble WITHOUT attachments, and the
-    //   realtime broadcast sent `attachments: 0`.
-    //   On mobile reconnect / cold start, chat_history
-    //   replay returned a text-only bubble; the mobile
-    //   would dedupe by stableHistoryMessageId, but if
-    //   the local bubble's id differed, a duplicate
-    //   bubble without images would land in the
-    //   bucket. Even with dedupe, the persisted
-    //   chatHistory was the source of truth on
-    //   reconnect — and it had none.
-    //
-    //   Pass `rendererAttachments` so addChatMsg
-    //   persists them AND broadcasts them. The mobile's
-    //   onChat handler already accepts attachments on
-    //   the broadcast (v3.11.19 / HomeScreen.tsx
-    //   ~line 3814). Symmetry restored.
+    // V3.3.36 FIX (Tobe 2026-10-05 08:32): pass attachments to addChatMsg so the chat_history mirror and the sync-broadcast-chat broadcast both…
     addChatMsg('user', text, null, null, rendererAttachments);
     const doSend = () => {
       if (typeof window.sendChatMessage === 'function') {
@@ -9106,15 +6678,7 @@ try {
     doSend();
   });
 
-  // v3.10.3: mobile-requested companion wake. The mobile
-  // sends this when the user starts any speech / chat input
-  // (chat submit, voice-mode entry, voice-mode recording
-  // send). The desktop flips the targeted agent's
-  // sleepState from 'sleeping' to 'awake' and rebroadcasts
-  // the agents_list so the mobile's arena un-grays
-  // immediately. Auto-wake in sendChat() / sendChatMessage()
-  // already handles the desktop-side typed/voice prompts;
-  // this IPC is the explicit mobile-initiated kick.
+  // Mobile-requested companion wake.
   ipcRenderer.on('mobile-wake-request', (e, { agentId } = {}) => {
     try {
       const id = agentId || (agentOrder[focusIndex] || pickCurrentCompanionId());
@@ -9140,28 +6704,12 @@ try {
     }
   });
 
-  // v3.10.91: mobile activity heartbeat. The mobile sends
-  // this every ~30s while the user is actively engaged
-  // (chat tab open + app foregrounded) so the desktop can
-  // reset the companion's auto-sleep timer. Without this,
-  // a mobile-only user (no chat submit / voice / treats
-  // on desktop) sees the companion fall asleep after
-  // 12 min even though they're actively looking at the
-  // chat on mobile.
-  //
-  // Only RESETS the timer — does NOT flip sleepState. If
-  // the companion is already sleeping, this won't wake it.
-  // Active engagement (chat / voice / treat / wake) is
-  // required to wake a sleeping companion. Passive viewing
-  // only delays the auto-sleep.
+  // Mobile activity heartbeat.
   ipcRenderer.on('mobile-activity-ping', (e, { agentId } = {}) => {
     try {
       const id = agentId || (agentOrder[focusIndex] || pickCurrentCompanionId());
       if (!id || !agents[id]) return;
-      // Reuses the same bumpCompanionInteraction() that
-      // desktop-side chat/voice/treat actions call. This
-      // resets lastInteractionTs which the desktop's
-      // scheduleAutoSleep() loop checks every minute.
+      // Reuses the same bumpCompanionInteraction() that desktop-side chat/voice/treat actions call.
       bumpCompanionInteraction(id);
       console.log('[mobile-activity-ping] bumped', id);
     } catch (err) {
@@ -9169,25 +6717,7 @@ try {
     }
   });
 
-  // v3.10.72: mobile dropped a food/treat on the
-  // arena. Mirror the desktop's placeTreatOnArena() in
-  // src/js/app.js:4905.
-  //
-  // v3.2.71: Tobe 2026-08-05 11:59 reversed the
-  // v3.10.74 "no chat reaction" decision. The
-  // silent/no-reaction flow caused the companion to
-  // forget the food it was just fed — the LLM had no
-  // running context for the snack, so follow-up
-  // questions ("Did you like that meat?", "What about
-  // that hamburger?") returned hallucinated replies
-  // ("Tastes like dust and broken dreams", "I never
-  // got the fucking hamburger"). The visible chat
-  // reaction is what puts the snack in the LLM's
-  // running context. We now mirror the desktop-side
-  // placeTreatOnArena behavior: deterministic memory
-  // append + visible promptCompanionReaction (the
-  // busy-guard was dropped in v3.2.70 so the reaction
-  // always fires).
+  // Mobile dropped a food/treat on the arena.
   ipcRenderer.on('mobile-arena-treat-placed', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
@@ -9196,9 +6726,6 @@ try {
       console.log('[mobile-treat] placed:', t, meta?.companionId ? `(near ${meta.companionId})` : '');
       window.addDesktopLog?.('🍖', 'Mobile fed', t, 'info');
       // Memory append (deterministic, cross-session).
-      // v3.2.79: if the arena told us which companion
-      // the food was dropped near, attribute the memory
-      // to THAT companion (matches the chat reaction).
       const memoryAgentId = (meta && meta.companionId && agents[meta.companionId])
         ? meta.companionId
         : (activeChatAgentId || (agentOrder[0] || null));
@@ -9210,42 +6737,13 @@ try {
           `Tobe gave me ${name} (${category})`
         ).catch(e => console.warn('[mobile-treat] memory append failed:', e?.message));
       }
-      // v3.2.82: skip the placed chat reaction. The
-      // placed+eat pair was producing two consecutive
-      // companion messages per drop, which Tobe
-      // flagged on 2026-08-06 13:19 as "hes commenting
-      // twice now, we dont want that". The eaten
-      // reaction ("I just ate X") is the natural
-      // companion voice and always fires when a
-      // companion actually consumes the food; dropping
-      // the placed one keeps a single, more natural
-      // message per treat. Memory.md still gets the
-      // "Tobe gave me X" fact above for cross-session
-      // recall — that's the deterministic half, which
-      // doesn't depend on the LLM producing a chat
-      // bubble.
-      //
-      // Edge case: a treat dropped out of range of any
-      // companion gets NO chat reaction now. Acceptable
-      // tradeoff — it was previously producing a
-      // user-prompt-flavored comment that felt weird
-      // ("I just gave you X, what do you think?" is
-      // a question to the companion, not a reaction).
-      // If the user drops food and no companion eats,
-      // the silence is honest.
+      // Skip the placed chat reaction.
     } catch (err) {
       console.warn('[mobile-treat] placed failed:', err?.message);
     }
   });
 
-  // v3.10.72: companion ate a treat (from the mobile
-  // arena's seek-and-eat logic). v3.2.71: same as the
-  // placed handler above — memory append + visible
-  // reaction. Reversing v3.10.74's "no reaction"
-  // decision for the same reason.
-  // v3.2.79: pass meta.companionId (the eater's id) to
-  // promptCompanionReaction + the memory append, so the
-  // reaction lands in the correct companion's chat.
+  // Companion ate a treat (from the mobile arena's seek-and-eat logic).
   ipcRenderer.on('mobile-arena-treat-eaten', (e, { treat, meta } = {}) => {
     try {
       const t = (treat && TREAT_NAMES[treat]) ? treat : 'apple';
@@ -9272,12 +6770,7 @@ try {
   });
 
   ipcRenderer.on('mobile-voice', (e, { id, transcript, context, meta }) => {
-    // v3.2.40: strip the `[From: <deviceName>]` prefix from
-    // the transcript before forwarding. The mobile pre-pends
-    // it on send (HomeScreen.tsx line ~2533), but the LLM
-    // already gets the `[Voice from mobile]` wrapper below
-    // — the inner prefix is redundant + confusing. Same
-    // rationale as the `mobile-chat` handler above.
+    // Strip the `[From: <deviceName>]` prefix from the transcript before forwarding.
     const cleanTranscript = (transcript || '').replace(/^\[From:\s*[^\]]*\]\s*/, '');
     const prompt = context
       ? `[Voice from mobile — last ${meta.lookbackMinutes}min context: "${context}"]\n\nUser said: ${cleanTranscript}`
@@ -9285,28 +6778,15 @@ try {
     console.log('[mobile-voice] received:', id, transcript?.substring(0, 60));
     window.addDesktopLog?.('🎤', 'Voice → AI', transcript?.substring(0, 50), 'info');
     addChatMsg('user', `🎤 ${transcript}`);
-    // v3.2.4: ack receipt so main.js can detect a hung
-    // renderer. v3.2.6: forward the id so main.js can
-    // remove the corresponding entry from its
-    // pending-voice queue (used to replay transcripts
-    // after a renderer reload). Without forwarding the
-    // id, main.js can't tell which ack corresponds to
-    // which pending entry.
+    // Ack receipt so main.js can detect a hung renderer.
     try { ipcRenderer.send('mobile-voice-ack', { ts: Date.now(), id }); } catch {}
-    // v3.2.7: register for response tracking. The ack
-    // alone doesn't mean the LLM will respond — the
-    // renderer could hang on the LLM call AFTER
-    // acking. Tell main.js we're processing this
-    // voiceId so the ack-watcher doesn't fire spuriously.
+    // Register for response tracking.
     if (id) {
       try { ipcRenderer.send('voice-response-tracking-start', { id }); } catch {}
     }
     if (typeof window.sendChatMessage === 'function') {
       const sendPromise = window.sendChatMessage(prompt);
-      // v3.2.7: when sendChatMessage completes (success
-      // or failure), signal completion so main.js can
-      // remove the voice from its tracking map and stop
-      // watching for it.
+      // When sendChatMessage completes (success or failure), signal completion so main.js can remove the voice from its tracking map and stop…
       if (id && sendPromise && typeof sendPromise.then === 'function') {
         sendPromise.then(
           () => { try { ipcRenderer.send('voice-response-done', { id }); } catch {} },
@@ -9320,69 +6800,16 @@ try {
     }
   });
 
-  // v3.2.49: handle attachments sent from the mobile.
-  // main.js's onAttachment handler saves the base64
-  // payload to ~/.openclaw/cyberclaw/attachments/ and
-  // fires this IPC with the on-disk path. Before this
-  // commit the IPC fired but nothing on the renderer
-  // side listened, so the LLM never knew an attachment
-  // had arrived — the file sat on disk unseen.
-  // Tobe 2026-08-02 21:27: 'the companion could not see
-  // them after they were sent, or looks to be sent
-  // from the user perspective.'
-  //
-  // v3.2.50: removed the user-attribution bubble that
-  // v3.2.49 added (`📎 [attached: ...]`). Tobe 2026-08-02
-  // 21:36: 'it says that i sent attachment extra in the
-  // chat now ... We dont want that extra message
-  // either.' The user already sees their own bubble
-  // (the original send with the image) — the extra
-  // chat bubble was redundant noise. Now the renderer
-  // forwards the attachment info to the LLM silently;
-  // the user only sees their original send.
-  //
-  // v3.2.51: passes the base64-encoded image data
-  // through to chat:send-message as an OpenAI multimodal
-  // image_url content block. The gateway's
-  // /v1/chat/completions endpoint accepts data: URIs in
-  // image_url.url and forwards them to the model. This is
-  // what makes Discord-style attachments work — the image
-  // bytes reach the model inline rather than as a path
-  // the model can't read. Tobe 2026-08-02 21:45: 'Just
-  // make it such that it works like it does in discord.'
-  //
-  // v3.2.52: switched from per-image `mobile-attachment`
-  // events to a single `mobile-attachment-batch` event.
-  // The mobile sends each image as a SEPARATE WS
-  // attachment message (one per file). Without batching,
-  // each one triggered its own chat:send-message HTTP
-  // call to the gateway. A 9-image paste queued 9
-  // separate LLM calls in the renderer's per-agent
-  // chatSendChain — each call could take 10-30s, easily
-  // exceeding the chain timeout. Tobe 2026-08-02 22:13:
-  // 'No response from OpenClaw.' (chain timed out before
-  // all calls completed). The desktop now buffers
-  // attachments for 700ms after the LAST one arrives,
-  // then fires ONE batch event with all of them. We
-  // build ONE multimodal content array and fire ONE
-  // chat:send-message call. Discord-style: many
-  // attachments, one chat round-trip.
+  // Handle attachments sent from the mobile.
   ipcRenderer.on('mobile-attachment-batch', (e, { attachments: batch }) => {
     try {
       if (!Array.isArray(batch) || batch.length === 0) return;
-      // v3.2.54: log each incoming attachment so we can
-      // verify the base64 data actually arrived via the
-      // IPC. The v3.2.53 desktop log showed body=4483b
-      // with attachments=1, which means the image data
-      // got dropped somewhere. Tobe 2026-08-02 22:35.
+      // Log each incoming attachment so we can verify the base64 data actually arrived via the IPC.
       for (const a of batch) {
         const dataLen = a.data ? a.data.length : 0;
         console.log(`[mobile-attachment-batch] received ${a.fileName} (size=${a.size}, data=${dataLen} chars, hasData=${!!a.data})`);
       }
-      // Build the attachments array in the format the
-      // desktop IPC expects. Each entry has dataUri (or
-      // data + mimeType) so the handler can build the
-      // multimodal content block.
+      // Build the attachments array in the format the desktop IPC expects.
       const attachments = [];
       for (const a of batch) {
         const dataUri = a.data ? `data:${a.mimeType || 'image/png'};base64,${a.data}` : null;
@@ -9400,13 +6827,7 @@ try {
         return;
       }
       console.log(`[mobile-attachment-batch] built ${attachments.length} attachment(s); dataUri total length=${attachments.reduce((s, a) => s + a.dataUri.length, 0)}`);
-      // v3.2.55: if a mobile-chat text message arrived in
-      // the last ~600ms (PENDING_CHAT_HOLD_MS) and is still
-      // pending, merge them. The user typed "can you see
-      // this image" and attached an image — they want the
-      // LLM to see both in ONE turn, not text-only-then-
-      // image-only across two turns (which produces the
-      // "I can't see image" misreport).
+      // If a mobile-chat text message arrived in the last ~600ms (PENDING_CHAT_HOLD_MS) and is still pending, merge them.
       let prompt = '';
       if (pendingMobileChat) {
         prompt = pendingMobileChat.text || '';
@@ -9419,10 +6840,7 @@ try {
         : `${attachments.length} images`;
       console.log('[mobile-attachment-batch] forwarding to chat:', sizeInfo, 'attachments:', attachments.length, 'prompt:', prompt.substring(0, 60));
       window.addDesktopLog?.('📎', 'Attachment batch → AI', sizeInfo, 'info');
-      // No user-attribution bubble — the user already
-      // sees their own message in the chat. The
-      // attachment metadata is a private side-channel
-      // to the LLM.
+      // No user-attribution bubble — the user already sees their own message in the chat.
       if (typeof window.sendChatMessage === 'function') {
         window.sendChatMessage(prompt, attachments);
       } else {
@@ -9436,14 +6854,7 @@ try {
     }
   });
 
-  // v3.2.4: readiness ping. When main.js sends
-  // `renderer-ready-check` (on page load), ack back
-  // immediately. This proves the renderer's JS
-  // context is alive and IPC handlers are
-  // registered. Without this, a renderer whose
-  // app.js failed to load (syntax error, missing
-  // module, etc.) would look identical to a hung
-  // renderer from main.js's perspective.
+  // Readiness ping.
   ipcRenderer.on('renderer-ready-check', () => {
     console.log('[renderer] ready-check received, acking');
     try { ipcRenderer.send('renderer-ready-ack', { ts: Date.now() }); } catch {}
@@ -9715,20 +7126,7 @@ window.sendChat = async function() {
     const agent = agents[agentOrder[focusIndex]];
     if (!agent) return;
 
-    // v3.3.22: route through addChatMsg so the bubble is
-    // persisted to chatHistoryByAgentAndQuest AND broadcast
-    // to the mobile. Previously the image-send path
-    // rendered the user bubble directly via DOM
-    // (msgDiv.appendChild) which skipped the chat pipeline,
-    // so the bubble never reached the mobile and never
-    // landed in the bucket for history sync. Tobe 2026-09-29
-    // 22:10: 'The text i sent on the desktop also did not
-    // appear on the phone end for some reason.'
-    //
-    // addChatMsg now accepts an optional 5th arg
-    // `attachments` (the same array shape
-    // sendChatMessageViaHttp expects). We build that array
-    // here from the desktop-internal {dataUrl, filename}.
+    // Route through addChatMsg so the bubble is persisted to chatHistoryByAgentAndQuest AND broadcast to the mobile.
     const userAttachments = [{
       data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
       mimeType: (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png',
@@ -9750,16 +7148,7 @@ window.sendChat = async function() {
     chatBusy = true;
     document.getElementById('chat-send').disabled = true;
     const typingId = addChatMsg('typing', agent.name + ' is thinking...');
-    // v3.2.58: same 600s cap as the main sendChatMessage
-    // path. Was 90s; bumped to match the main path so the
-    // user sees consistent timeout behavior across both
-    // paths. The 110s typingFailsafe became 300s.
-    // v3.10.179: bumped to 900s (15 min) to match the
-    // main path. Tobe 2026-08-30 11:56.
-    //
-    // v3.3.33: bumped to 1800s (30 min) to match the
-    // main path. Tobe 2026-10-04 10:46 — same reason
-    // as the main path bump.
+    // Same 600s cap as the main sendChatMessage path.
     const AGENT_TIMEOUT_MS = 1800000;
     const typingFailsafe = setTimeout(() => {
       console.warn('[sendChat:img] typing bubble > 1500s, force-clearing');
@@ -9771,21 +7160,7 @@ window.sendChat = async function() {
       let result;
       try {
         result = await Promise.race([
-          // v3.3.22: pass attachments as a proper array
-          // shape that main.js / sendChatMessageViaHttp
-          // understands. The previous code passed
-          //   { image: imgData.dataUrl }
-          // which `Array.isArray(attachments)` rejects
-          // (object, not array), so the image was
-          // silently dropped — clawsuu got the text
-          // "Describe this image" with no actual image
-          // data, hence no reaction. Tobe 2026-09-29
-          // 22:10: 'He did not react it seems, no
-          // clawsuu is working etc text there.' Now
-          // we build the array that
-          // `sendChatMessageViaHttp` (main.js ~1218)
-          // expects: `{ data: base64, mimeType, fileName,
-          // dataUri }` per attachment.
+          // Pass attachments as a proper array shape that main.js / sendChatMessageViaHttp understands.
           cyberclaw.chat.sendMessage(mainAgentId, fullMessage, [
             {
               data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
@@ -9978,20 +7353,7 @@ window.forgetLearnedSkill = async function(skillName) {
   try { loadEquipment(id); } catch {}
 };
 
-// ═══════════════════════════════════════════════════════════
-//  SKILLS LIBRARY (v3.3.0)
-//
-//  The skills library lets the user browse, create, edit, and delete
-//  process-specific skill markdown files. Per-companion toggle state
-//  lives in companions/<id>/enabled-skills.json and is what sees the
-//  skill content included in the companion's prompt at chat-send time.
-//
-//  Skills must be PROCESS-SPECIFIC, not generic. The "Send Screenshots"
-//  skill describes a concrete numbered workflow. The category-level
-//  Skill Categories in the inspect panel (Building / Writing / etc.)
-//  are something different — those are auto-classified task XP, set
-//  by main.js based on chat content.
-// ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════ SKILLS LIBRARY (v3.3.0) The skills library lets the user browse, create, edit,…
 
 let _skillsCache = null;
 let _enabledSkillsCache = {};
@@ -10168,10 +7530,7 @@ function escapeAttr(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Minimal markdown -> HTML for the skill detail view. Covers
-// headings, lists, paragraphs, inline code, code blocks, and
-// bold/italic. Enough for SKILL.md files; intentionally not
-// a full markdown parser.
+// Minimal markdown -> HTML for the skill detail view.
 function renderMarkdown(md) {
   if (!md) return '';
   const escape = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -10403,16 +7762,7 @@ var TREAT_NAMES = {
   apple: 'an apple', hamburger: 'a hamburger', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
   ball: 'a ball', 'tennis-ball': 'a tennis ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
-// v3.2.64: treat category mapping for snack logging. Tobe
-// 2026-08-04 21:16: 'we should log snacks by the way,
-// and type of snack so he can talk about them.' Each
-// treat type maps to a category string that's included
-// in the memory.md entry so the companion can talk
-// about snack types later ("I had some food today",
-// "we played with toys", etc.). Categories here are
-// coarse (food/toy); finer sub-types (sweet/savory,
-// ball/stick) can be added as future keys without
-// breaking the log schema.
+// Treat category mapping for snack logging.
 var TREAT_CATEGORIES = {
   apple: 'food', hamburger: 'food', meat: 'food', fish: 'food', cake: 'food', cookie: 'food', berry: 'food',
   ball: 'toy', 'tennis-ball': 'toy', yarn: 'toy', stick: 'toy', frisbee: 'toy', bell: 'toy', feather: 'toy'
@@ -10536,28 +7886,7 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
   // (the chat still said 'more meat!'), so feeding looked broken.
   try { nudgeNightWake(); } catch (_) {}
   a.dropTreat(canvasX, canvasY, treatType, TREAT_EMOJIS[treatType]);
-  // v3.2.70: always-visible snack comment. Tobe
-  // 2026-08-05 11:59: "I tried to give him some food
-  // but he does not seem to remember, perhaps we
-  // should make him comment it each time so he sees
-  // it in the log atleast, instead of in memory and
-  // not needing to comment it like we tried." The
-  // v3.2.64 silent-log approach was theoretically
-  // elegant (memory.md gets the fact, LLM is asked
-  // to enrich), but in practice the silent path
-  // writes to a file the current session's LLM
-  // doesn't re-read mid-flight, so the companion
-  // effectively forgets the food it just received.
-  //
-  // New approach: ALWAYS emit a chat-visible comment
-  // (queued behind any in-flight user message via the
-  // existing chatSendChain), so the snack is part of
-  // the LLM's running conversation context. Memory.md
-  // is still updated directly as a fallback for next
-  // session (long-term history), but the immediate
-  // goal is "the chat log shows the snack" so the
-  // user's follow-up question ('Was that food
-  // satisfying?') gets a context-aware answer.
+  // Always-visible snack comment.
   const agentId = activeChatAgentId || (agentOrder[0] || null);
   const itemName = TREAT_NAMES[treatType] || treatType;
   const category = TREAT_CATEGORIES[treatType] || 'item';
@@ -10572,12 +7901,7 @@ function placeTreatOnArena(canvasX, canvasY, treatType) {
     ).catch(e => console.warn('[placeTreatOnArena] memory append failed:', e?.message));
   }
 
-  // Visible chat reaction. Drop the old busy-guard
-  // (the OpenClaw lane serializes calls anyway).
-  // Always fire so the snack lands in the chat log
-  // and the LLM's running context — Tobe 2026-08-05
-  // 11:59: "make him comment it each time so he sees
-  // it in the log atleast".
+  // Visible chat reaction.
   promptCompanionReaction('I just gave you ' + itemName + '. What do you think?');
 
   if (window.adjustHappiness) window.adjustHappiness(10);
@@ -10600,14 +7924,7 @@ window.promptCompanionEat = function(treatType) {
   promptCompanionReaction('You just ate a ' + name + ' that Tobe gave you. Briefly share how it made you feel — short, in-character reaction (1-2 sentences). Speak as yourself, not about the user.');
 };
 
-// v3.2.70: reaction-queue removed. The OpenClaw lane
-// for the active agent serializes concurrent calls
-// server-side; the v3.2.64 busy-guard was redundant
-// and caused drops ("snack eaten, no reaction logged"
-// case Tobe flagged on 2026-08-05 11:59).
-// The memory append in placeTreatOnArena /
-// promptCompanionEat already runs before this; we
-// just always call promptCompanionReaction here.
+// Reaction-queue removed.
 
 // ── Drop zone: attach to the CONTAINER div (survives arena rebuilds) ──
 // The container div never gets destroyed — only the canvas inside it is replaced.
@@ -10659,61 +7976,19 @@ setTimeout(setupArenaDrop, 3000);
 
 // Prompt the companion and show response in both chat + bubble
 var reactionBusy = false;
-// v3.2.79: optional `targetAgentId` argument. When set,
-// routes the reaction to that specific companion (e.g.
-// the one that ate the snack) instead of falling back to
-// the activeChatAgentId default. Falls back gracefully if
-// the target is hidden / sleeping / unknown. Tobe
-// 2026-08-06: "track which companion that actually eats
-// the food and make it comment it" — the previous
-// behavior always replied as whichever chat tab was
-// active, regardless of which sprite actually ate.
+// Optional `targetAgentId` argument.
 function promptCompanionReaction(promptText, targetAgentId) {
-  // Prefer the explicit target (mobile-arena-eaten), then
-  // the active chat tab, then the first visible agent.
-  //
-  // v3.2.80: MUST yield the agent ID string, not the
-  // agent object. The v3.2.79 code was:
-  //   const targetId = (targetAgentId && agents[targetAgentId]) || ...
-  // which returned the agent OBJECT when the lookup
-  // matched, then later `agents[targetId]` became
-  // `agents[<object>]` = `agents["[object Object]"]` =
-  // undefined, and the function bailed with
-  // `if (!target) return;`. Tobe 2026-08-06 11:34
-  // hit this: every treat event triggered the
-  // [promptCompanionReaction] diagnostic with
-  // `targetId= [object Object] hasAgent= false` and
-  // no chat reaction fired. Fix: re-yield the id
-  // string after the truthy check passes.
+  // Prefer the explicit target (mobile-arena-eaten), then the active chat tab, then the first visible agent.
   const targetId = (targetAgentId && agents[targetAgentId] ? targetAgentId : null)
     || activeChatAgentId
     || (agentOrder.find(id => !hiddenCompanions.has(id)))
     || agentOrder[0];
-  // (Diagnostic log removed in v3.2.82 — verified
-  // working as of v3.2.80. Kept here as a one-liner
-  // for any future regressions: uncomment to re-enable.)
-  // console.log('[promptCompanionReaction] targetId=', targetId,
-  //   'hasAgent=', !!(targetId && agents[targetId]),
-  //   'sleepState=', targetId && agents[targetId] ? agents[targetId].sleepState : 'n/a',
-  //   'chat=', !!(cyberclaw && cyberclaw.chat && cyberclaw.chat.sendMessage),
-  //   'targetAgentId=', targetAgentId,
-  //   'activeChatAgentId=', activeChatAgentId);
+  // (Diagnostic log removed in v3.2.82 — verified working as of v3.2.80.
   if (!targetId) return;
   const target = agents[targetId];
   if (!target) return;
   if (target.sleepState === 'sleeping') return;
-  // v3.2.70: removed `if (chatBusy || reactionBusy) return;`.
-  // The OpenClaw lane serializes concurrent calls for
-  // the same agent server-side, so two rapid reactions
-  // (e.g. dropping two snacks in quick succession, or a
-  // snack drop while a user message is in flight) will
-  // queue at the gateway and reply in submission order.
-  // The old busy-guard silently dropped reactions which
-  // left the user confused ("he doesn't seem to remember
-  // the food", Tobe 2026-08-05 11:59). The reactionBusy
-  // flag is still used internally to avoid parallel
-  // click-spam within this function — but we no longer
-  // bail if chatBusy is set (that was user-driven).
+  // Removed `if (chatBusy || reactionBusy) return;`.
   var agentId = targetId;
   var agent = target;
 
@@ -10730,21 +8005,7 @@ function promptCompanionReaction(promptText, targetAgentId) {
     if (result && result.ok && result.reply) {
       var reply = result.reply.replace(/^\s*[\{\[].*/m, '').trim();
       if (!reply) reply = result.reply.trim();
-      // v3.1.96: strip the desktop's 🤖 default before sending.
-      //
-      // v3.3.31: route companion-reaction bubbles (toy
-      // dropped, snack eaten, ball fetched, etc.) to the
-      // no-quest chat bucket via the questOverride param,
-      // not the active quest. Tobe 2026-10-01 12:20:
-      // "I tested the ball toy on the desktop and it
-      // works great. I just want that speech the
-      // companion does into the no quest chat, not any
-      // quest so it does not clutter those conversations."
-      // The active quest at the moment of the toy drop
-      // is whatever project the user happens to be
-      // working on — the toy reaction is system-level
-      // chatter, not project content, so it doesn't
-      // belong in the project chat log.
+      // Strip the desktop's 🤖 default before sending.
       addChatMsg('agent', reply, agent.name, agent.emoji === '🤖' ? null : (agent.emoji || getSpriteIcon(agent._pixelCompanionId)), null, '__no_quest__');
       var arena = window.pixelArena;
       if (arena && arena.showBubble) {
@@ -10757,39 +8018,7 @@ function promptCompanionReaction(promptText, targetAgentId) {
   });
 }
 
-// v3.2.64: silent prompt to the LLM. Fires the chat pipeline
-// but does NOT broadcast to mobile, does NOT add to the
-// desktop's chat history, and does NOT show an arena
-// bubble. The reply is parsed for [REMEMBER: text="..."]
-// tags which are routed to memory.md via
-// cyberclaw.agents.rememberMemory. Any text the LLM
-// emits around the tags is silently discarded.
-//
-// Tobe 2026-08-04 21:16: "We should log snacks by the
-// way, and type of snack so he can talk about them.
-// Perhaps we send a message to him each time we give
-// food, 'user gave you hamburger, lighten up a little,
-// no need to respond, just add to memory.' would that
-// work?"
-//
-// Yes — with the caveat that we ALSO directly append
-// the deterministic fact to memory.md before firing
-// the LLM. Why: the LLM is asked to use a
-// [REMEMBER: text="..."] tag, but the LLM may not emit
-// it consistently (or at all), and a missed
-// snack-log is worse than a slightly-redundant one.
-// Direct append guarantees the fact lands; the LLM
-// round-trip is for the "lighten up a little" mood
-// hint and any context the companion wants to add
-// to the entry.
-//
-// Build the prompt with a tight directive: the LLM
-// should emit ONLY the [REMEMBER] tag (or nothing),
-// NOT a chat-style reply. We give it the
-// already-formed fact as a starting point so it can
-// extend it if it wants (e.g. "Tobe gave me a
-// hamburger again — I think he's trying to cheer me
-// up").
+// Silent prompt to the LLM.
 function promptCompanionSilent(agentId, fact, mood) {
   if (!agentId) return;
   const agent = agents[agentId];
@@ -10812,15 +8041,7 @@ function promptCompanionSilent(agentId, fact, mood) {
     });
   }
 
-  // We bypass the normal chat pipeline entirely (no
-  // broadcast, no chatHistory push, no bubble, no typing
-  // indicator, no TTS). The sendSilentMessage preload
-  // method fires the chat:send-message IPC with
-  // attachments=null and silent=true; the IPC returns the
-  // LLM reply to the caller without firing any of the
-  // pipeline side-effects. The renderer's
-  // sendChatMessage wrapper would normally fire
-  // addChatMsg + TTS; we skip the wrapper entirely.
+  // We bypass the normal chat pipeline entirely (no broadcast, no chatHistory push, no bubble, no typing indicator, no TTS).
   cyberclaw.chat.sendSilentMessage(agentId, systemPrompt).then(function(result) {
     if (!result || !result.ok || !result.reply) return;
     const tags = extractRememberTags(result.reply);
@@ -10935,10 +8156,7 @@ var _nightWakeTimer = null;
 window._nightWakeTimer = null;
 var _wakeDurationMs = 10 * 60 * 1000; // 10 minutes
 
-// v3.1.16: expose isNightTime on window so pixel-arena.js's
-// _updateCompanion can use the same boundary as app.js. Without
-// this, the two could drift (e.g. the 06:30 cutoff lives in
-// isNightTime but the arena had a hard-coded `< 8`).
+// Expose isNightTime on window so pixel-arena.js's _updateCompanion can use the same boundary as app.js.
 window.isNightTime = isNightTime;
 
 function isAsleep() {
@@ -10972,10 +8190,7 @@ function nudgeNightWake() {
   if (isNightTime()) wakeFromSleep();
 }
 
-// ── AUTO-SLEEP ON INACTIVITY (v3.1.4) ──────────────────────────────
-// Each companion tracks a lastInteractionTs. After `AUTO_SLEEP_AFTER_MS`
-// of no interaction, the companion goes to sleep on its own. Any
-// interaction (chat, focus change, manual wake) resets the timer.
+// ── AUTO-SLEEP ON INACTIVITY (v3.1.4) ────────────────────────────── Each companion tracks a lastInteractionTs.
 var AUTO_SLEEP_AFTER_MS = 12 * 60 * 1000; // 12 minutes of inactivity
 function bumpCompanionInteraction(agentId) {
   if (!agentId) return;
@@ -10988,25 +8203,7 @@ function scheduleAutoSleep() {
       const a = agents[id];
       if (!a) continue;
       if (a.sleepState === 'sleeping') continue;
-      // v3.3.27: don't auto-sleep a companion that's
-      // actively processing a chat request. Pre-v3.3.27
-      // the auto-sleep check only saw `lastInteractionTs`,
-      // which resets on user actions (chat send, voice,
-      // treat, mobile ping). While the companion is
-      // generating a reply, no user action fires — so
-      // the timer ran out and the companion fell asleep
-      // mid-task. Tobe 2026-09-30 14:41: 'why is clawsuu
-      // sleeping by default now it seems? Its not even
-      // night time. Random naps could be cool but seems
-      // like there is a bug there.'
-      //
-      // chatBusy is set true on user-send (line ~3119)
-      // and false in the finally block after the agent
-      // reply (or error) lands. As long as chatBusy is
-      // true, the companion is mid-task and shouldn't
-      // sleep. Reset lastInteractionTs to now on every
-      // check while busy — guarantees the timer starts
-      // over fresh after the reply lands.
+      // Don't auto-sleep a companion that's actively processing a chat request.
       if (chatBusy && id === pickCurrentCompanionId()) {
         a.lastInteractionTs = now;
         continue;
@@ -11023,11 +8220,7 @@ function scheduleAutoSleep() {
         addChatMsg('system', `💤 ${a.name} fell asleep`);
         if (window._inspectAgentId === id) updateInspect(id);
         if (activeChatAgentId === id) updateChatHeader(id);
-        // v3.10.3: push the new sleepState to the mobile so it
-        // can render a sleeping-sprite overlay. Without this
-        // the mobile stays wakeful-looking until the next
-        // periodic broadcast, breaking the "they sleep on
-        // the phone too" expectation.
+        // Push the new sleepState to the mobile so it can render a sleeping-sprite overlay.
         try { broadcastAgentsListToMobile(); } catch (_) {}
       }
     }
@@ -11035,14 +8228,7 @@ function scheduleAutoSleep() {
 }
 
 function scheduleIdleChatter() {
-  // v3.2.26: chattiness scale (1–5) controls the idle chatter
-  // interval. 1 = silent (never fires), 5 = chatty (every 15–30
-  // min). The default of 3 matches the v3.1.3 baseline (60–90
-  // min). We resolve the interval per current companion so each
-  // companion can have its own chattiness; if the user switches
-  // focus mid-tick, the next tick will pick up the new companion's
-  // value. (We deliberately don't cancel the in-flight timer — the
-  // next tick will pick up the new value within minutes.)
+  // Chattiness scale (1–5) controls the idle chatter interval.
   var cid = pickCurrentCompanionId();
   var chattiness = (cid && agents[cid] && agents[cid].chattiness) || 3;
   chattiness = Math.max(1, Math.min(5, chattiness));
@@ -11077,10 +8263,7 @@ function scheduleIdleChatter() {
   var delay = minMs + Math.random() * (maxMs - minMs);
 
   setTimeout(function() {
-    // v3.1.3: skip if the current companion is manually sleeping
-    // v3.2.26: also skip if chattiness is 1 (silent). Re-read
-    // chattiness at fire time so it can be changed without
-    // restarting the desktop.
+    // Skip if the current companion is manually sleeping v3.2.26: also skip if chattiness is 1 (silent).
     const fireCid = pickCurrentCompanionId();
     const fireChattiness = (fireCid && agents[fireCid] && agents[fireCid].chattiness) || 3;
     if (fireChattiness < 1) {

@@ -1,20 +1,4 @@
-/**
- * CyberClaw Sync Server
- * Secure WebSocket server (WSS) for mobile companion app sync.
- * Runs inside the Electron main process.
- * 
- * Security:
- *   - Self-signed TLS certificate (auto-generated on first run)
- *   - Pairing via 6-digit code (5-minute expiry)
- *   - Device tokens for auto-reconnect (HMAC-signed)
- *   - Rate-limited pairing attempts (3 wrong → 5-min lockout)
- *   - Unauthenticated connections dropped after 10 seconds
- *   - Safe for port forwarding (port 9247)
- * 
- * Protocol:
- *   Mobile connects → authenticates with pairing code or saved token
- *   Bi-directional sync of: companion state, chat messages, arena events
- */
+/** CyberClaw Sync Server Secure WebSocket server (WSS) for mobile companion app sync. */
 
 const WebSocket = require('ws');
 const https = require('https');
@@ -44,92 +28,18 @@ class SyncServer extends EventEmitter {
     this.onChatMessage = options.onChatMessage || null;
     this.onVoiceTranscript = options.onVoiceTranscript || null;
     this.onAudioInput = options.onAudioInput || null;
-    // v3.1.17: per-agent chat history. The case-dispatch
-    // in _handleMessage (request_agent_history) calls
-    // `this.onRequestAgentHistory(ws, aid)`, but the
-    // constructor NEVER copied this option from
-    // `options`. Result: callback was always undefined,
-    // every agent_history request silently no-op'd, the
-    // mobile's per-companion history sync was broken from
-    // day 1 of v3.1.17. Tobe's UI was getting DEFAULT
-    // bucket content from chat_history (which still works
-    // because it goes through _notifyMainWindow, not via
-    // a callback) and missing the per-agent buckets
-    // entirely. Confirmed 2026-09-27 16:58 via debug
-    // logging: `[SyncServer DEBUG] request_agent_history
-    // raw msg: ... auth=true hasCb=false`.
-    //
-    // Same bug class as v3.2.77 (mobile_wake_agent etc.)
-    // and v3.10.79 (quest callbacks). Both of those got
-    // caught and fixed; this one slipped through because
-    // it was added before that lesson was written, and
-    // nobody re-audited the constructor when the later
-    // fixes landed.
-    //
-    // Lesson reinforced (third occurrence of this bug):
-    // the constructor's `this.onXyz = options.onXyz ||
-    // null;` binding is the ONE place every callback
-    // option has to land. The case-dispatch guards
-    // (`if (this.onXyz)`) silently no-op when binding is
-    // missing — no error, no log, just silent dropout.
-    // The audit pattern: for every `this.onX` check in
-    // _handleMessage, find the corresponding `this.onX =
-    // options.onX` in the constructor. If one is
-    // missing, that's a latent no-op bug.
+    // Per-agent chat history.
     this.onRequestAgentHistory = options.onRequestAgentHistory || null;
-    // v3.2.8: image / file attachment upload handler.
-    // Tobe's v3.10.20 follow-up: handle the desktop side
-    // with the image handling. Previously the mobile was
-    // sending the bytes but the desktop silently dropped
-    // them because this option wasn't initialized.
+    // Image / file attachment upload handler.
     this.onAttachment = options.onAttachment || null;
 
-    // v3.2.77: wire the four missing mobile-side callbacks
-    // (onMobileWakeAgent, onMobileActivityPing,
-    // onArenaTreatPlaced, onArenaTreatEaten) onto `this`.
-    // They were added to the case-dispatch in _handleMessage
-    // (v3.2.12, v3.2.15, v3.2.24) but the constructor
-    // never copied them from options — the `if (this.onX)`
-    // guards at the dispatch site were therefore always
-    // false, so the callbacks silently no-op'd.
-    //
-    // Symptom: Tobe 2026-08-06: "clawsuu still cant
-    // recognize that he has been feeded. It does appear in
-    // the log tho." The sync-server logs the inbound
-    // arena_treat_placed message (v3.2.76 per-message
-    // log) but the renderer's mobile-arena-treat-placed
-    // IPC handler never fires because main.js's
-    // onArenaTreatPlaced is never called. Same root
-    // cause for mobile_wake_agent and mobile_activity_ping
-    // — those handlers also never reached the renderer.
-    //
-    // Lesson (same class as v3.10.79): whenever you add
-    // a `this.onXyz` reference in _handleMessage, also
-    // add `this.onXyz = options.onXyz || null;` in the
-    // constructor. The `if (this.onXyz)` guard silently
-    // masks the missing wiring — there's no error, no
-    // log, just a no-op.
+    // Wire the four missing mobile-side callbacks (onMobileWakeAgent, onMobileActivityPing, onArenaTreatPlaced, onArenaTreatEaten) onto `this`.
     this.onMobileWakeAgent = options.onMobileWakeAgent || null;
     this.onMobileActivityPing = options.onMobileActivityPing || null;
     this.onArenaTreatPlaced = options.onArenaTreatPlaced || null;
     this.onArenaTreatEaten = options.onArenaTreatEaten || null;
 
-    // v3.10.79: quest-related callbacks. v3.1.51 added
-    // 5 inbound WebSocket message types (update_quest,
-    // delete_quest, create_quest, set_quest_active,
-    // mark_quest_goal_done) plus onListQuests for
-    // diagnostics, but the constructor never copied
-    // them onto `this`. Result: every quest edit,
-    // deletion, status change, and goal completion
-    // over WebSocket silently no-op'd with the failure
-    // response saying "available: []" because the
-    // callbacks returned undefined. Tobe hit this on
-    // 2026-07-22 with the quest editor repeatedly
-    // showing "Couldn't update quest: quest not found"
-    // even though the mobile's broadcast showed the
-    // quest was there. The bug had been latent since
-    // 2026-07-08 (v3.1.51). This assignment finally
-    // wires the callbacks.
+    // Quest-related callbacks.
     this.onSetQuestActive = options.onSetQuestActive || null;
     this.onUpdateQuest = options.onUpdateQuest || null;
     this.onDeleteQuest = options.onDeleteQuest || null;
@@ -137,40 +47,16 @@ class SyncServer extends EventEmitter {
     this.onCreateQuest = options.onCreateQuest || null;
     this.onListQuests = options.onListQuests || null;
     this.onRequestQuestsList = options.onRequestQuestsList || null;
-    // v3.2.95: TTS voice picker mirror. Mobile asks for the
-    // desktop's piper voice list + current selection; on
-    // set_tts_voice, main.js writes localStorage and we
-    // broadcast tts_settings_changed to all connected
-    // mobiles.
+    // TTS voice picker mirror.
     this.onGetTtsSettings = options.onGetTtsSettings || null;
     this.onSetTtsVoice = options.onSetTtsVoice || null;
-    // v3.3.19: same bug class as onRequestAgentHistory above.
-    // Bind the callback for symmetry / future migration away
-    // from the _notifyMainWindow path. Currently chat_history
-    // works because _notifyMainWindow fires the IPC directly,
-    // but adding the binding here ensures the constructor's
-    // callback table stays complete.
+    // Same bug class as onRequestAgentHistory above.
     this.onRequestChatHistory = options.onRequestChatHistory || null;
-    // v3.2.33: per-quest project instructions file read. Mobile calls
-    // request_quest_instructions and main.js answers with the
-    // file content via the same IPC the desktop's renderer
-    // uses. Read-only on mobile.
+    // Per-quest project instructions file read.
     this.onReadQuestInstructions = options.onReadQuestInstructions || null;
-    // v3.2.33: write counterpart for the read above.
-    // Mobile's quest editor sends save_quest_instructions
-    // with the file content; the desktop writes via the
-    // same IPC the desktop's renderer uses.
+    // Write counterpart for the read above.
     this.onSaveQuestInstructions = options.onSaveQuestInstructions || null;
-    // v3.2.26: phone-side companion edit. The mobile's
-    // Personalize screen sends a sprite_config_sync with the
-    // agentId + a partial config patch; main.js applies the
-    // patch via cyberclaw.agents.saveSpriteConfig (same
-    // surface the desktop forge uses) and broadcasts the
-    // updated agents_list so the change appears on every
-    // connected client.
-    // v3.3.0: skills library — same shape as quests (mobile
-    // can browse, create, update, delete, toggle). main.js
-    // wires these to skill-store.js calls.
+    // Phone-side companion edit.
     this.onListSkills = options.onListSkills || null;
     this.onReadSkill = options.onReadSkill || null;
     this.onCreateSkill = options.onCreateSkill || null;
@@ -180,51 +66,22 @@ class SyncServer extends EventEmitter {
     this.onGetEnabledSkills = options.onGetEnabledSkills || null;
     this.onSetEnabledSkills = options.onSetEnabledSkills || null;
     this.onSaveSpriteConfig = options.onSaveSpriteConfig || null;
-    // v3.2.35: companion soul + memory read/clear from mobile.
-    // Mobile is read-only on soul (the desktop forge is the editor);
-    // memory is also read-only except clear, which mirrors the
-    // desktop's companion:clear-memory IPC.
+    // Companion soul + memory read/clear from mobile.
     this.onReadCompanionSoul = options.onReadCompanionSoul || null;
     this.onReadCompanionMemory = options.onReadCompanionMemory || null;
     this.onClearCompanionMemory = options.onClearCompanionMemory || null;
 
-    // v3.2.61: per-quest conversation log access from mobile.
-    // Mirrors the renderer-side IPCs (quests:get-conversation-log,
-    // quests:get-conversation-file, quests:clear-conversation-log)
-    // via WS messages so the mobile UI can show "View past
-    // conversations" on the QuestsScreen in a future release.
-    // For now only the SyncClient methods are wired; the
-    // mobile UI doesn't actually call them yet.
+    // Per-quest conversation log access from mobile.
     this.onGetQuestConversationLog = options.onGetQuestConversationLog || null;
     this.onGetQuestConversationFile = options.onGetQuestConversationFile || null;
     this.onClearQuestConversationLog = options.onClearQuestConversationLog || null;
 
-    // v3.2.62: CYBERCLAW.md (overarching system prompt)
-    // access from mobile. Three operations:
-    //   - get:    read the current content + the
-    //             hardcoded DEFAULT content (for a
-    //             "Reset to default" button) + the
-    //             disk path.
-    //   - save:   write user-edited content.
-    //   - reset:  drop the user's file so the next
-    //             read returns DEFAULT_SYSTEM_PROMPT.
-    // The desktop's main.js is the source of truth
-    // (it owns the file IO); the SyncServer just routes.
+    // CYBERCLAW.md (overarching system prompt) access from mobile.
     this.onGetCyberclawSystem = options.onGetCyberclawSystem || null;
     this.onSaveCyberclawSystem = options.onSaveCyberclawSystem || null;
     this.onResetCyberclawSystem = options.onResetCyberclawSystem || null;
 
-    // v3.1.46: track the most recent wake_training_progress per
-    // agent so a phone that lost its WebSocket mid-training (and
-    // reconnected) can pick up where the bar should be. Without
-    // this, a phone that reconnects during a 15-minute training
-    // sees a frozen 30% bar and a red "Last event: 60s+ ago"
-    // indicator until the training finishes — because the
-    // _broadcast() call iterates this.clients and the phone's
-    // old ws is already disconnected. The phone's watchdog
-    // (poll every 20s for the cached wake_training_result) is
-    // what surfaces this — main.js attaches the latest progress
-    // to the result reply so the trainer can re-paint the bar.
+    // Track the most recent wake_training_progress per agent so a phone that lost its WebSocket mid-training (and reconnected) can pick up where…
     this._lastWakeProgress = new Map();  // agentId → { stage, percent, message, ts }
 
     // Rate limiting for pairing
@@ -338,15 +195,7 @@ class SyncServer extends EventEmitter {
       ws.on('message', (data) => {
         try {
           const msg = JSON.parse(data.toString());
-          // v3.2.76: per-message log (ping excluded). After
-          // the v3.10.137 fix shipped, Tobe tested v3.10.137
-          // APK and the food reaction still didn't fire. The
-          // bundle has the fix (verified: 0 occurrences of
-          // .send(JSON.stringify in the JS bundle). So either
-          // (a) the mobile is still running an older bundle
-          // despite the v3.10.137 header, or (b) something
-          // else is wrong. This log tells us what types
-          // actually arrive.
+          // Per-message log (ping excluded).
           if (msg && msg.type && msg.type !== 'ping') {
             console.log(`[SyncServer] msg type=${msg.type} from ${clientInfo.name}`);
           }
@@ -499,24 +348,7 @@ class SyncServer extends EventEmitter {
 
       case 'chat': {
         if (!client.authenticated) {
-          // v3.2.39: log dropped chats so they're visible in the
-          // desktop log. Tobe's 2026-07-29 18:30 report: "Yoyo"
-          // typed on the mobile got a reply ("raid a captcha
-          // farm...") but the chat-event log doesn't show the
-          // inbound message, AND the bubble doesn't appear in
-          // the mobile chat history. The most likely culprit is
-          // this guard: when a WS reconnect completes, the
-          // mobile's WS opens first (this code runs the case
-          // 'open' / pair_result / auth_result handshake) — but
-          // there's a brief window where the mobile sends a
-          // chat BEFORE the desktop sets client.authenticated
-          // true. The user's chat silently hits this guard and
-          // is dropped; the agent never sees it. The reply
-          // visible in the chat history was actually likely a
-          // cached previous-turn reply that got replayed on
-          // full-state request, not a fresh response to "Yoyo".
-          // Logging the dropped message here gives us a paper
-          // trail — even if we still drop, we'll know why.
+          // Log dropped chats so they're visible in the desktop log.
           console.warn(`[SyncServer] chat dropped for ${client.id} (${client.name || 'no-name'}): not authenticated yet (text="${(msg.text || '').substring(0, 60)}")`);
           return;
         }
@@ -541,14 +373,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'mobile_wake_agent': {
-        // v3.10.3: mobile-initiated companion wake. The mobile
-        // asks the desktop to flip sleepState 'sleeping' →
-        // 'awake' for the targeted agent. Handled in the
-        // renderer (where agents[] lives) via the
-        // mobile-wake-request IPC. Without this, mobile-initiated
-        // speech/chat can produce a reply from a sleeping
-        // companion and the sprite stays in 'death' pose until
-        // the next periodic broadcast.
+        // Mobile-initiated companion wake.
         if (!client.authenticated) return;
         if (this.onMobileWakeAgent) {
           this.onMobileWakeAgent(msg.agentId || 'companion', {
@@ -560,25 +385,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'mobile_activity_ping': {
-        // v3.10.91: mobile-initiated activity heartbeat. The
-        // mobile sends this every ~30s while the user is
-        // actively engaged (chat tab open, app foregrounded).
-        // The desktop bumps lastInteractionTs on the targeted
-        // agent so its auto-sleep timer resets. Without this,
-        // a mobile-only user (no chat / voice / drops on desktop)
-        // sees the companion fall asleep after 12 min even
-        // though they're actively looking at the chat on
-        // mobile. Tobe's report (2026-07-23 23:28): "The
-        // companions should sleep on the mobile also like they
-        // do on desktop."
-        //
-        // Note: this only RESETS the auto-sleep timer; it does
-        // NOT flip sleepState. If the companion is already
-        // sleeping, this won't wake it — the user has to send
-        // an actual interaction (chat / voice / treat / wake
-        // button) for that. This is intentional: passive viewing
-        // shouldn't wake a sleeping companion; only engagement
-        // should.
+        // Mobile-initiated activity heartbeat.
         if (!client.authenticated) return;
         if (this.onMobileActivityPing) {
           this.onMobileActivityPing(msg.agentId || 'companion', {
@@ -590,15 +397,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'llm_action': {
-        // v3.3.5: mobile-initiated LLM pill action. Phone taps
-        // "Start" / "Warm up" / "Unload" on the LlmStatusPill
-        // component; we forward to the main process via the
-        // llm:ollama-action IPC. The desktop runs the action and
-        // broadcasts the new status back via llm_status, so the
-        // phone's pill updates in real time without polling.
-        //
-        // Authentication: same as chat — the phone must have
-        // completed pairing and have a valid token.
+        // Mobile-initiated LLM pill action.
         if (!client.authenticated) return;
         if (typeof msg.action !== 'string' || typeof msg.model !== 'string') return;
         const validActions = ['start', 'warm', 'unload'];
@@ -612,20 +411,7 @@ class SyncServer extends EventEmitter {
         break;
       }
       case 'arena_treat_placed': {
-        // v3.10.72: mobile dropped a treat on the arena. The
-        // desktop handles the AI text reaction so the chat
-        // log matches the visual. Mirrors the desktop's
-        // placeTreatOnArena() in src/js/app.js:4905, which
-        // calls promptCompanionReaction('I just gave you X.
-        // What do you think?') right after dropping the treat.
-        // v3.2.79: forward `companionId` (which sprite the
-        // food was dropped near) so the renderer can route
-        // the chat reaction to that specific companion, not
-        // the activeChatAgentId fallback. Tobe 2026-08-06:
-        // "track which companion that actually eats the food
-        // and make it comment it". Mobile v3.10.138 added
-        // the companionId to the treat_placed/treat_eaten
-        // arena events.
+        // Mobile dropped a treat on the arena.
         if (!client.authenticated) return;
         if (this.onArenaTreatPlaced) {
           this.onArenaTreatPlaced(msg.treat || 'apple', {
@@ -637,13 +423,7 @@ class SyncServer extends EventEmitter {
         break;
       }
       case 'arena_treat_eaten': {
-        // v3.10.72: companion ate a treat. Desktop's seek-and-eat
-        // logic in src/js/pixel-arena.js fires its own
-        // promptCompanionEat() callback for local eats; this
-        // path is the mobile mirror so the chat log shows the
-        // same reaction when the mobile arena's companion eats.
-        // v3.2.79: forward `companionId` (the eater's id)
-        // same as arena_treat_placed above.
+        // Companion ate a treat.
         if (!client.authenticated) return;
         if (this.onArenaTreatEaten) {
           this.onArenaTreatEaten(msg.treat || 'apple', {
@@ -665,14 +445,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.8: attachment (image) upload from mobile.
-      // Routes through main.js's onAttachment handler
-      // which writes to disk + broadcasts via the
-      // renderer's chat pipeline. Tobe's v3.10.20
-      // follow-up: "handle the desktop side with the
-      // image handling". Until now the mobile sent
-      // the bytes but the desktop silently dropped
-      // them because no handler existed.
+      // Attachment (image) upload from mobile.
       case 'attachment': {
         if (!client.authenticated) return;
         if (this.onAttachment) {
@@ -718,12 +491,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.1.16: explicit agents-list refresh. The mobile can fire
-      // this if the user did something that should rebuild the
-      // companion tab bar (e.g. pulled-to-refresh, or the desktop
-      // announced a change). Same code path as request_state for
-      // the agents list half — the cache or the refresh callback
-      // is used.
+      // Explicit agents-list refresh.
       case 'request_agents_list': {
         if (!client.authenticated) return;
         console.log(`[SyncServer] Mobile requested agents list refresh (name=${client.name})`);
@@ -735,19 +503,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.1.95: explicit quests-list refresh. Mobile asks the desktop
-      // for the full list of quests. Same code path as
-      // request_agents_list — replay the cached payload if we have
-      // it, otherwise ask the main process to trigger a fresh
-      // broadcast via onRequestQuestsList.
-      //
-      // v3.1.52: Tobe's v3.8.0 testing found that the
-      // _lastQuestsList cache could be stale (the broadcast
-      // path that updates the cache was failing silently in
-      // some scenario), so an explicit request from the
-      // mobile would replay stale data. Always re-read from
-      // disk on explicit request — the file is small and
-      // loadQuests is fast (O(n) over typically <20 quests).
+      // Explicit quests-list refresh.
       case 'request_quests_list': {
         if (!client.authenticated) return;
         console.log(`[SyncServer] Mobile requested quests list refresh (name=${client.name})`);
@@ -767,12 +523,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'request_quest_instructions': {
-        // v3.2.30: mobile requests the markdown content of
-        // a quest's project instructions file. We forward to the
-        // main.js callback which calls the same
-        // cyberclaw.quests.readQuestInstructions IPC the desktop's
-        // renderer uses. The mobile is read-only on this
-        // file — the desktop owns the editor.
+        // Mobile requests the markdown content of a quest's project instructions file.
         if (!client.authenticated) return;
         const questId = msg.questId;
         if (!questId) {
@@ -825,13 +576,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'save_quest_instructions': {
-        // v3.2.33: mobile saves the quest instructions file
-        // (used by the mobile's quest editor). We forward
-        // to the same onSaveQuestInstructions callback
-        // the desktop's quest editor uses. The mobile
-        // waits for the ack before closing its editor
-        // (so the file is actually written before the
-        // user moves on). Shape: { questId, content }.
+        // Mobile saves the quest instructions file (used by the mobile's quest editor).
         if (!client.authenticated) return;
         const questId = msg.questId;
         const content = msg.content || '';
@@ -881,11 +626,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.61: mobile requests the per-quest conversation
-      // log (the JSON array, used by buildActiveQuestContext
-      // for LLM context). The desktop routes to the same
-      // `quests:get-conversation-log` IPC handler so the
-      // behaviour is identical to a renderer-side call.
+      // Mobile requests the per-quest conversation log (the JSON array, used by buildActiveQuestContext for LLM context).
       case 'request_quest_conversation_log': {
         if (!client.authenticated) return;
         const questId = msg.questId;
@@ -919,10 +660,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.61: mobile requests the raw per-quest conversation
-      // file content (the canonical markdown store at
-      // <quest.directory>/CONVERSATION.md). Same shape as
-      // the renderer-side IPC, just round-tripped through WS.
+      // Mobile requests the raw per-quest conversation file content (the canonical markdown store at <quest.directory>/CONVERSATION.md).
       case 'request_quest_conversation_file': {
         if (!client.authenticated) return;
         const questId = msg.questId;
@@ -982,11 +720,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.62: mobile asks for the CYBERCLAW.md
-        // content (the overarching system prompt).
-        // Returns content + default content + path,
-        // same shape as the desktop's
-        // `system:get-cyberclaw` IPC handler.
+      // Mobile asks for the CYBERCLAW.md content (the overarching system prompt).
         case 'request_cyberclaw_system': {
           if (!client.authenticated) return;
           if (!this.onGetCyberclawSystem) {
@@ -1048,11 +782,7 @@ class SyncServer extends EventEmitter {
           break;
         }
 
-        // v3.2.62: mobile resets CYBERCLAW.md to the
-        // default. After reset, the desktop replies with
-        // both `cyberclaw_system_reset` AND a fresh
-        // `cyberclaw_system` event so the mobile UI can
-        // update its content textbox automatically.
+        // Mobile resets CYBERCLAW.md to the default.
         case 'reset_cyberclaw_system': {
           if (!client.authenticated) return;
           if (!this.onResetCyberclawSystem) {
@@ -1084,10 +814,7 @@ class SyncServer extends EventEmitter {
           break;
         }
 
-      // v3.2.35: mobile requests a companion's soul.md. Read-only
-      // — the desktop's Companion Forge is the editor. The
-      // response carries the same fields the IPC handler returns
-      // (content + presets) so the mobile can offer preset chips.
+      // Mobile requests a companion's soul.md.
       case 'read_companion_soul': {
         if (!client.authenticated) return;
         const agentId = msg.agentId;
@@ -1187,10 +914,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.35: mobile asks the desktop to clear a companion's
-      // memory.md. The desktop's IPC returns `{ ok, content }`
-      // (content is the new empty string), which we forward as
-      // the ack so the mobile can refresh its viewer.
+      // Mobile asks the desktop to clear a companion's memory.md.
       case 'clear_companion_memory': {
         if (!client.authenticated) return;
         const agentId = msg.agentId;
@@ -1238,34 +962,11 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.8.0: phone-side quest edit. The mobile can now
-      // edit quests over WebSocket. Each inbound message
-      // routes to a callback in main.js that performs the
-      // mutation using the same loadQuests → modify →
-      // saveQuests flow the desktop's IPC handlers use. The
-      // save triggers a `quests_list` broadcast (existing
-      // path) so the mobile's optimistic update is replaced
-      // with the canonical data within ~100ms.
-      //
-      // Ack protocol: if the mutation succeeds, no ack is
-      // sent — the mobile just waits for the next
-      // `quests_list` broadcast to confirm. If it fails
-      // (quest not found, invalid id, etc.), we send a
-      // `quests_update_failed` ack with the action and id
-      // so the mobile can roll back its optimistic update
-      // and show an error.
+      // Phone-side quest edit.
       case 'set_quest_active': {
         if (!client.authenticated) return;
         const { id } = msg;
-        // v3.2.42: debug log so we can see if the
-        // mobile's click is actually sending the WS
-        // message. Tobe reported (2026-08-02 16:46)
-        // "i tried to activate a another quest but it
-        // wont change when clicking the button." We
-        // don't know yet if the click is registering on
-        // the mobile, if the WS message is being sent,
-        // or if the desktop is silently dropping it.
-        // This log answers the third question.
+        // Debug log so we can see if the mobile's click is actually sending the WS message.
         console.log(`[SyncServer] set_quest_active received from ${client.name}: id=${id}`);
         try {
           if (this.onSetQuestActive) this.onSetQuestActive(id);
@@ -1281,17 +982,7 @@ class SyncServer extends EventEmitter {
         try {
           const ok = this.onUpdateQuest ? this.onUpdateQuest(id, updates || {}) : null;
           if (!ok) {
-            // v3.10.77: include the full list of
-            // available quests (with id + name) in the
-            // error response. Tobe has hit repeated
-            // "quest not found" errors — first with the
-            // v3.10.73 broadcast-acked gate, then again
-            // with the v3.10.74 diagnostic info. The
-            // new info (full id+name pairs) plus the
-            // name-based fallback in onUpdateQuest
-            // should narrow down what's actually
-            // happening. Log server-side with the
-            // same info so the desktop log captures it.
+            // Include the full list of available quests (with id + name) in the error response.
             const available = this.onListQuests ? (this.onListQuests() || []) : [];
             console.log('[SyncServer] update_quest: id not found. requested:', id, 'available:', JSON.stringify(available));
             this._send(ws, {
@@ -1374,12 +1065,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'sprite_config_sync': {
-        // v3.2.26: phone-side companion edit (Personalize screen).
-        // `{ agentId, config }` where config is a partial sprite
-        // config patch (only the fields the user changed). main.js
-        // merges it with the existing config + persists + broadcasts
-        // the updated agents_list so the change appears on every
-        // connected client (including the mobile that initiated it).
+        // Phone-side companion edit (Personalize screen).
         if (!client.authenticated) return;
         if (!this.onSaveSpriteConfig) {
           console.warn('[SyncServer] sprite_config_sync: no onSaveSpriteConfig callback wired');
@@ -1392,11 +1078,7 @@ class SyncServer extends EventEmitter {
           this._send(ws, { type: 'sprite_config_sync_failed', reason: 'missing_agentId', error: 'agentId required', ts: Date.now() });
           return;
         }
-        // Whitelist of accepted fields. Anything else is
-        // silently dropped — this prevents the mobile from
-        // (accidentally or otherwise) overwriting unrelated
-        // state. The whitelist mirrors the desktop forge's
-        // saveSpriteConfig call.
+        // Whitelist of accepted fields.
         const ALLOWED = ['pixelCompanionId', 'spiritId', 'customName', 'focusSkills', 'traits', 'primaryModel', 'secondaryModel', 'scale', 'chattiness'];
         const sanitized = {};
         for (const k of ALLOWED) {
@@ -1416,10 +1098,7 @@ class SyncServer extends EventEmitter {
         }
         const ok = this.onSaveSpriteConfig(agentId, sanitized);
         if (ok && ok.ok !== false) {
-          // Ack explicit success so the mobile can show a
-          // "Saved" toast and stop its spinner. The full
-          // updated agents_list will arrive via the regular
-          // broadcast ~100ms later.
+          // Ack explicit success so the mobile can show a "Saved" toast and stop its spinner.
           this._send(ws, { type: 'sprite_config_sync_ok', agentId, ts: Date.now() });
         } else {
           this._send(ws, { type: 'sprite_config_sync_failed', agentId, reason: ok?.reason || 'unknown', error: ok?.error || 'save failed', ts: Date.now() });
@@ -1433,15 +1112,7 @@ class SyncServer extends EventEmitter {
       }
 
       case 'provider_save': {
-        // v3.3.10: mobile sends an API key for a
-        // provider. The mobile's CompanionEditScreen
-        // Models panel lets the user paste a key + pick
-        // a provider; on unmount the mobile ships the
-        // key to the desktop so the desktop's
-        // providers.json registry stays in sync.
-        // We forward to the same IPC the desktop's
-        // forge uses (providers:save), so the existing
-        // sanitization + persistence apply.
+        // Mobile sends an API key for a provider.
         if (!client.authenticated) return;
         const provider = msg.provider;
         if (!provider || typeof provider !== 'object') {
@@ -1478,16 +1149,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.1.91: mobile asks the desktop to synthesize
-      // speech audio for the wake greeting phrase. The
-      // device-side native TTS is unavailable on some
-      // Android skins (no engine installed), so the phone
-      // has the desktop synthesize the audio and caches it
-      // locally for instant playback on wake events. The
-      // request is async: the desktop calls piper TTS via
-      // local-ai.synthesizeSpeech and sends back an
-      // audio_response tagged with requestId='greeting' so
-      // the phone can route it to the greeting cache.
+      // Mobile asks the desktop to synthesize speech audio for the wake greeting phrase.
       case 'request_greeting_audio': {
         if (!client.authenticated) return;
         const text = (msg.text || '').trim();
@@ -1502,13 +1164,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.29 (sibling of request_greeting_audio): mobile
-      // asks the desktop to synthesize the exit reply
-      // phrase. Same piper TTS path as the greeting, but
-      // the audio_response is tagged requestId='exit_reply'
-      // so the phone routes it to the exit-reply cache
-      // instead of the greeting cache. Mobile plays the
-      // cached audio on voice-mode close.
+      // Mobile asks the desktop to synthesize the exit reply phrase.
       case 'request_working_audio': {
         if (!client.authenticated) return;
         const text = (msg.text || '').trim();
@@ -1536,18 +1192,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.0: mobile asks the desktop to start a custom
-      // openWakeWord training job. We just emit the request;
-      // main.js picks it up, runs the same training script
-      // that the IPC handler `agent:train-wake-phrase` uses,
-      // and routes progress + completion back to the mobile
-      // via this.syncServer.sendToMobile({type: 'wake_training_...'}).
-      //
-      // Why not call the IPC handler directly: the IPC handler
-      // is registered on the desktop renderer's webContents
-      // invocation, not from main.js itself. Going through an
-      // event gives us the same spawn-and-stream behavior with
-      // a single shared implementation.
+      // Mobile asks the desktop to start a custom openWakeWord training job.
       case 'request_wake_training': {
         if (!client.authenticated) return;
         // v3.1.38: `samples` is now [{name, data}] (base64 audio),
@@ -1567,13 +1212,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.1.40: mobile asks the desktop for the most recent
-      // wake-training result for an agent. Used on reconnect /
-      // remount: the phone lost its socket mid-training (Android
-      // background-killed it, network blip, etc.) and the desktop
-      // finished the run while the phone was offline. We cache the
-      // last result per agent for 15 minutes so the phone can pick
-      // up where it left off without re-recording and re-training.
+      // Mobile asks the desktop for the most recent wake-training result for an agent.
       case 'get_latest_wake_training_result': {
         console.log(`[SyncServer] get_latest_wake_training_result from ${client.name || '?'} agentId=${msg.agentId}`);
         if (!client.authenticated) return;
@@ -1581,14 +1220,7 @@ class SyncServer extends EventEmitter {
           this._send(ws, { type: 'wake_training_result', ok: false, error: 'agentId required' });
           return;
         }
-        // v3.1.46: if main.js has cached a recent wake_training_progress
-        // for this agent, attach it to the reply. The phone's
-        // watchdog polls this case every 20s while training is
-        // active; the phone uses the latest progress to re-paint
-        // the bar if its own WebSocket was dead when the progress
-        // events fired (broadcast skips dead ws). Without this,
-        // a phone that reconnects mid-training sees a frozen 30%
-        // bar until the training actually finishes.
+        // If main.js has cached a recent wake_training_progress for this agent, attach it to the reply.
         if (typeof this._getLastWakeProgress === 'function') {
           const latest = this._getLastWakeProgress(msg.agentId);
           if (latest && (Date.now() - (latest.ts || 0) < 5 * 60 * 1000)) {
@@ -1616,10 +1248,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.2.0: mobile asks for the bytes of a previously-trained
-      // .tflite. Returns base64. Used after wake_training_done
-      // arrives so the phone can store the model locally and
-      // hot-swap the wake interpreter.
+      // Mobile asks for the bytes of a previously-trained .tflite.
       case 'read_wake_model': {
         if (!client.authenticated) return;
         if (!msg.tflitePath) {
@@ -1647,15 +1276,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.5.0: exit-phrase training. Parallel to wake
-      // training but keyed by phrase instead of agentId
-      // (exit phrases are user-level, not per-companion).
-      // The same train_wake_phrase.py script runs either
-      // way — openWakeWord is a generic binary wake-word
-      // classifier; the phrase string doesn't change the
-      // training pipeline. We just route to a different
-      // working directory keyed on phrase, and the model
-      // comes back via a parallel `exit_*` message chain.
+      // Exit-phrase training.
       case 'request_exit_training': {
         if (!client.authenticated) return;
         if (!msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
@@ -1724,15 +1345,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.6.0: send-word training. Same shape as the exit
-      // cases above: per-phrase scope (the send word is
-      // user-level, not per-companion), separate message
-      // chain so the three pipelines don't collide. The
-      // mobile's SendPhraseTrainer has shipped since
-      // v3.6.0 but the desktop was missing these cases
-      // — the request fell into the default arm and the
-      // trainer stuck at "Uploading samples to desktop…"
-      // indefinitely. Adding them closes the loop.
+      // Send-word training.
       case 'request_send_training': {
         if (!client.authenticated) return;
         if (!msg.phrase || !Array.isArray(msg.samples) || !msg.samples.length) {
@@ -1801,13 +1414,7 @@ class SyncServer extends EventEmitter {
         break;
       }
 
-      // v3.9.0: trainer manager wire protocol (wake).
-      // The mobile's WakeSetManagerScreen calls these
-      // to surface the desktop's existing wake-training
-      // cache as importable sets, and to push freshly-
-      // trained sets back to the desktop as a backup.
-      // Exit / send wire cases will follow in v3.9.1 /
-      // v3.9.2 once those screens exist.
+      // Trainer manager wire protocol (wake).
       case 'list_wake_sets_from_desktop': {
         if (!client.authenticated) return;
         // Delegate to main.js which knows about the
@@ -1833,10 +1440,7 @@ class SyncServer extends EventEmitter {
         this.emit('export_wake_set_to_desktop', { ws, setId: msg.setId, base64: msg.base64, phrase: msg.phrase });
         break;
       }
-      // v3.2.95: mobile asks the desktop for the piper voice
-      // list + the current selection. Used by the mobile's
-      // voice picker to mirror the desktop. Returns
-      // { type: 'tts_settings', ok, voices, current, ts }.
+      // Mobile asks the desktop for the piper voice list + the current selection.
       case 'request_tts_settings': {
         if (!client.authenticated) return;
         if (this.onGetTtsSettings) {
@@ -1867,11 +1471,7 @@ class SyncServer extends EventEmitter {
         }
         break;
       }
-      // v3.2.95: mobile sets the desktop's piper voice.
-      // Writes localStorage.cyberclaw-settings.ttsVoice via
-      // executeJavaScript (same key the renderer's saveSettings
-      // writes). On success, broadcasts tts_settings_changed
-      // to all connected mobiles.
+      // Mobile sets the desktop's piper voice.
       case 'set_tts_voice': {
         if (!client.authenticated) return;
         if (!msg.voice || typeof msg.voice !== 'string') {
@@ -2010,12 +1610,7 @@ class SyncServer extends EventEmitter {
     }
   }
 
-  // v3.1.91: synthesize greeting audio on the desktop and
-  // send back as an audio_response tagged so the phone can
-  // route it to the greeting cache instead of the AI-reply
-  // playback path. Synthesizes with the same piper voice
-  // the desktop uses for AI replies so the greeting
-  // matches the in-conversation voice.
+  // Synthesize greeting audio on the desktop and send back as an audio_response tagged so the phone can route it to the greeting cache instead…
   async _handleGreetingAudio(ws, text) {
     const localAI = require('./local-ai');
     const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
@@ -2030,10 +1625,7 @@ class SyncServer extends EventEmitter {
       console.warn('[SyncServer] synthesizeSpeech returned empty for greeting');
       return;
     }
-    // Tag the audio_response so the phone knows to cache
-    // it as the greeting (vs playing it immediately as an
-    // AI reply). The phone keys its cache by audio hash or
-    // stores the raw base64 with the phrase as the key.
+    // Tag the audio_response so the phone knows to cache it as the greeting (vs playing it immediately as an AI reply).
     const payload = {
       type: 'audio_response',
       audioBase64,
@@ -2053,13 +1645,7 @@ class SyncServer extends EventEmitter {
       this._send(ws, payload);
       console.log(`[SyncServer] Sent greeting audio (${audioBase64.length} chars) to mobile`);
     } else {
-      // v3.1.32: the original WS may have reconnected
-      // during the 2-5s synthesis window. Fall back to
-      // any currently-authenticated client, same
-      // pattern as sendAudioResponse. Without this, a
-      // brief network blip between the synthesis
-      // request and the audio response would silently
-      // drop the cache write.
+      // The original WS may have reconnected during the 2-5s synthesis window.
       let sent = false;
       for (const [clientWs, client] of this.clients) {
         if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
@@ -2073,18 +1659,7 @@ class SyncServer extends EventEmitter {
     }
   }
 
-  // v3.10.162: synthesize working speech audio on the
-  // desktop and send back as an audio_response tagged
-  // requestId='working_speech'. Same piper TTS path as
-  // greeting + exit reply. Mobile's
-  // WorkingSpeechAudioCache module receives the audio
-  // and stores it keyed by phrase. Once the cache is
-  // warm, the mobile's playWorkingSpeechAndCue() path
-  // reads from cache instead of falling back to Android
-  // TTS. Tobe (2026-08-11 22:22): 'the goal is to build
-  // as local as possible' — using desktop piper for the
-  // working cue keeps a single consistent voice across
-  // greeting + working + AI response + exit reply.
+  // Synthesize working speech audio on the desktop and send back as an audio_response tagged requestId='working_speech'.
   async _handleWorkingAudio(ws, text) {
     const localAI = require('./local-ai');
     const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
@@ -2113,14 +1688,7 @@ class SyncServer extends EventEmitter {
     console.log(`[SyncServer] Sent working speech audio (${audioBase64.length} chars)`);
   }
 
-  // v3.2.29: synthesize exit reply audio on the desktop
-  // and send back as an audio_response tagged so the
-  // phone can route it to the exit-reply cache. Same
-  // piper TTS path as _handleGreetingAudio — the only
-  // difference is the requestId so the phone knows
-  // which cache to write to. Synthesizes with the
-  // same piper voice as greetings and AI replies so
-  // the exit reply matches the in-conversation voice.
+  // Synthesize exit reply audio on the desktop and send back as an audio_response tagged so the phone can route it to the exit-reply cache.
   async _handleExitReplyAudio(ws, text) {
     const localAI = require('./local-ai');
     const stripEmojis = (s) => s.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
@@ -2135,10 +1703,7 @@ class SyncServer extends EventEmitter {
       console.warn('[SyncServer] synthesizeSpeech returned empty for exit reply');
       return;
     }
-    // Tag the audio_response so the phone knows to
-    // cache it as the exit reply (vs the greeting, vs
-    // an AI reply). The phone keys its cache by phrase
-    // string.
+    // Tag the audio_response so the phone knows to cache it as the exit reply (vs the greeting, vs an AI reply).
     const payload = {
       type: 'audio_response',
       audioBase64,
@@ -2154,10 +1719,7 @@ class SyncServer extends EventEmitter {
       this._send(ws, payload);
       console.log(`[SyncServer] Sent exit reply audio (${audioBase64.length} chars) to mobile`);
     } else {
-      // Same reconnection fallback as _handleGreetingAudio:
-      // the original WS may have reconnected during the
-      // 2-5s synthesis window. Without this, a brief
-      // network blip would silently drop the cache write.
+      // Same reconnection fallback as _handleGreetingAudio: the original WS may have reconnected during the 2-5s synthesis window.
       let sent = false;
       for (const [clientWs, client] of this.clients) {
         if (client.authenticated && clientWs.readyState === WebSocket.OPEN) {
@@ -2173,20 +1735,7 @@ class SyncServer extends EventEmitter {
 
   _sendFullState(ws) {
     this._send(ws, { type: 'request_state_from_main' });
-    // v3.1.17: replay the latest agents list so a reconnecting
-    // mobile can rebuild its companion tab bar. Without this, only
-    // a client connected during the initial arena init would have
-    // any agents at all.
-    //
-    // v3.1.16: the previous code gated this on a 10-minute TTL
-    // `(Date.now() - this._lastAgentsList.ts) < 600000`, but that's
-    // wrong — a user who starts the desktop, walks away for an
-    // hour, then opens the mobile app would find the agents list
-    // never replays. The list itself is small and the desktop is
-    // the source of truth, so always replay it as long as the
-    // cache exists. If the cache is empty (mobile connected before
-    // the renderer's first broadcast), we ask the main process to
-    // trigger a fresh broadcast.
+    // Replay the latest agents list so a reconnecting mobile can rebuild its companion tab bar.
     if (this._lastAgentsList) {
       console.log(`[SyncServer] Replaying recent agents_list (${this._lastAgentsList.payload.agents.length} agents) to reconnected client`);
       this._send(ws, this._lastAgentsList.payload);
@@ -2194,40 +1743,11 @@ class SyncServer extends EventEmitter {
       console.log('[SyncServer] No cached agents_list — asking main process to refresh');
       try { this.onRequestAgentsList(); } catch (e) { console.log('[SyncServer] onRequestAgentsList failed:', e?.message); }
     }
-    // v3.1.95: also replay quests list so a reconnecting mobile
-    // restores its quest cache without depending on the
-    // HomeScreen's own refresh loop. Quests are persisted to
-    // AsyncStorage on the mobile side too, but replay means the
-    // mobile is consistent with the desktop within ~1 RTT after
-    // auth completes.
+    // Also replay quests list so a reconnecting mobile restores its quest cache without depending on the HomeScreen's own refresh loop.
     if (this.onRequestQuestsList) {
-      // v3.3.16: always ask main.js for a fresh read on
-      // full-state replay, instead of using the cached
-      // `_lastQuestsList` payload. The cache can carry a
-      // stale `q.active` if the broadcast state drifted
-      // from disk (e.g. the desktop restarted while the
-      // cache held a transient value, or the mobile
-      // connected before any saveQuests fired in this
-      // process boot). Re-reading disk is cheap (O(n)
-      // over typically <20 quests, and runs once per
-      // mobile connect), and eliminates a class of
-      // mobile-side chat-flash bugs where the replay
-      // anchors the mobile on the wrong active quest.
-      //
-      // The cache is still used by the broadcast path
-      // (every saveQuests updates it before broadcasting,
-      // so within a single process boot the cache is
-      // authoritative). Only the replay-on-reconnect
-      // path goes through this fresh-read.
+      // Always ask main.js for a fresh read on full-state replay, instead of using the cached `_lastQuestsList` payload.
       try { this.onRequestQuestsList(); } catch (e) { console.log('[SyncServer] onRequestQuestsList failed in _sendFullState:', e?.message); }
-      // Belt-and-braces: also send the cache immediately
-      // so the mobile doesn't have to wait for the
-      // fresh-broadcast round-trip. The fresh broadcast
-      // (if it differs) will overwrite this on the next
-      // tick. The cache replay is tagged
-      // `source: 'cache_replay'` so the mobile can
-      // distinguish it from fresh broadcasts and prefer
-      // the fresh one when both arrive.
+      // Belt-and-braces: also send the cache immediately so the mobile doesn't have to wait for the fresh-broadcast round-trip.
       if (this._lastQuestsList) {
         const replayPayload = {
           ...this._lastQuestsList.payload,
@@ -2241,29 +1761,11 @@ class SyncServer extends EventEmitter {
       console.log(`[SyncServer] Replaying recent quests_list (${this._lastQuestsList.payload.quests.length} quest(s)) to reconnected client (cache only — no onRequestQuestsList)`);
       this._send(ws, this._lastQuestsList.payload);
     }
-    // v3.2.23: replay the recent AI messages buffer so a
-    // reconnecting mobile catches up on messages that landed
-    // during its disconnect. Previous version cached only
-    // ONE message with a 60s window — way too narrow for
-    // any real disconnect (Tobe's report: phone sleep /
-    // app switch / brief connectivity loss all exceed 60s).
-    // Now we replay the entire rolling buffer (up to 50
-    // messages); the mobile's dedupe drops anything it
-    // already has.
+    // Replay the recent AI messages buffer so a reconnecting mobile catches up on messages that landed during its disconnect.
     if (this._recentAiMessages && this._recentAiMessages.length > 0) {
       console.log(`[SyncServer] Replaying ${this._recentAiMessages.length} recent AI message(s) to reconnected client`);
       for (const entry of this._recentAiMessages) {
-        // v3.2.40: tag the payload with replay:true so the
-        // mobile can suppress notifications for replays.
-        // Without this flag, a mobile that reconnects after
-        // the agent sent N replies during the disconnect
-        // window would get N notifications fired one after
-        // another — clearly wrong (the user wasn't there to
-        // be notified), Tobe reported 2026-08-01.
-        // The chat-message handler on the mobile still
-        // appends the message to the chat history (correct:
-        // the user DOES want to see what was said); only
-        // the system notification is suppressed.
+        // Tag the payload with replay:true so the mobile can suppress notifications for replays.
         this._send(ws, { ...entry.payload, replay: true });
       }
     }
@@ -2280,25 +1782,7 @@ class SyncServer extends EventEmitter {
   }
 
   broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null, attachments = null) {
-    // v3.3.19: include activeQuestId + activeQuestName on
-    // the realtime chat_message broadcast so the mobile's
-    // appendAgentMessage can route incoming messages into
-    // the correct per-quest bucket. v3.3.18 stripped these
-    // fields — see the audit table in CHANGES_3.3.19.md
-    // for the full layer breakdown. The legacy renderer
-    // (pre-v3.3.18) didn't stamp on the IPC call either,
-    // so old builds still work: undefined → null on the
-    // payload, which is what old mobile builds expected.
-    //
-    // v3.3.20: include `attachments` for image bubbles
-    // (the [SCREENSHOT target=...] directive flow). The
-    // mobile's renderMessage already accepts attachments
-    // for outbound user-attachment sends — see
-    // HomeScreen.tsx around line 6190. Reusing the same
-    // shape here means the mobile can show the screenshot
-    // thumbnail without a new bubble component. `null`
-    // (or non-array) for text bubbles — the mobile
-    // ignores that case.
+    // Include activeQuestId + activeQuestName on the realtime chat_message broadcast so the mobile's appendAgentMessage can route incoming…
     const payload = {
       type: 'chat_message',
       agentId,
@@ -2313,26 +1797,7 @@ class SyncServer extends EventEmitter {
       attachments: (Array.isArray(attachments) && attachments.length > 0) ? attachments : null,
       ts: Date.now(),
     };
-    // v3.2.23: cache recent AI messages for reconnect replay.
-    // The previous version cached only ONE message with a 60s
-    // window — so a mobile that disconnected for >60s (the
-    // typical case for a phone going to sleep, switching apps,
-    // or briefly losing connectivity) would miss agent replies
-    // that landed during the disconnect. Tobe reported (2026-07-23
-    // 21:29) "i swipe down to the bottom but no more chats
-    // appear" — his phone lost the WS connection during an
-    // agent reply broadcast, and the replay window had long
-    // since expired.
-    //
-    // New behaviour: keep a rolling buffer of the last 50 AI
-    // messages. On reconnect, replay ALL of them in order; the
-    // mobile's appendAgentMessage dedupe (v3.10.89 Stage 1+2+3)
-    // drops duplicates already in its local cache, so the
-    // replay is safe even if the mobile already has some
-    // messages.
-    //
-    // Keep at most 50 entries to bound memory (50 messages ×
-    // ~5KB each = 250KB, negligible).
+    // Cache recent AI messages for reconnect replay.
     if (!isUser) {
       if (!this._recentAiMessages) this._recentAiMessages = [];
       this._recentAiMessages.push({ payload, ts: Date.now() });
@@ -2346,12 +1811,7 @@ class SyncServer extends EventEmitter {
     this._broadcast(payload);
   }
 
-  // v3.1.15: broadcast the full list of agents so the mobile can mirror
-  // the desktop arena (one companion per agent, not just the active one).
-  // Each entry: { id, name, sprite, scale, emoji }
-  // v3.1.17: cache the last agents list so a reconnecting client can
-  // get the current list even if it wasn't connected during the
-  // initial arena init.
+  // Broadcast the full list of agents so the mobile can mirror the desktop arena (one companion per agent, not just the active one).
   broadcastAgentsList(agents) {
     if (!Array.isArray(agents) || agents.length === 0) return;
     const payload = { type: 'agents_list', agents, ts: Date.now() };
@@ -2360,24 +1820,9 @@ class SyncServer extends EventEmitter {
     this._broadcast(payload);
   }
 
-  // v3.1.95: broadcast the full list of quests so the mobile can
-  // mirror the desktop's quest panel. Each entry is the full
-  // quest object as stored in ~/.openclaw/cyberclaw/quests.json
-  // (id, name, description, status, directory, goals, created,
-  // etc). The mobile renders a read-only list (cache is keyed by
-  // companionId on the phone side; the full list is shared
-  // globally on the desktop so the mobile just gets the same
-  // array). Cache the last payload so a reconnecting client gets
-  // the current list even if it disconnected after the initial
-  // broadcast.
+  // Broadcast the full list of quests so the mobile can mirror the desktop's quest panel.
   broadcastQuestsList(quests) {
-    // v3.3.16: tag fresh broadcasts with `source: 'broadcast'`
-    // so the mobile can distinguish them from cached replays
-    // (which carry `source: 'cache_replay'`). The mobile uses
-    // this to decide whether to seed the per-device
-    // active-quest anchor — replays are suspect because the
-    // cache can drift relative to disk, while broadcasts
-    // always carry the just-saved state.
+    // Tag fresh broadcasts with `source: 'broadcast'` so the mobile can distinguish them from cached replays (which carry `source:…
     const payload = {
       type: 'quests_list',
       quests: Array.isArray(quests) ? quests : [],
@@ -2394,10 +1839,7 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'companion_id', companionId, ts: Date.now() });
   }
 
-  // v3.2.95: TTS voice changed. Tells every connected mobile
-  // to update its local cache of the desktop's current voice.
-  // The mobile's own picker (if open) refreshes its checkmark
-  // on receipt. Cached for reconnect replay.
+  // TTS voice changed.
   broadcastTtsSettingsChanged(current) {
     console.log(`[SyncServer] Broadcasting tts_settings_changed: ${current}`);
     const payload = { type: 'tts_settings_changed', current, ts: Date.now() };
@@ -2409,17 +1851,7 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'typing', active, ts: Date.now() });
   }
 
-  // v3.3.5: broadcast local-LLM status to the mobile. Fires on
-  // desktop chat-open and after any pill action (warm/unload/start).
-  // The mobile renders a matching pill so the user can start
-  // Ollama from the phone after a reboot without needing to
-  // touch the desktop. Payload shape mirrors the IPC status
-  // response so the renderer doesn't need to reformat.
-  //
-  // We use type 'llm_status' to keep it distinct from
-  // 'state_sync' (full state dumps) and 'chat_message' (per-
-  // message broadcasts). Mobile's onAgentTool / onMessage
-  // handler routes this to the pill component.
+  // Broadcast local-LLM status to the mobile.
   broadcastLlmStatus(status) {
     if (!status) return;
     const payload = {
@@ -2477,28 +1909,11 @@ class SyncServer extends EventEmitter {
     this._send(ws, { type: 'chat_history', messages, ts: Date.now() });
   }
 
-  // v3.1.17: per-agent chat history for the mobile companion tab bar.
-  // Each tab on the mobile shows only the chat history for the
-  // selected companion. The desktop stores chatHistoryByAgent[id]
-  // so we just look up and send the requested agent's history.
-  //
-  // v3.3.19: third arg can be either a flat `messages` array
-  // (legacy v3.1.17-v3.3.18 shape, only the DEFAULT bucket)
-  // or a `buckets` map keyed by questKeyForStorage(qid)
-  // (v3.3.19+ per-quest shape). The mobile's onAgentHistory
-  // handler (v3.11.12+) reads `buckets`; older mobile builds
-  // (v3.11.11 and prior) read `messages` — the response
-  // includes BOTH when the source has `buckets` so old
-  // builds keep working as a fallback. (Old builds ignore
-  // extra fields, so adding `buckets` is non-breaking.)
+  // Per-agent chat history for the mobile companion tab bar.
   sendAgentHistory(ws, agentId, source) {
     const payload = { type: 'agent_history', agentId, ts: Date.now() };
     if (source && typeof source === 'object' && !Array.isArray(source)) {
-      // Map shape (v3.3.19+). Send `buckets` for the mobile's
-      // per-quest routing; ALSO derive a flat `messages`
-      // from the DEFAULT bucket (or the first non-empty
-      // bucket) so old builds don't show a blank chat
-      // panel after their `messages` field goes missing.
+      // Map shape (v3.3.19+).
       payload.buckets = source;
       const defaultBucket = source[Object.keys(source).find(k => k === '__default__') || '__default__']
         || Object.values(source)[0]
@@ -2524,10 +1939,7 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'remote_tool', id, op, ...params });
   }
 
-  /**
-   * Send a message to all authenticated mobile clients.
-   * Returns true if at least one client was reachable, false if no device connected.
-   */
+  /** Send a message to all authenticated mobile clients. */
   sendToMobile(payload) {
     const authenticatedEntries = [...this.clients.entries()].filter(([, c]) => c.authenticated);
     if (authenticatedEntries.length === 0) return false;
@@ -2579,33 +1991,7 @@ class SyncServer extends EventEmitter {
     }
   }
 
-  /**
-   * v3.2.96: read the desktop's currently-selected TTS
-   * voice (piper voice name, e.g. 'lessac', 'amy',
-   * 'kristin') from the renderer's localStorage
-   * settings. Mirrors the inline read in main.js:5200.
-   *
-   * Three audio synthesis paths in this file
-   * (greeting, working, exit reply) previously
-   * hardcoded 'lessac' for the piper synthesis call,
-   * which meant a user who picked 'kristin' in the
-   * desktop settings got LESSAC audio for greeting /
-   * working / exit reply (the only voice that respected
-   * the setting was the main AI-reply TTS path in
-   * main.js). The mobile caches made the bug permanent:
-   * a voice change in the picker only affected the next
-   * wake *if* the cache was empty.
-   *
-   * Fix: read the voice here the same way main.js does,
-   * default to 'lessac' on any failure (missing
-   * mainWindow, renderer not ready, localStorage
-   * missing). The matching mobile-side cache-key change
-   * (in GreetingAudioCache / ExitReplyAudioCache /
-   * WorkingSpeechAudioCache) ensures the per-voice
-   * audio is cached separately, so the next wake after
-   * a voice change actually plays the new voice instead
-   * of the stale cached one.
-   */
+  /** Read the desktop's currently-selected TTS voice (piper voice name, e.g. */
   async _getTtsVoice() {
     try {
       if (!this.mainWindow || this.mainWindow.isDestroyed()) {

@@ -19,37 +19,11 @@ function discordLog(emoji, title, detail = '', level = 'info') {
 
 let mainWindow;
 
-// v3.2.52: attachment batching buffer. The mobile sends
-// each image as a SEPARATE WS `attachment` message (one
-// per file in the user's selection). Without batching, the
-// desktop fires one `mobile-attachment` IPC per image, and
-// each one triggers its own chat:send-message HTTP call
-// to the gateway. A 9-image paste would queue 9 separate
-// LLM calls in the renderer's per-agent chatSendChain,
-// each of which could take 10-30s — easily exceeding the
-// chain timeout. Tobe 2026-08-02 22:13: 'No response
-// from OpenClaw.' (the chain timed out before all calls
-// completed).
-//
-// Batching: hold attachments for 700ms after the LAST
-// one arrives. Then fire ONE mobile-attachment-batch IPC
-// with all attachments in a single payload. The renderer's
-// handler builds ONE multimodal content array, fires ONE
-// chat:send-message call. Same Discord-style flow.
+// Attachment batching buffer.
 let pendingAttachments = [];
 let attachmentFlushTimer = null;
 const ATTACHMENT_FLUSH_MS = 700;
-// v3.2.56: buffer the inbound mobile chat text so an
-// attachment batch can merge with it before the LLM call
-// is fired. The mobile sends text and attachments as
-// separate WS messages; the text arrives immediately,
-// the attachment bytes take 50-200ms to upload. Without
-// buffering, the renderer fires a text-only LLM call
-// (the user sees "I can't see image" in the chat bubble)
-// and then a separate image-only LLM call 700ms later
-// (TTS'd, never shown as a chat bubble). Buffering here
-// in main.js lets us know about both text AND the
-// pendingAttachments array at the same time.
+// Buffer the inbound mobile chat text so an attachment batch can merge with it before the LLM call is fired.
 let pendingMobileChatText = null; // { text, agentId, meta, timer }
 const MOBILE_CHAT_HOLD_MS = 1500;
 
@@ -58,25 +32,12 @@ function flushAttachmentBatch() {
   const batch = pendingAttachments;
   pendingAttachments = [];
   attachmentFlushTimer = null;
-  // v3.2.54: log the batch we're about to send so we
-  // can see whether the base64 data is actually in the
-  // payload. Tobe 2026-08-02 22:35 test showed the
-  // desktop log had body=4483b with attachments=1 — way
-  // too small for a 264KB image. The base64 must be
-  // getting dropped somewhere in the IPC chain.
+  // Log the batch we're about to send so we can see whether the base64 data is actually in the payload.
   for (const a of batch) {
     const dataLen = a.data ? a.data.length : 0;
     console.log(`[mobile-attachment-batch] flushing ${a.fileName} (${a.size} bytes on disk, data=${dataLen} chars of base64, hasData=${!!a.data})`);
   }
-  // v3.2.56: if a mobile chat is buffered, merge the text
-  // with the attachments. The mobile sends text and
-  // attachments as separate WS messages; without merging
-  // the LLM sees a text-only turn followed by an image-only
-  // turn (split-turn bug — Tobe 2026-08-03 09:23 confirmed
-  // the split was still happening with the v3.2.56
-  // 600ms renderer hold). The fix lives here in main.js
-  // because this is the only layer that has visibility
-  // into both pendingAttachments and the buffered text.
+  // If a mobile chat is buffered, merge the text with the attachments.
   if (pendingMobileChatText) {
     if (pendingMobileChatText.timer) clearTimeout(pendingMobileChatText.timer);
     const text = pendingMobileChatText.text;
@@ -86,10 +47,7 @@ function flushAttachmentBatch() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       const { ws: _ws, ...serializableMeta } = capturedMeta || {};
       console.log(`[mobile-attachment-batch] merging text from pending mobile chat: ${text.substring(0, 60)}`);
-      // Send a single combined IPC. The renderer's
-      // mobile-chat handler will see the attachments
-      // array and route to sendChatMessage(text, attachments)
-      // instead of a text-only send.
+      // Send a single combined IPC.
       mainWindow.webContents.send('mobile-chat-with-attachments', {
         text,
         agentId,
@@ -109,37 +67,15 @@ let ptyProcess = null;
 let chatPty = null;
 let isQuitting = false;
 
-// v3.2.4: renderer-hang watchdog. Counts consecutive
-// unacked mobile-voice IPCs (Tobe's v3.10.12 + v3.10.13
-// hang case). After 3 consecutive hangs within a 5-minute
-// window, reload the renderer (webContents.reload()).
-// The reload clears the hung JS context but loses any
-// in-memory state (chat history in renderer memory, etc.)
-// — acceptable trade-off for restoring voice-mode
-// usability, since the user's primary feedback was "it
-// failed to respond" with no path forward.
+// Renderer-hang watchdog.
 let rendererHangCount = 0;
 let rendererLastHangTs = 0;
 const RENDERER_HANG_RELOAD_THRESHOLD = 1;
 const RENDERER_HANG_RELOAD_WINDOW_MS = 5 * 60 * 1000;
-// v3.2.6: pending-voice queue. Holds voice transcripts
-// whose routing to the renderer has not yet been
-// acknowledged. If the renderer hangs and we reload
-// it, we re-route the queue so the user's prompts
-// aren't lost. Tobe's v3.10.14 complaint: "the user
-// should not need to repeat himself often" — without
-// this queue, every renderer hang means the user has
-// to speak the prompt again. Cap at 3 entries so a
-// runaway queue can't stack up; if 3 are queued we
-// drop the oldest.
+// Pending-voice queue.
 const PENDING_VOICE_QUEUE_CAP = 3;
 const pendingVoiceQueue = [];
-// v3.2.7: Set of voiceIds that have been ack'd by the
-// renderer (received the mobile-voice IPC). Used by the
-// ack-watcher to distinguish "renderer never received
-// the IPC" (true hang) from "renderer received the IPC
-// but hung on the LLM call" (different bug, handled
-// by the response tracker instead).
+// Set of voiceIds that have been ack'd by the renderer (received the mobile-voice IPC).
 const ackedVoiceIds = new Set();
 function drainPendingVoiceQueue() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -209,30 +145,14 @@ function savePaths(patch) { const next = { ...loadPaths(), ...patch }; fs.mkdirS
 function getProjectsRoot() { return loadPaths().projectsRoot || path.join(os.homedir(), 'projects'); }
 const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
 const PROVIDERS_FILE = path.join(CYBERCLAW_DIR, 'providers.json');
-// v3.1.33: user-managed LLM endpoints (Ollama, LM Studio,
-// llama.cpp server, etc.). Stored separately from the
-// existing providers.json (which is for API providers like
-// Anthropic/OpenAI). Endpoints expose an OpenAI-compatible
-// /v1/models + /v1/chat/completions API, so they can serve
-// any GGUF/transformer model the user has downloaded.
+// User-managed LLM endpoints (Ollama, LM Studio, llama.cpp server, etc.).
 const LLM_ENDPOINTS_FILE = path.join(CYBERCLAW_DIR, 'llm-endpoints.json');
 
 // Companion stats persistence (skills, XP, levels)
 function loadStats() {
   let stats;
   try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return {}; }
-  // v3.2.84: migrate legacy skill names. v3.2.84 renamed
-  // "Coding" → "Building" (and dropped a few overly-broad
-  // keywords). Existing saved stats from earlier versions
-  // still have entries under the old name; without this
-  // migration the renderer would show them at "level 1,
-  // 0 XP" forever (since it now looks up the new name).
-  //
-  // Map is small and stable. If we add more renames later,
-  // append here. Removal of a name (no migration target)
-  // just drops the entry — its XP is forfeit. Not great
-  // but acceptable; alternative is to keep the old names
-  // in the renderer too, which is worse for clarity.
+  // Migrate legacy skill names.
   const SKILL_RENAMES = { Coding: 'Building' };
   let mutated = false;
   for (const agentId of Object.keys(stats)) {
@@ -246,17 +166,7 @@ function loadStats() {
       }
     }
   }
-  // v3.3.8: migrate legacy `anthropic-<agentId>` keys to the
-  // bare agent id. Earlier versions keyed stats by the model
-  // provider + agent id (e.g. `anthropic-clawsuu`); the
-  // current renderer looks them up by bare id (`clawsuu`),
-  // so any stats saved before that change were orphaned —
-  // the mobile Skills panel showed level 1 / 0 XP forever
-  // even though `companion-stats.json` had real XP. Copy
-  // any legacy-prefixed entry to its bare-id key (don't
-  // delete the old entry yet — it might still be useful for
-  // reference, and it's harmless). Later a future migration
-  // can prune the old keys.
+  // Migrate legacy `anthropic-<agentId>` keys to the bare agent id.
   for (const key of Object.keys(stats)) {
     const m = key.match(/^(anthropic|ollama|openai|google|minimax)-(.+)$/);
     if (m && !stats[m[2]]) {
@@ -306,18 +216,7 @@ function addSkillXP(agentId, skillName, xpGain) {
   return stats[agentId];
 }
 
-// Quest persistence
-//
-// v3.1.50: each quest is migrated on load to add `active: false`
-// (no quest is selected by default) and `latestChanges: []` (the
-// companion's running journal of what it did on this quest).
-// The migration is idempotent — existing fields are preserved.
-//
-// We do this in loadQuests (not in a separate migration step) so
-// every reader sees the same shape regardless of when the file
-// was last touched. The cost is a per-load O(n) sweep on the
-// array; n is the number of quests (typically < 20) so the cost
-// is negligible.
+// Quest persistence v3.1.50: each quest is migrated on load to add `active: false` (no quest is selected by default) and `latestChanges: []`…
 function loadQuests() {
   let raw;
   try {
@@ -328,30 +227,9 @@ function loadQuests() {
   for (const q of raw) {
     if (typeof q.active !== 'boolean') { q.active = false; mutated = true; }
     if (!Array.isArray(q.latestChanges)) { q.latestChanges = []; mutated = true; }
-    // v3.2.59: per-quest conversation log — automatic running
-    // transcript of every user + agent message exchanged while
-    // this quest was active. Each entry is {ts, role, text,
-    // agentId, agentName} with text capped at 1000 chars.
-    // Capped at 200 entries (oldest shifted out); the most
-    // recent 20 are injected into the LLM context by
-    // buildActiveQuestContext so the companion has
-    // cross-session memory of what was discussed on this quest.
-    // Existing pre-v3.2.59 quests get an empty array; the
-    // next session on that quest starts populating it.
+    // Per-quest conversation log — automatic running transcript of every user + agent message exchanged while this quest was active.
     if (!Array.isArray(q.conversationLog)) { q.conversationLog = []; mutated = true; }
-    // v3.3.15: per-quest `questFilesDir` — the directory where
-    // the three quest markdown files (INSTRUCTIONS/CONVERSATION/
-    // NOTES) live. Tobe's new quest-creation model (2026-09-23
-    // design discussion): "when a user starts a new quests it
-    // creates the folder with the quest name(which becomes the
-    // project name) and within it a specific folder for that
-    // projects quest specific info, like the chat logs etc." —
-    // the 3 .md files always live in `<quest.directory>/quest/`,
-    // not at the project root. Existing pre-v3.3.15 quests that
-    // have the files at the root get migrated lazily: if
-    // `questFilesDir` is unset, derive it now and persist, then
-    // move legacy files into the new location on the next
-    // scaffold or save call. See `migrateLegacyQuestFiles(q)`.
+    // Per-quest `questFilesDir` — the directory where the three quest markdown files (INSTRUCTIONS/CONVERSATION/ NOTES) live.
     if (typeof q.questFilesDir !== 'string' || !q.questFilesDir.trim()) {
       q.questFilesDir = deriveQuestFilesDir(q);
       mutated = true;
@@ -379,12 +257,7 @@ function loadQuests() {
   return raw;
 }
 
-// v3.3.15: derive the canonical `questFilesDir` for a quest.
-// Used by loadQuests() migration and by scaffoldQuestDirectory().
-// Always returns `<quest.directory>/quest/` if `quest.directory`
-// is set; falls back to the legacy id-based path inside
-// `~/.openclaw/cyberclaw/quests/<id>/` when no directory is set.
-// Pure function — no filesystem side effects.
+// Derive the canonical `questFilesDir` for a quest.
 function deriveQuestFilesDir(quest) {
   if (!quest) return null;
   if (quest.directory && typeof quest.directory === 'string' && quest.directory.trim()) {
@@ -396,23 +269,7 @@ function deriveQuestFilesDir(quest) {
   return null;
 }
 
-// v3.3.15: one-time migration of legacy quest files from the
-// project root into `<quest.directory>/quest/`. Idempotent —
-// safe to call from any code path that touches the quest files.
-//
-// Rules:
-//   1. If `<dir>/quest/<file>.md` already exists, do nothing
-//      for that file (the new layout is the source of truth).
-//   2. Else if `<dir>/<file>.md` exists AND `<dir>/quest/` does
-//      NOT yet exist, move the file into the new location.
-//   3. Else if both exist with different content, append the
-//      legacy content (after a divider) to the new file so no
-//      history is lost. Then drop the legacy file.
-//   4. Else if both exist with the same content, drop the
-//      legacy file.
-//
-// Returns `{ migrated: [...], dropped: [...] }` so callers can
-// log what happened. Best-effort — never throws.
+// One-time migration of legacy quest files from the project root into `<quest.directory>/quest/`.
 function migrateLegacyQuestFiles(quest) {
   const result = { migrated: [], dropped: [], appended: [] };
   if (!quest) return result;
@@ -420,10 +277,7 @@ function migrateLegacyQuestFiles(quest) {
   if (!newDir) return result;
   const oldDir = (quest.directory && typeof quest.directory === 'string')
     ? quest.directory.trim() : null;
-  // Don't migrate for the id-based fallback path — there's no
-  // "old" location to migrate from (no project root, just the
-  // ~/.openclaw/cyberclaw/quests/<id>/ dir which IS the new
-  // location in that fallback mode).
+  // Don't migrate for the id-based fallback path — there's no "old" location to migrate from (no project root, just the…
   if (!oldDir || newDir === oldDir) return result;
   const files = ['INSTRUCTIONS.md', 'CONVERSATION.md', 'NOTES.md'];
   try { fs.mkdirSync(newDir, { recursive: true }); } catch (e) {
@@ -472,26 +326,11 @@ function migrateLegacyQuestFiles(quest) {
 function saveQuests(quests) {
   fs.mkdirSync(CYBERCLAW_DIR, { recursive: true });
   fs.writeFileSync(QUESTS_FILE, JSON.stringify(quests, null, 2));
-  // v3.1.95: every persistent quest change broadcasts the full
-  // list to connected mobiles so they keep their mirror in sync
-  // without polling. We broadcast the source-of-truth list from
-  // disk (just-written), not the in-memory array the caller
-  // passed, so a malformed write doesn't propagate.
+  // Every persistent quest change broadcasts the full list to connected mobiles so they keep their mirror in sync without polling.
   if (syncServer) {
     try { syncServer.broadcastQuestsList(loadQuests()); } catch (e) { console.warn('[IPC] broadcastQuestsList after save failed:', e?.message); }
   }
-  // v3.2.42: also push the updated list to the desktop's own
-  // renderer. Without this, when the mobile changes the
-  // active quest, the renderer's in-memory activeQuestId
-  // stays stale — the renderer only re-reads the disk
-  // state when something it does triggers renderQuests().
-  // The next chat send then builds the context with the
-  // stale active quest and the companion's reply says
-  // 'wait, what's the active quest?' — exactly the bug
-  // Tobe hit on 2026-08-02 17:27: "Yeah it says
-  // Cyber_Music is active" when the disk (and the mobile)
-  // said CYBERHIVE_WEBSITE V3 was active. mainWindow is
-  // declared at module scope above; safe to reference here.
+  // Also push the updated list to the desktop's own renderer.
   if (mainWindow && !mainWindow.isDestroyed()) {
     try { mainWindow.webContents.send('quests-updated', loadQuests()); } catch (e) { console.warn('[IPC] quests-updated to renderer failed:', e?.message); }
   }
@@ -499,11 +338,7 @@ function saveQuests(quests) {
 
 const { execSync, exec: execCb, spawn } = require('child_process');
 const SyncServer = require('./sync-server');
-// v3.2.21: friendly tool-name mapping for the better
-// "thinking" indicator. Maps internal OpenClaw tool
-// names to short, concise text the mobile can show
-// while the agent is working. Tobe asked for "short
-// and concise" — each entry is a single short phrase.
+// Friendly tool-name mapping for the better "thinking" indicator.
 function toolFriendlyName(tool) {
   switch (tool) {
     case 'exec': return 'Running command...';
@@ -545,30 +380,7 @@ function stripEmojisForTTS(text) {
     .trim();
 }
 
-// v3.10.9: strip Markdown formatting for TTS. The chat
-// display keeps the formatting (so Tobe sees the rendered
-// markdown), but the spoken version removes noise that
-// the LLM produces for visual emphasis.
-//
-// What gets stripped:
-// - **bold** / __bold__  → "bold" (no asterisks read aloud)
-// - *italic* / _italic_  → "italic"
-// - # / ## / ### headers  → remove the leading hash signs
-// - - or * list bullets  → remove the bullet prefix
-// - `code`               → "code" (no backticks read aloud)
-// - [text](url)          → "text" (URLs not read)
-// - > blockquote         → remove the > prefix
-//
-// What is KEPT:
-// - /paths/like/this    → spoken as "slash paths slash like
-//                         slash this" — Tobe explicitly
-//                         wants filesystem paths kept
-//                         ("i still want it to say
-//                         tobe/projects/cool things with
-//                         the slash")
-// - _var_names_with_underscores → kept as-is (single
-//                                 underscores inside words
-//                                 are not markdown)
+// Strip Markdown formatting for TTS.
 function stripMarkdownForTTS(text) {
   return text
     // Bold (**text** or __text__) — strip the markers.
@@ -587,31 +399,17 @@ function stripMarkdownForTTS(text) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     // Headers (### text, ## text, # text) — strip leading hashes.
     .replace(/^\s*#{1,6}\s+/gm, '')
-    // List bullets (- or *) at the start of a line — strip the
-    // bullet and any leading whitespace after it. Two patterns
-    // because the LLM sometimes produces '-**bold:**' where
-    // the - is glued to the next markdown construct.
+    // List bullets (- or *) at the start of a line — strip the bullet and any leading whitespace after it.
     .replace(/^\s*[-*+]\s+/gm, '')
     .replace(/^[-*+](?=[*_`])/gm, '')
-    // v3.10.9: leftover bullets after the ** / __ strip.
-    // Example: "-**commit:**" → after the ** strip becomes
-    // "-commit:" — still has a leading -. Strip a - or *
-    // at the start of a line that's now followed by a word.
+    // Leftover bullets after the ** / __ strip.
     .replace(/^[-*+](?=\w)/gm, '')
     // Inline list bullets too: `text -**commit:** abc` →
     // `text commit: abc`. Strip a - or * immediately followed
     // by another markdown char, after whitespace.
     .replace(/(\s)[-*+](?=[*_`])/g, '$1')
     .replace(/(\s)[-*+](?=\w)/g, '$1')
-    // v3.10.9: catch-all for inline bullets after the **
-    // strip has run. By this point the ** markers are gone
-    // and `-` is followed by a word. Strip it.
-    // Pattern: whitespace-dash-space-word. Only fires
-    // AFTER the inline (no-space) bullet strip above
-    // fails (otherwise `text -**` would match here too
-    // and we'd over-strip). Since we already removed the
-    // no-space case above, this only fires when there's
-    // a space between - and the next word.
+    // Catch-all for inline bullets after the ** strip has run.
     .replace(/(\s)- (?=\w)/g, '$1')
     // Blockquote (>) at the start of a line — strip the >.
     .replace(/^\s*>\s+/gm, '')
@@ -626,14 +424,6 @@ let syncServer = null;
 
 function needsWizard() {
   // Show wizard if OpenClaw isn't installed or no agents configured.
-  // v3.3.40: also check `config.agents.entries` (object form) — the
-  // desktop's own agent-loading path (main.js:827) handles both
-  // shapes (`entries` map OR `list` array), but needsWizard was only
-  // looking at `list`. Tobe 2026-10-11 16:59: 'Why do i have to enter
-  // the directories each setup? It should be stored.' — root cause
-  // was the wizard being re-launched on every desktop boot because
-  // his agents (clawsuu, codesuu) live under `entries` and this
-  // check always saw an empty `list`. Normalize both shapes here.
   const openclawBin = findOpenClaw();
   if (!openclawBin) return true;
   try {
@@ -659,11 +449,7 @@ function createWindow() {
     titleBarStyle: 'hidden',
     backgroundColor: '#0a0a0f',
     icon: path.join(__dirname, 'assets/icons/cyberclaw.png'),
-    // v3.3.38: always resizable. Tobe wanted to be able to
-    // drag the wizard window edges when the selected-list
-    // grows past the default height. The desktop app stays
-    // resizable as before (this is the wizard branch's only
-    // // difference from the old behaviour).
+    // Always resizable.
     resizable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -684,11 +470,7 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  // F12 opens DevTools. F11 would normally toggle fullscreen
-  // on the BrowserWindow, but that traps the user in a state
-  // with no close button (Tobe hit it by accident on 2026-10-10
-  // and couldn't get out). Block F11: prevent it from
-  // entering fullscreen, and force-exit if it's already on.
+  // F12 opens DevTools.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12') mainWindow.webContents.toggleDevTools();
     if (input.key === 'F11') {
@@ -697,28 +479,14 @@ function createWindow() {
     }
   });
 
-  // v3.2.4: capture renderer console output to the
-  // main-process log. Without this, renderer-side
-  // console.log (e.g. "[mobile-voice] received:")
-  // only shows in DevTools. When the renderer hangs
-  // and DevTools isn't open, we can't see WHY.
-  // Tobe's v3.10.14 hang: the desktop log showed
-  // 'webContents.send("mobile-voice", ...) was called'
-  // but the renderer's console.log never produced
-  // '[mobile-voice] received' — was it because the
-  // handler never ran, or because the console output
-  // was lost? With this listener, we can tell.
+  // Capture renderer console output to the main-process log.
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
     // level: 0=verbose, 1=info, 2=warning, 3=error
     const tag = ['[VR]', '[RI]', '[RW]', '[RE]'][level] || '[R?]';
     console.log(`${tag} ${message}`);
   });
 
-  // v3.2.4: surface renderer crashes/unresponsiveness.
-  // did-fail-load fires when the page fails to load
-  // (network error, JS error during load, etc.).
-  // unresponsive fires when the renderer becomes
-  // unresponsive (no input handling for N seconds).
+  // Surface renderer crashes/unresponsiveness.
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     console.error(`[Renderer] did-fail-load: ${errorCode} ${errorDescription} url=${validatedURL}`);
     discordLog('❌', 'Renderer failed to load', `${errorCode} ${errorDescription}`, 'error');
@@ -751,20 +519,7 @@ function switchToMainApp() {
   mainWindow.center();
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
-  // v3.2.4: renderer-readiness ping. After the page
-  // loads, fire a `renderer-ready-check` IPC and
-  // wait for the renderer's `renderer-ready-ack`
-  // response. If no ack within 5s, the renderer's
-  // JS context is dead-on-arrival (e.g. app.js
-  // failed to load, IPC listener wasn't registered).
-  // Tobe's v3.10.14 test: fresh desktop, renderer
-  // never logged "[mobile-voice] received" — could
-  // be hang OR dead-on-arrival. This ping
-  // distinguishes the two cases.
-  //
-  // Tobe also asked us to ship a fix so voice mode
-  // is usable on a fresh desktop — auto-reload on
-  // boot if the renderer doesn't ack.
+  // Renderer-readiness ping.
   let rendererReadyTimer = null;
   const onRendererReadyAck = () => {
     if (rendererReadyTimer) {
@@ -775,13 +530,7 @@ function switchToMainApp() {
     rendererHangCount = 0; // reset on successful boot
   };
   ipcMain.on('renderer-ready-ack', onRendererReadyAck);
-  // v3.2.6: switched from `once` to `on` so subsequent
-  // renderer reloads also fire this. Each time the
-  // page finishes loading (initial boot OR reload),
-  // we send the ready-check AND drain any pending
-  // voice transcripts that were queued before the
-  // reload. This is the auto-recovery path for Tobe's
-  // "user shouldn't have to repeat himself" complaint.
+  // Switched from `once` to `on` so subsequent renderer reloads also fire this.
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('[Renderer] page finished loading, sending ready check');
     try { mainWindow.webContents.send('renderer-ready-check', { ts: Date.now() }); } catch (_) {}
@@ -830,17 +579,7 @@ function discoverAgents() {
   const config = readOpenClawConfig();
   if (!config) return { agents: [], bindings: [], subagents: [] };
 
-  // v3.1.34: read from BOTH `entries` (modern key the openclaw
-  // CLI writes) and `list` (legacy key the wizard used to write).
-  // Without this fallback, the wizard's import flow always
-  // showed "No agents found" because the openclaw config uses
-  // `entries` and `discoverAgents` was looking at `list`.
-  // v3.3.38: entries are stored as { id: { workspace: ... } } —
-  // the ID is the KEY, not a field in the value. We need to
-  // preserve the key when converting to an array, otherwise
-  // every agent has `id: undefined` and the renderer can't
-  // tell Clawsuu from Codesuu (they both get empty names and
-  // the arena assigns all sprites to the first agent it finds).
+  // Read from BOTH `entries` (modern key the openclaw CLI writes) and `list` (legacy key the wizard used to write).
   const _agentEntries = config.agents?.entries
     ? Object.entries(config.agents.entries).map(([k, v]) => ({ id: k, ...(v || {}) }))
     : null;
@@ -1032,18 +771,7 @@ function findOpenClaw() {
   return null;
 }
 
-// v3.2.51: read the OpenClaw gateway config to get the
-// base URL and bearer token for HTTP API calls. The
-// gateway runs on the loopback by default (port 18789)
-// and is reachable as http://127.0.0.1:<port>/. Auth is
-// a token configured under gateway.auth.token (mode
-// 'token') in ~/.openclaw/openclaw.json.
-//
-// We re-read the config on every call (not cached) so
-// config changes take effect without restarting the
-// desktop. The read is cheap — one JSON.parse of a
-// small file. If the file is unreadable, we return null
-// and the caller falls back to the CLI path.
+// Read the OpenClaw gateway config to get the base URL and bearer token for HTTP API calls.
 function readGatewayConfig() {
   try {
     const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
@@ -1172,11 +900,7 @@ ipcMain.on('chat:resize', (event, { cols, rows }) => {
   try { chatPty?.resize(cols, rows); } catch {}
 });
 
-// ---------------------------------------------------------------------------
-// Chat — send messages to agents via gateway
-// ---------------------------------------------------------------------------
-// Robust JSON extractor: scans for the first valid top-level JSON object
-// in a buffer that may be polluted with stderr noise (e.g. "[state-migrations] ...").
+// --------------------------------------------------------------------------- Chat — send messages to agents via gateway…
 function extractFirstJsonObject(buf) {
   if (typeof buf !== 'string' || !buf) return null;
   // Fast path: already valid JSON
@@ -1208,22 +932,9 @@ function extractFirstJsonObject(buf) {
 }
 
 ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments, silent }) => {
-  // v3.2.51: prefer the OpenAI-compatible HTTP API on the
-  // gateway over the `openclaw agent -m` CLI. The HTTP path
-  // supports multimodal content (text + image_url), which is
-  // the Discord-style attachment flow Tobe asked for on
-  // 2026-08-02 21:45 ("make it such that it works like it
-  // does in discord"). The CLI path is text-only.
-  //
-  // The CLI path is kept as a fallback if the gateway's HTTP
-  // endpoint is disabled or unreachable.
+  // Prefer the OpenAI-compatible HTTP API on the gateway over the `openclaw agent -m` CLI.
   const gw = readGatewayConfig();
-  // v3.2.55: log which path we picked. Tobe 2026-08-02
-  // 22:35 test showed the LLM still couldn't see images
-  // even though the renderer reported the dataUri was
-  // built correctly. The POST log for the HTTP path
-  // never fired, which means the handler went to CLI
-  // instead. This log makes that decision visible.
+  // Log which path we picked.
   const useHttp = !!(gw && gw.httpEnabled && gw.token);
   console.log(`[chat:send] agent=${agentId} useHttp=${useHttp} gw.httpEnabled=${!!(gw && gw.httpEnabled)} gw.token=${!!(gw && gw.token)} attachments=${Array.isArray(attachments) ? attachments.length : 0} silent=${!!silent}`);
   if (useHttp) {
@@ -1232,10 +943,7 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message, attachment
   return await sendChatMessageViaCli(agentId, message, attachments);
 });
 
-// v3.2.51: HTTP API path. POSTs to /v1/chat/completions
-// on the gateway. multimodal content array (text +
-// image_url with base64 data URL) when attachments are
-// present; plain string content otherwise.
+// HTTP API path.
 async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
   // v3.2.32: prepend the assembled system context (safety
   // preamble + CYBERCLAW.md + soul.md + memory.md) to the
@@ -1247,13 +955,7 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     console.error('[chat:send/http] context assembly failed:', e.message);
     ctx = '';
   }
-  // Build the user-content array. With attachments, the
-  // OpenAI multimodal shape is:
-  //   content: [
-  //     {type: 'text', text: '...'},
-  //     {type: 'image_url', image_url: {url: 'data:...'}}
-  //   ]
-  // Without attachments, plain string content is fine.
+  // Build the user-content array.
   let userContent;
   const textPart = ctx ? ctx + message : message;
   if (Array.isArray(attachments) && attachments.length > 0) {
@@ -1285,32 +987,10 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     user: `cyberclaw:${agentId}`,
   };
   const url = `${gw.baseUrl}/v1/chat/completions`;
-  // v3.2.68: bumped httpTimeoutMs from 60s to 600s and
-  // changed the abort path to NOT fall through to the CLI
-  // fallback. v3.2.65's 60s was too aggressive — legitimate
-  // long LLM calls (multi-tool code refactors, BOS+ protobuf
-  // reasoning, etc.) routinely exceed 60s, and aborting
-  // them just to fall through to `sendChatMessageViaCli`
-  // created a worse bug: the CLI path spawns a NEW isolated
-  // `openclaw agent` session, so the user got TWO replies
-  // for one message (the late HTTP reply + the immediate
-  // CLI reply). Tobe 2026-08-05 11:00 saw exactly this:
-  // 'now it timed out again. Cant it just run longer if hes
-  // working?' The 600s now matches the renderer's UI cap
-  // (Promise.race AGENT_TIMEOUT_MS = 600000, see app.js).
-  // On abort we return the timeout error directly so the
-  // renderer shows a clean retry-able message instead of
-  // spawning a duplicate CLI session. The renderer-side
-  // cap (600s) handles the 'wedged lane forever' case
-  // already.
+  // Bumped httpTimeoutMs from 60s to 600s and changed the abort path to NOT fall through to the CLI fallback.
   const httpTimeoutMs = 600000; // 600s, matches renderer UI cap
   try {
-    // v3.2.53: log the request shape we're sending so we
-    // can debug what the model actually receives. Tobe
-    // 2026-08-02 22:25: 'he claims to still not see the
-    // images.' We need to know whether the bytes are
-    // reaching the gateway or getting truncated along
-    // the way.
+    // Log the request shape we're sending so we can debug what the model actually receives.
     const bodySize = Buffer.byteLength(JSON.stringify(body), 'utf8');
     const attachmentsCount = Array.isArray(attachments) ? attachments.length : 0;
     console.log(`[chat:send/http] POST ${url} (body=${bodySize}b, attachments=${attachmentsCount})`);
@@ -1343,18 +1023,11 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     const json = await res.json();
     console.log(`[chat:send/http] response status=${res.status} keys=${Object.keys(json || {}).join(',')}`);
     // OpenAI shape: choices[0].message.content (string).
-    // Some models can return multiple choices; we take the
-    // first. v3.2.31's multi-payload concat still applies
-    // if the message is a concatenation; for now we trust
-    // the gateway's normalization.
     let reply = null;
     if (json && Array.isArray(json.choices) && json.choices[0]) {
       const m = json.choices[0].message || {};
       reply = m.content || m.reasoning_content || '';
-      // v3.2.53: log whether the model's response includes
-      // any image_url content (vision model acknowledging
-      // it saw the image) — helps debug the "I can't see
-      // the images" claim. Tobe 2026-08-02 22:25.
+      // Log whether the model's response includes any image_url content (vision model acknowledging it saw the image) — helps debug the "I can't…
       if (Array.isArray(m.content)) {
         console.log(`[chat:send/http] multimodal reply content parts=${m.content.length}`);
       }
@@ -1372,13 +1045,7 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
     const reason = isAbort ? `aborted after ${httpTimeoutMs}ms` : (e?.message || 'unknown');
     console.warn(`[chat:send/http] fetch failed (${reason}):`, e?.message);
     if (isAbort) {
-      // v3.2.68: on HTTP timeout, return a clean error
-      // directly instead of falling through to the CLI
-      // path. The CLI fallback spawns a NEW isolated
-      // session, which caused duplicate replies when a
-      // legitimate long LLM call eventually returned to
-      // the original HTTP path. The user can retry; the
-      // renderer shows the timeout error.
+      // On HTTP timeout, return a clean error directly instead of falling through to the CLI path.
       return {
         ok: false,
         error: `HTTP request timed out after ${Math.round(httpTimeoutMs / 1000)}s. The model may still be working on the gateway — try again if you don't see a reply.`,
@@ -1393,15 +1060,9 @@ async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
   }
 }
 
-// v3.2.51: legacy CLI path. Kept as the fallback when the
-// gateway's HTTP endpoint is disabled or unreachable.
-// Pre-3.2.51 code was inlined in the chat:send-message
-// handler; we split it out for clarity.
+// Legacy CLI path.
 async function sendChatMessageViaCli(agentId, message, attachments, hint) {
-  // Attachments are not supported on the CLI path (the
-  // -m flag is text-only). If attachments were provided
-  // we include a hint in the text so the LLM knows they
-  // arrived but couldn't be embedded inline.
+  // Attachments are not supported on the CLI path (the -m flag is text-only).
   const bin = findOpenClaw();
   if (!bin) return { ok: false, error: 'OpenClaw not found' };
 
@@ -1422,22 +1083,7 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   }
 
   try {
-    // v3.2.65: switch from execCb (which runs through
-    // `/bin/sh -c "<giant string>"`) to spawn() with the
-    // message as a real argv entry. The previous code did
-    // `"` → `\"` shell escaping but left literal newlines,
-    // backticks, and dollar signs in finalMessage (it can
-    // be 30KB+ of multi-line system prompt + tags). /bin/sh
-    // tried to parse the whole blob as a shell script and
-    // barfed `cannot open agentId: No such file /
-    // INSTRUCTIONS.md: not found / remember_fact: not found
-    // / CREATE_QUEST: not found` etc. — and the renderer's
-    // Error bubble displayed the entire err.message
-    // verbatim. Tobe 2026-08-05 06:12: 'he spewed alot of
-    // crap. He should not'. spawn() takes argv as an array
-    // so there's no shell interpretation at all — newlines
-    // and special chars go straight to the child as one
-    // argv entry.
+    // Switch from execCb (which runs through `/bin/sh -c "<giant string>"`) to spawn() with the message as a real argv entry.
     const result = await new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
@@ -1457,13 +1103,7 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
       child.on('close', (code, signal) => {
         clearTimeout(killTimer);
         if (code !== 0 && (!stdout || !stdout.trim())) {
-          // v3.2.65: don't surface raw stderr/err.message to
-          // the renderer as the user-visible reply — that was
-          // how we ended up dumping 30KB of system prompt
-          // into the chat bubble. Instead, return a short
-          // friendly error and put the verbose output in a
-          // separate log-only field the desktop logger can
-          // surface.
+          // Don't surface raw stderr/err.message to the renderer as the user-visible reply — that was how we ended up dumping 30KB of system prompt…
           const friendly = signal === 'SIGKILL'
             ? 'agent CLI timed out after 180s'
             : `agent CLI exited with code ${code}`;
@@ -1512,15 +1152,7 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Skill taxonomy (single source of truth — shared with renderer + mobile)
-// ---------------------------------------------------------------------------
-// v3.2.84: widened keyword lists + added "Building" rename for Coding,
-// added "Game" coverage of arena/quest/feed work. Order matters — the
-// FIRST match wins, so put more specific categories first.
-//
-// The renderer reads the same defs via a shared helper in app.js
-// (loadSkillDefs). Keep these in sync if you change them here.
+// --------------------------------------------------------------------------- Skill taxonomy (single source of truth — shared with renderer…
 const SKILL_DEFS = [
   { name: 'Building',     icon: '🔧', keywords: /\b(code|bug|fix|function|class|api|build|compile|deploy|git|commit|push|pull|merge|rebase|branch|test|refactor|debug|install|run|start|stop|restart|exec|shell|bash|terminal|cmd|command|npm|pnpm|yarn|pip|apt|brew|ssh|scp|rsync|server|host|port|docker|kube|cron|service|process|script|bin|lib|package|module|import|export|require|include|config|env|var|path|app|launch|rebuild|update|upgrade|setup|provision|configure|provision|init|initialize)\b/i },
   { name: 'Writing',      icon: '✍️',  keywords: /\b(write|draft|essay|article|blog|post|story|copy|summarize|rewrite|document|readme|changelog|notes|message|email|letter|caption|headline|title|subject|paragraph|chapter|markdown|md|txt|text|script|dialogue|narration)\b/i },
@@ -1541,10 +1173,7 @@ function classifyText(text) {
   return 'General';
 }
 
-// v3.2.84: dual-classify — match BOTH the user's message AND the
-// assistant's reply, pick whichever match is more specific (earlier in
-// SKILL_DEFS = more specific). Returns just the skill name; the XP
-// amount is decided in the renderer.
+// Dual-classify — match BOTH the user's message AND the assistant's reply, pick whichever match is more specific (earlier in SKILL_DEFS =…
 function classifyTask(userMessage, assistantReply) {
   const userSkill = classifyText(userMessage);
   const replySkill = assistantReply ? classifyText(assistantReply) : 'General';
@@ -1562,32 +1191,7 @@ function classifyTask(userMessage, assistantReply) {
   return (userIdx <= replyIdx) ? userSkill : replySkill;
 }
 
-// ---------------------------------------------------------------------------
-// v3.2.83: screenshot IPC. Lets the renderer (clawsuu, in
-// response to a Tobe chat message) capture the desktop or
-// a specific window and get back a file path + dataUri
-// for embedding in the chat bubble.
-//
-// target values:
-//   'cyberclaw' — mainWindow (the Electron app window
-//                 itself). Uses webContents.capturePage()
-//                 for a pixel-perfect render of the
-//                 running app.
-//   'desktop'   — full DISPLAY=:0 root. Shells out to
-//                 `import` (ImageMagick) which is the
-//                 reliable way to capture X11/Wayland
-//                 from a Node process (capturePage only
-//                 captures the Electron window).
-//   'window'    — capture a specific X11 window by name.
-//                 Default name is 'CyberClaw'. The render
-//                 can pass `windowName` to override.
-//
-// Returns: { ok, filePath, dataUri, target, width, height }
-//   filePath — absolute path on disk under /tmp
-//   dataUri  — base64 data URI (data:image/png;base64,...)
-//             so the renderer can drop it straight into
-//             an <img> without a separate fetch.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- v3.2.83: screenshot IPC.
 
 ipcMain.handle('screenshot:capture', async (event, { target = 'cyberclaw', windowName } = {}) => {
   try {
@@ -1740,27 +1344,7 @@ ipcMain.on('mobile-connected', (e, { name }) => discordLog('📱', 'Mobile conne
 ipcMain.on('mobile-disconnected', (e, { clientId }) => discordLog('📴', 'Mobile disconnected', clientId || 'unknown', 'warn'));
 ipcMain.on('mobile-paired', (e, { name }) => discordLog('🔗', 'Mobile paired', name || 'unknown', 'success'));
 
-// v3.2.3: renderer-ack for mobile-voice IPC. When the
-// renderer's chat pipeline receives a `mobile-voice`
-// IPC, it sends `mobile-voice-ack` back so we know the
-// renderer's JS context is responsive. Without this,
-// a hung renderer (event loop stuck, blocked promise,
-// etc.) looks identical to "still processing" from
-// main.js's perspective — main.js can't tell whether
-// the IPC was received.
-//
-// Tobe's v3.10.12 report: "it failed to respond for
-// some reason and again it continued the conversation
-// Instead of retrying" — the desktop log showed
-// `webContents.send('mobile-voice', ...)` was called
-// but the renderer never logged `[mobile-voice]
-// received`, indicating the IPC was sent into a hung
-// JS context. With this ack, we can detect that and
-// either:
-//   - Log a warning so the desktop user sees something
-//   - Surface an error to the mobile so the user knows
-//     the desktop pipeline is stuck
-//   - Eventually: auto-restart the renderer
+// Renderer-ack for mobile-voice IPC.
 ipcMain.on('mobile-voice-ack', (e, { ts, id }) => {
   if (!ts) return;
   const latencyMs = Date.now() - ts;
@@ -1771,22 +1355,9 @@ ipcMain.on('mobile-voice-ack', (e, { ts, id }) => {
     discordLog('⚠️', 'Slow renderer ack', `${latencyMs}ms after send`, 'warn');
     console.warn(`[Voice] Slow renderer ack: ${latencyMs}ms`);
   }
-  // v3.2.6: remove the corresponding entry from the
-  // pending-voice queue. The renderer's IPC handler
-  // forwards `id` in the ack payload. This means: once
-  // the renderer acks, the transcript is no longer
-  // pending — if the renderer subsequently hangs
-  // mid-LLM-call, we won't replay a transcript the
-  // renderer already processed (which would lead to
-  // duplicate LLM responses).
+  // Remove the corresponding entry from the pending-voice queue.
   if (id) {
-    // v3.2.7: mark this voiceId as acked so the
-    // ack-watcher doesn't fire spuriously. The ack
-    // arrived (renderer received the IPC) but the
-    // renderer may still hang on the LLM call later.
-    // The pending-voice queue tracks the first-stage
-    // ack; the LLM-response tracker (added in this
-    // change) tracks the second-stage completion.
+    // Mark this voiceId as acked so the ack-watcher doesn't fire spuriously.
     ackedVoiceIds.add(id);
     const idx = pendingVoiceQueue.findIndex((e) => e.id === id);
     if (idx >= 0) {
@@ -1796,24 +1367,7 @@ ipcMain.on('mobile-voice-ack', (e, { ts, id }) => {
   }
 });
 
-// v3.2.7: track voice prompts whose LLM response has
-// completed. The renderer sends this IPC after the
-// sendChatMessage promise resolves (or rejects). We
-// use it to confirm the FULL voice pipeline
-// (renderer IPC + LLM call + TTS synthesis +
-// audio_response) ran to completion, not just the
-// first-stage IPC ack. Without this, the 8s
-// ack-watcher fires on a renderer that acked but
-// then hung on the LLM call (Tobe's v3.10.14 hang
-// case — ack came in, renderer called sendChatMessage,
-// LLM provider crashed, renderer context went dead,
-// desktop logs "No renderer ack" 8s later but the
-// ack DID arrive. The 8s deadline should not fire
-// if we got a "voice done" signal in the meantime).
-//
-// Cleared automatically: the entry in the map is
-// removed once we observe voice-done or 60s pass
-// since the original routing.
+// Track voice prompts whose LLM response has completed.
 const voiceResponseTracker = new Map(); // voiceId -> { ts, voiceSendTs, ws }
 ipcMain.on('voice-response-done', (e, { id }) => {
   if (!id) return;
@@ -1824,13 +1378,7 @@ ipcMain.on('voice-response-done', (e, { id }) => {
   }
 });
 
-// v3.2.7: renderer registers that it has started
-// processing a voice prompt. We use this to suppress
-// the 8s ack-watcher stall signal: the renderer may
-// ack immediately and then hang on the LLM call,
-// which is a different bug than "renderer never
-// received the IPC". Without tracking, the watchdog
-// fires on legitimate hangs that happen AFTER ack.
+// Renderer registers that it has started processing a voice prompt.
 ipcMain.on('voice-response-tracking-start', (e, { id }) => {
   if (!id) return;
   voiceResponseTracker.set(id, { ts: Date.now() });
@@ -1845,13 +1393,7 @@ ipcMain.on('window:close', () => mainWindow?.close());
 // Quest CRUD
 ipcMain.handle('quests:list', () => loadQuests());
 ipcMain.handle('quests:scan-projects', async () => {
-  // v3.1.34: scan the projects directory for candidate quests
-  // (used by the "Import Existing" button next to "Create" in the
-  // desktop quest form). Returns [{name, path}] sorted by name.
-  // Filters out directories that are already registered as quests
-  // so the picker doesn't show duplicates.
-  // v3.3.37: switched to fs.promises.readdir so the main
-  // process doesn't block on slow disks.
+  // Scan the projects directory for candidate quests (used by the "Import Existing" button next to "Create" in the desktop quest form).
   const projectsRoot = getProjectsRoot();
   const out = [];
   try {
@@ -1870,26 +1412,14 @@ ipcMain.handle('quests:scan-projects', async () => {
   return out;
 });
 
-// v3.3.37: scan a user-chosen parent directory for projects.
-// Used by the wizard's "Default directory" feature — both
-// import steps let the user set a parent dir, and the Scan
-// button scans it for subdirectories. Returns the same shape
-// as quests:scan-projects ({name, path} per subdir, sorted)
-// plus a few metadata flags per project (hasPackage, hasReadme)
-// so the renderer can show useful detail.
+// Scan a user-chosen parent directory for projects.
 ipcMain.handle('wizard:scan-projects-dir', async (event, parentDir) => {
   if (!parentDir || typeof parentDir !== 'string') {
     return { ok: false, error: 'no directory provided', projects: [] };
   }
   console.log('[wizard] scan-projects-dir called with:', JSON.stringify(parentDir));
   try {
-    // v3.3.38: removed the existingDirs filter. The user
-    // wanted to see ALL subdirectories in the projects root
-    // (not just the unregistered ones) so the wizard's bulk
-    // import can show them everything. Duplicates are now
-    // handled inside quests:create — if the directory is
-    // already registered, it returns the existing quest
-    // instead of creating a second entry.
+    // Removed the existingDirs filter.
     const entries = await fs.promises.readdir(parentDir, { withFileTypes: true });
     console.log('[wizard] scan-projects-dir: readdir found', entries.length, 'entries');
     const projects = [];
@@ -1919,15 +1449,7 @@ ipcMain.handle('wizard:scan-projects-dir', async (event, parentDir) => {
   }
 });
 
-// v3.3.38: Export a companion's CyberClaw-specific settings
-// (sprite config, skill XP, identity, model, channel binding) to
-// its workspace folder. The wizard already writes IDENTITY.md,
-// but CyberClaw tracks its own state in
-// /home/<user>/.openclaw/cyberclaw/ — that's why skill XP
-// resets on a fresh install even when the companion folder is
-// intact. This IPC writes <workspace>/cyberclaw.json with
-// everything that belongs to the companion rather than to
-// the desktop install. A future import flow can read it back.
+// Export a companion's CyberClaw-specific settings (sprite config, skill XP, identity, model, channel binding) to its workspace folder.
 ipcMain.handle('wizard:export-companion', async (event, opts) => {
   try {
     const agentId = String(opts?.agentId || '').trim();
@@ -1956,16 +1478,7 @@ ipcMain.handle('wizard:export-companion', async (event, opts) => {
   }
 });
 
-// v3.4.5: companion export / import (Settings → Companions).
-// A bundle is one folder per companion: <id>-companion/
-//   companion.json  — openclaw agent entry (name, model, tools),
-//                     CyberClaw sprite config + stats, metadata
-//   workspace/      — the agent's top-level *.md files + memory/
-//                     (identity, soul, user notes, memories).
-//                     Sessions, keys, tmp and other bulk are skipped.
-//   cyberclaw/      — ~/.openclaw/cyberclaw/companions/<id>/
-// Import reverses it on a new install: copies the files, registers
-// the agent with `openclaw agents add`, restores model/tools/sprite.
+// Companion export / import (Settings → Companions).
 const COMPANION_BUNDLE_FORMAT = 'cyberclaw-companion';
 function _copyCompanionWorkspace(src, dst) {
   const copied = [];
@@ -2078,10 +1591,7 @@ ipcMain.handle('companions:import', async (event, folder) => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
-// v3.1.34: auto-detect all candidate quests at once (used by the
-// new "Auto-detect" button on the quest form). Reads the
-// projects directory, skips already-registered ones, and
-// registers each remaining one in a single pass.
+// Auto-detect all candidate quests at once (used by the new "Auto-detect" button on the quest form).
 ipcMain.handle('quests:auto-detect', async () => {
   const projectsRoot = getProjectsRoot();
   const created = [];
@@ -2115,13 +1625,7 @@ ipcMain.handle('quests:auto-detect', async () => {
 });
 ipcMain.handle('quests:create', (event, quest) => {
   const quests = loadQuests();
-  // v3.3.38: skip if a quest with the same directory is
-  // already registered. The wizard imports quests in bulk
-  // and may include already-registered directories; this
-  // makes quests:create idempotent so the bulk import
-  // doesn't create duplicate entries for projects the
-  // user has already registered via the main app's +
-  // button. Returns the existing quest on a match.
+  // Skip if a quest with the same directory is already registered.
   if (quest.directory) {
     const normalized = String(quest.directory).replace(/\/$/, '');
     const existing = quests.find((q) => String(q.directory || '').replace(/\/$/, '') === normalized);
@@ -2133,46 +1637,19 @@ ipcMain.handle('quests:create', (event, quest) => {
   quest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   quest.created = new Date().toISOString();
   quest.status = quest.status || 'active';
-  // v3.1.50: new quests default to inactive (user has to star
-  // them to make them the working quest) and start with an empty
-  // latestChanges log. `active: false` and `latestChanges: []` are
-  // also enforced by loadQuests() on every read, so the field
-  // defaults here are belt-and-suspenders for quests created in
-  // the same process boot.
+  // New quests default to inactive (user has to star them to make them the working quest) and start with an empty latestChanges log.
   quest.active = false;
   quest.latestChanges = [];
   // v3.2.59: same defaults for the per-quest conversation log.
   quest.conversationLog = [];
-  // v3.10.156: auto-derive a directory when none was
-  // supplied. Same logic as the WS path (onCreateQuest).
-  // The renderer can pass `defaultQuestDir` in the quest
-  // object to influence the auto-pick (it reads from
-  // localStorage.cyberclaw-settings.defaultQuestDir);
-  // otherwise we fall back to ~/quests/<safeName>.
-  // Tobe 2026-08-11: 'i think we just need to adjust such
-  // that it will be created in the defualt directory
-  // with the quest name, what the user inputted as quest
-  // name'.
+  // Auto-derive a directory when none was supplied.
   if (!quest.directory || !quest.directory.trim()) {
     const resolved = resolveQuestDirectory(quest.name, null, quest.defaultQuestDir);
     console.log(`[quests:create] auto-derived directory for "${quest.name}": ${resolved}`);
     quest.directory = resolved;
   }
   quests.unshift(quest);
-  // v3.2.61: scaffold the quest directory if one was
-  // supplied. mkdir + write INSTRUCTIONS.md + write
-  // CONVERSATION.md (only if absent — never overwrites
-  // user content). Tobe 2026-08-04 16:45: "when creating
-  // quests it should default to that unless specified,
-  // it should then create that folder, with all the
-  // files that a quest needs, including conversation log,
-  // quest instructions etc."
-  //
-  // A failed scaffold does NOT fail the create —
-  // the quest still exists; only the file-co-location
-  // is missing. The quest.conversationLog JSON array
-  // still works as a fallback for any code that expects
-  // the conversation state there.
+  // Scaffold the quest directory if one was supplied.
   if (quest.directory) {
     const scaffold = scaffoldQuestDirectory(quest);
     if (!scaffold.ok) {
@@ -2189,41 +1666,7 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   const idx = quests.findIndex(q => q.id === id);
   if (idx < 0) return null;
   const oldQuest = quests[idx];
-  // v3.2.62: detect a directory CHANGE and re-scaffold
-  // the new directory. Tobe 2026-08-04 17:31: 'Tried to
-  // edit a quest, its directory is not shown and should
-  // be editable. Here we potentially need to move and/or
-  // create new directories for the user.'
-  //
-  // The migration is file-system only — we do NOT copy
-  // the old files into the new directory. The quest's
-  // files (INSTRUCTIONS.md / CONVERSATION.md) are tied
-  // to the project they describe, not the storage path;
-  // moving the directory without the files is the
-  // expected behaviour for "this quest is now about a
-  // different folder". If the user wants to physically
-  // move files too, they can do it on the desktop with a
-  // regular `mv` and then re-set the directory here.
-  //
-  // We DO scaffold (mkdir + write placeholder files)
-  // because the next chat send will need to write to
-  // <quest.directory>/CONVERSATION.md and the file
-  // should exist for `tail -f`-ers.
-  //
-  // Three cases:
-  //   1. updates.directory is the SAME string as
-  //      oldQuest.directory — no-op (don't re-scaffold).
-  //   2. updates.directory is a NEW non-empty string —
-  //      assign it and re-scaffold (mkdir + write
-  //      placeholders).
-  //   3. updates.directory was UNDEFINED in `updates`
-  //      (key not present) — leave the old directory
-  //      alone. We never blanket-clear the directory.
-  //   4. updates.directory is an EMPTY string — treat as
-  //      'clear directory', falls back to the v3.2.30
-  //      <id>-based path on the next read. The desktop
-  //      also re-scaffolds the id-based dir so the next
-  //      write lands somewhere valid.
+  // Detect a directory CHANGE and re-scaffold the new directory.
   let directoryChanged = false;
   if (Object.prototype.hasOwnProperty.call(updates, 'directory')) {
     const newDir = typeof updates.directory === 'string' ? updates.directory.trim() : '';
@@ -2246,20 +1689,7 @@ ipcMain.handle('quests:update', (event, id, updates) => {
   return quests[idx];
 });
 
-// v3.2.30: per-quest project instructions file. Each quest can have a
-// markdown file (default: <quest.directory>/QUEST_QUEST_INSTRUCTIONS.md, or
-// ~/.openclaw/cyberclaw/quests/<id>/QUEST_QUEST_INSTRUCTIONS.md if no
-// directory is set) that holds project-specific behavior
-// instructions for the companion. The file content is read
-// by buildActiveQuestContext() on the renderer and injected
-// into the chat prompt as a separate context block, so the
-// LLM sees "when working on this quest, behave like this"
-// before generating a reply.
-//
-// The renderer's Quests panel shows the file content with
-// an Edit button; the mobile shows it read-only (no edit
-// on mobile — the user can edit via the desktop). The
-// IPCs are read-by-id (single quest) and write-by-id.
+// Per-quest project instructions file.
 function questInstructionsFilePath(quest) {
   if (!quest) return null;
   if (quest.directory) {
@@ -2268,32 +1698,7 @@ function questInstructionsFilePath(quest) {
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'QUEST_QUEST_INSTRUCTIONS.md');
 }
 
-// v3.2.61: per-quest directory files. Tobe's three-layer
-// mental model (2026-08-04 16:45):
-//   1. CYBERCLAW.md              — openclaw's standard behaviour (read by companion-prompts.js, NOT this file)
-//   2. companions/<id>/soul.md  — companion character
-//   3. <quest.directory>/       — task-specific behaviour + history
-//        ├── INSTRUCTIONS.md    — quest-specific instructions
-//        └── CONVERSATION.md    — conversation transcript (file form)
-// Until this release, the conversation log lived in the
-// `quest.conversationLog` JSON array inside quests.json.
-// v3.2.61 promotes it to a per-quest markdown file at
-// <quest.directory>/CONVERSATION.md so:
-//   - the file is co-located with the project it's about
-//     (Tobe's mental model: "all the files that a quest
-//     needs")
-//   - the user can `cat` / version-control / grep / share
-//     the conversation
-//   - the LLM has a clear single-source-of-truth for "what
-//     we talked about on this quest"
-// The JSON array stays as a fast-read mirror for the LLM
-// context injector (buildActiveQuestContext) but the file
-// is canonical. Both writers update both stores.
-// v3.3.15: prefer the persisted `questFilesDir` (canonical
-// `<quest.directory>/quest/` location). Fall back to deriving
-// it on the fly for quests that haven't been migrated yet —
-// deriveQuestFilesDir is pure and stable, so both paths resolve
-// to the same target after the migration runs in loadQuests().
+// Per-quest directory files.
 function questFilesRoot(quest) {
   if (!quest) return null;
   if (typeof quest.questFilesDir === 'string' && quest.questFilesDir.trim()) {
@@ -2317,10 +1722,7 @@ function questConversationFilePath(quest) {
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'CONVERSATION.md');
 }
 
-// v3.10.158: third essential quest file — running notes
-// (SSH paths, deploy cheatsheets, project structure, etc.).
-// Sibling to INSTRUCTIONS.md and CONVERSATION.md; same
-// directory-relative or id-fallback resolution.
+// Third essential quest file — running notes (SSH paths, deploy cheatsheets, project structure, etc.).
 function questNotesFilePath(quest) {
   if (!quest) return null;
   const root = questFilesRoot(quest);
@@ -2329,12 +1731,7 @@ function questNotesFilePath(quest) {
   return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, 'NOTES.md');
 }
 
-// Prefer the new filename; fall back to the v3.2.30-era
-// `QUEST_QUEST_INSTRUCTIONS.md` so users on the old name
-// don't see their work vanish. v3.3.15: also fall back to
-// the pre-v3.3.15 location `<quest.directory>/INSTRUCTIONS.md`
-// for legacy projects that haven't been migrated yet. Returns
-// the path that exists, or null if none do.
+// Prefer the new filename; fall back to the v3.2.30-era `QUEST_QUEST_INSTRUCTIONS.md` so users on the old name don't see their work vanish.
 function resolveExistingInstructionsPath(quest) {
   const v2 = questInstructionsFilePathV2(quest);
   const v1 = questInstructionsFilePath(quest);
@@ -2346,31 +1743,7 @@ function resolveExistingInstructionsPath(quest) {
   try { if (legacyRoot && fs.existsSync(legacyRoot)) return legacyRoot; } catch {}
   return null;
 }
-// v3.2.61: scaffold a newly-created quest's directory with
-// the markdown files that future turns will write to. Idempotent:
-// running on an already-scaffolded dir is a no-op (writeFileSync
-// of the same content to the same path leaves the file
-// unchanged). Writes:
-//   - INSTRUCTIONS.md (with `# Project instructions` heading)
-//   - CONVERSATION.md (empty, with a comment header)
-//   - NOTES.md (with `# Project notes` heading — third
-//     essential file; running notes about the project,
-//     SSH paths, deploy cheatsheets, etc.)
-//
-// Returns { ok, instructionsPath, conversationPath, notesPath, mkdirOk }
-// on success, or { ok: false, error } if the directory could
-// not be created (e.g. invalid path / no write permission).
-// The desktop's quest-create flow continues regardless of
-// the scaffold failing — a quest without scaffolded files
-// is still a valid quest, the writes just bounce through
-// the JSON-array fallback instead.
-// v3.10.156: auto-derive a directory for a new quest
-// when the caller didn't supply one. Returns a
-// filesystem-safe absolute path under either the caller's
-// default dir, the system-wide default
-// (`DEFAULT_QUEST_DIR` below), or ~/quests. Always
-// returns a path so the downstream scaffold never has to
-// handle "no directory" as a special case.
+// Scaffold a newly-created quest's directory with the markdown files that future turns will write to.
 function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   if (explicitDir && typeof explicitDir === 'string' && explicitDir.trim()) {
     return explicitDir.trim();
@@ -2390,14 +1763,7 @@ function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   return path.join(os.homedir(), 'quests', safeName);
 }
 
-// v3.10.157 + v3.3.2: the system-wide default quest directory.
-// Used when the caller didn't supply a directory AND
-// didn't pass a defaultQuestDir. Falls back to ~/quests/<name>
-// (a portable default that works on any user's machine).
-// Override with the CYBERCLAW_DEFAULT_QUEST_DIR env var to
-// point at a specific projects folder. Set the env var to ''
-// (empty string) to force the same ~/quests/<name> fallback
-// even if it would otherwise resolve elsewhere.
+// The system-wide default quest directory.
 const DEFAULT_QUEST_DIR =
   process.env.CYBERCLAW_DEFAULT_QUEST_DIR !== undefined
     ? process.env.CYBERCLAW_DEFAULT_QUEST_DIR
@@ -2406,20 +1772,7 @@ const DEFAULT_QUEST_DIR =
 function scaffoldQuestDirectory(quest) {
   if (!quest || !quest.directory) return { ok: false, error: 'no directory' };
   try {
-    // v3.3.15: Tobe's quest-creation model — the 3 .md files
-    // (INSTRUCTIONS / CONVERSATION / NOTES) always live in a
-    // `quest/` subfolder under the project directory, so a
-    // brand-new project (which doesn't have package.json yet)
-    // and an existing project (which already has its own files
-    // at the root) both end up with the same clean layout:
-    //   <quest.directory>/                  <- project files
-    //   <quest.directory>/quest/            <- this quest's files
-    //     INSTRUCTIONS.md
-    //     CONVERSATION.md
-    //     NOTES.md
-    // mkdir -p handles "parent already exists with files"
-    // gracefully — it doesn't touch existing files, only creates
-    // the missing `quest/` directory.
+    // Tobe's quest-creation model — the 3 .md files (INSTRUCTIONS / CONVERSATION / NOTES) always live in a `quest/` subfolder under the project…
     const filesDir = deriveQuestFilesDir(quest);
     fs.mkdirSync(quest.directory, { recursive: true });
     if (filesDir) fs.mkdirSync(filesDir, { recursive: true });
@@ -2475,10 +1828,7 @@ function scaffoldQuestDirectory(quest) {
         'utf-8',
       );
     }
-    // v3.10.158: scaffold NOTES.md as the third essential.
-    // Companion writes running notes (SSH paths, deploy
-    // commands, project structure, gotchas) here. Idempotent
-    // — never overwrites existing content.
+    // Scaffold NOTES.md as the third essential.
     if (!fs.existsSync(notes)) {
       fs.writeFileSync(
         notes,
@@ -2504,11 +1854,7 @@ ipcMain.handle('quests:read-quest-instructions', (event, questId) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  // v3.2.61: prefer the new INSTRUCTIONS.md; fall back to
-  // the v3.2.30-era QUEST_QUEST_INSTRUCTIONS.md for users
-  // on the old name. If neither exists yet, return the
-  // v2 path so the renderer's "create on first save"
-  // writes land in the right place.
+  // Prefer the new INSTRUCTIONS.md; fall back to the v3.2.30-era QUEST_QUEST_INSTRUCTIONS.md for users on the old name.
   const existing = resolveExistingInstructionsPath(quest);
   const file = existing || questInstructionsFilePathV2(quest);
   try {
@@ -2524,18 +1870,7 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
-  // v3.2.61: write to the v2 path (INSTRUCTIONS.md). If
-  // the user is still on the v3.2.30 name, also keep it
-  // happy by writing both files — but only the first time
-  // we migrate, and only if the legacy file already has
-  // content we don't want to lose.
-  //
-  // v3.3.15: under Tobe's new quest-creation model,
-  // `newFile` now resolves to `<quest.directory>/quest/INSTRUCTIONS.md`.
-  // For pre-v3.3.15 projects that still have the file at the
-  // project root, run the legacy-file migration FIRST so the
-  // write lands where the existing file is (no orphaned
-  // duplicates).
+  // Write to the v2 path (INSTRUCTIONS.md).
   const newFile = questInstructionsFilePathV2(quest);
   const legacyFile = questInstructionsFilePath(quest);
   try {
@@ -2545,27 +1880,13 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
     const parent = path.dirname(newFile);
     fs.mkdirSync(parent, { recursive: true });
     fs.writeFileSync(newFile, content || '', 'utf-8');
-    // v3.2.61 legacy migration: if the legacy file
-    // exists AND has different content, copy its content
-    // into the new file ONCE (preserves any user edits
-    // that landed in the old filename before they noticed
-    // the rename). After this pass, new edits land in
-    // INSTRUCTIONS.md and the legacy file is left in
-    // place until manually deleted (so a user who reverts
-    // to the old flow can find their old content).
+    // V3.2.61 legacy migration: if the legacy file exists AND has different content, copy its content into the new file ONCE (preserves any user…
     try {
       if (fs.existsSync(legacyFile) && !fs.existsSync(newFile)) {
-        // newFile was JUST created by writeFileSync above
-        // — this branch is unreachable in practice. Kept
-        // as belt-and-braces for race conditions where a
-        // concurrent read sees the new file as missing.
+        // NewFile was JUST created by writeFileSync above — this branch is unreachable in practice.
         fs.writeFileSync(newFile, fs.readFileSync(legacyFile, 'utf-8'));
       } else if (fs.existsSync(legacyFile) && fs.existsSync(newFile)) {
-        // Both files exist. If they have the same content
-        // (no edits since the migration), silently delete
-        // the legacy file to converge on the new name.
-        // If they differ, leave both in place — the user
-        // can manually reconcile.
+        // Both files exist.
         const legacyContent = fs.readFileSync(legacyFile, 'utf-8');
         const newContent = fs.readFileSync(newFile, 'utf-8');
         if (legacyContent === newContent) {
@@ -2579,51 +1900,20 @@ ipcMain.handle('quests:save-quest-instructions', (event, questId, content) => {
   }
 });
 
-// v3.2.41: per-quest instructions-file append. The companion
-// can write its own notes to the active quest's
-// QUEST_QUEST_INSTRUCTIONS.md so future turns (and future
-// sessions) have a memory of what it learned about the
-// project: SSH paths, deploy commands, "don't touch this
-// file", "use British English", etc. Tobe's 2026-08-02
-// 15:45 ask: "as it works within the quests it should
-// leave notes for itself, and update key info in the
-// quest instructions for itself, how to do things etc."
-//
-// The append is timestamped + grouped under a
-// "## Companion notes" section so the user-written
-// instructions stay untouched at the top and the agent's
-// running notes accumulate at the bottom. If the section
-// doesn't exist yet, it's created. If the file doesn't
-// exist, it's created with just the notes section.
-//
-// The renderer is responsible for invalidating its
-// in-memory cache so the next chat send sees the new note.
+// Per-quest instructions-file append.
 ipcMain.handle('quests:append-quest-instructions', (event, questId, text) => {
   const quests = loadQuests();
   const quest = quests.find(q => q.id === questId);
   if (!quest) return { ok: false, error: 'quest not found' };
   if (!text || typeof text !== 'string' || !text.trim()) return { ok: false, error: 'text is empty' };
-  // v3.2.61: write notes to the v2 filename (INSTRUCTIONS.md).
-  // If the legacy file exists AND the v2 doesn't yet, port
-  // the legacy content into the v2 file first so the new
-  // notes land alongside the user's existing notes (instead
-  // of leaving them stranded in the old filename).
-  //
-  // v3.3.15: under Tobe's new quest-creation model, `v2File`
-  // now resolves to `<quest.directory>/quest/INSTRUCTIONS.md`.
-  // Migrate any pre-v3.3.15 root-level files into the new
-  // `quest/` subfolder first so the append lands where the
-  // existing notes live. Idempotent.
+  // Write notes to the v2 filename (INSTRUCTIONS.md).
   const v2File = questInstructionsFilePathV2(quest);
   const legacyFile = questInstructionsFilePath(quest);
   // Legacy port: best-effort, must happen BEFORE the main
   // try so the read of `file` sees the ported content if
   // needed.
   try {
-    // v3.3.15: migrate root-level files (pre-v3.3.15 layout)
-    // into `<dir>/quest/` before the legacy v1 → v2 port.
-    // Idempotent — safe to call even when nothing needs
-    // migrating.
+    // Migrate root-level files (pre-v3.3.15 layout) into `<dir>/quest/` before the legacy v1 → v2 port.
     migrateLegacyQuestFiles(quest);
     if (fs.existsSync(legacyFile) && !fs.existsSync(v2File)) {
       const legacyContent = fs.readFileSync(legacyFile, 'utf-8');
@@ -2640,21 +1930,12 @@ ipcMain.handle('quests:append-quest-instructions', (event, questId, text) => {
     // The note line. "+ a leading blank line" so the
     // append doesn't run into the previous note.
     const noteBlock = `\n\n## Companion note (${ts})\n\n${text.trim()}\n`;
-    // If the file already has a "## Companion notes"
-    // section, append at its end. Otherwise create the
-    // section. We use the FIRST "## Companion note" /
-    // "## Companion notes" heading as the anchor so
-    // multiple notes accumulate under one section.
+    // If the file already has a "## Companion notes" section, append at its end.
     const sectionHeader = '## Companion notes';
     const sectionRe = /^## Companion notes\s*$/m;
     let next;
     if (sectionRe.test(existing)) {
-      // Append after the section header (and any
-      // existing note blocks). The simplest safe
-      // choice is to append at the end of the file —
-      // earlier notes never get touched, the new note
-      // lands at the bottom, and the user just sees
-      // a timeline.
+      // Append after the section header (and any existing note blocks).
       next = existing.replace(/\s*$/, '') + noteBlock;
     } else {
       // No section yet. Create one at the bottom of
@@ -2712,18 +1993,9 @@ ipcMain.handle('companion:save-avatar', (event, agentId, dataUrl) => {
   return avatarPath;
 });
 
-// v3.2.32: companion soul + memory IPC. The renderer (and
-// mobile via sync) reads/writes soul.md + memory.md through
-// these. write-soul and remember-memory go through
-// `cyberclaw.companions.*` from preload.js.
+// Companion soul + memory IPC.
 ipcMain.handle('companion:get-soul', (event, agentId) => {
-  // v3.3.9: also expose TRAIT_TO_SOUL so the desktop forge
-  // can rebuild the soul preview live when the user toggles
-  // trait checkboxes (see buildSoulFromTraits in app.js).
-  // Without this, the forge would have to reimplement the
-  // trait-to-sentence mapping or hit the IPC on every
-  // checkbox change — both fragile. The mapping is small
-  // and stable, shipping it with every get-soul call is fine.
+  // Also expose TRAIT_TO_SOUL so the desktop forge can rebuild the soul preview live when the user toggles trait checkboxes (see…
   return {
     ok: true,
     content: companionPrompts.readSoul(agentId),
@@ -2754,11 +2026,7 @@ ipcMain.handle('companion:clear-memory', (event, agentId) => {
   return companionPrompts.clearMemory(agentId);
 });
 
-// v3.3.0: User-managed Skill library. Each skill is a markdown
-// file under ~/.openclaw/cyberclaw/skills/<id>/SKILL.md with
-// YAML frontmatter. Per-companion enabled-skills lists live in
-// companions/<id>/enabled-skills.json. assembleContext() reads
-// them and includes enabled skill content in the system prompt.
+// User-managed Skill library.
 ipcMain.handle('skills:list', () => {
   try { return { ok: true, skills: skillStore.listSkills() }; }
   catch (e) { return { ok: false, error: e.message }; }
@@ -2855,22 +2123,7 @@ ipcMain.handle('providers:delete', (event, id) => {
   return { ok: true };
 });
 
-// ─── LLM Endpoints (user-managed local model servers) ──────────
-// v3.1.33: a lightweight registry of OpenAI-compatible HTTP
-// endpoints the user has set up locally (Ollama, LM Studio,
-// llama.cpp server, Jan.ai, vLLM, etc.). Each endpoint serves
-// one or more models the user has downloaded. CyberClaw
-// doesn't manage the model downloads themselves — the user
-// brings their own model, we just point at the endpoint.
-//
-// Storage: ~/.openclaw/cyberclaw/llm-endpoints.json
-// Schema: { id, name, baseUrl, apiKey?, type, models[]?,
-//            lastProbedAt?, lastError? }
-//
-// At app startup we auto-probe localhost:11434 (the default
-// Ollama port) and add it as "Local Ollama" if it's reachable
-// and not already configured. Other endpoints are added
-// manually via Settings → LLM Endpoints.
+// ─── LLM Endpoints (user-managed local model servers) ────────── v3.1.33: a lightweight registry of OpenAI-compatible HTTP endpoints the…
 function loadLlmEndpoints() {
   try { return JSON.parse(fs.readFileSync(LLM_ENDPOINTS_FILE, 'utf8')); }
   catch { return []; }
@@ -2880,10 +2133,7 @@ function saveLlmEndpoints(list) {
   fs.writeFileSync(LLM_ENDPOINTS_FILE, JSON.stringify(list, null, 2));
 }
 
-// Probe an OpenAI-compatible endpoint for its available
-// models. Returns { ok, models: [{id}], error? }. Handles
-// Ollama's /api/tags endpoint specially (returns different
-// shape) by detecting the response format.
+// Probe an OpenAI-compatible endpoint for its available models.
 async function probeLlmEndpoint(baseUrl, apiKey) {
   const cleanBase = String(baseUrl || '').replace(/\/+$/, '');
   if (!cleanBase) return { ok: false, error: 'baseUrl required' };
@@ -3009,24 +2259,7 @@ ipcMain.handle('llm:endpoints:detect-ollama', async () => {
   return { ok: true, endpoint: ep, alreadyConfigured: false };
 });
 
-// ─── Local Ollama runtime status / warm-up / unload ───────────────
-//
-// Companion model strings look like "ollama/qwen2.5-coder:32b":
-//   <providerId>/<modelId>
-// We resolve the provider's baseUrl from openclaw.json
-// (models.providers[providerId].baseUrl) and call Ollama's
-// native /api/ps and /api/generate endpoints (NOT the OpenAI-
-// compatible /v1/ surface) because /api/ps is the only way to
-// see what's actually loaded in VRAM.
-//
-// State pill in chat header shows:
-//   🟢 running  — model is in VRAM right now
-//   🟡 cold     — Ollama up, model on disk but not loaded
-//   🔴 down     — Ollama not reachable
-//   ⚠ too-big  — model won't fit available VRAM (estimated)
-//
-// We use /api/ps (not /v1/models) because /v1/models only
-// reports what's *on disk*, not what's currently in VRAM.
+// ─── Local Ollama runtime status / warm-up / unload ─────────────── Companion model strings look like "ollama/qwen2.5-coder:32b":…
 
 function parseModelRef(modelStr) {
   if (!modelStr || typeof modelStr !== 'string') return null;
@@ -3039,11 +2272,6 @@ function parseModelRef(modelStr) {
 }
 
 // Resolve a model string to its Ollama base URL + raw model name.
-// Returns { baseUrl, modelId, providerName } or null if it's not
-// an Ollama-style provider. We accept any provider whose baseUrl
-// points at localhost:11434 (covers the typical Ollama setup,
-// including the "ollama" provider in openclaw.json which uses
-// /v1 in its baseUrl but still talks to native Ollama).
 function resolveOllamaEndpoint(modelStr) {
   const ref = parseModelRef(modelStr);
   if (!ref) return null;
@@ -3057,11 +2285,7 @@ function resolveOllamaEndpoint(modelStr) {
   return { baseUrl, modelId: ref.modelId, providerName: provider.name || ref.providerId };
 }
 
-// v3.3.5: generic "is this model local?" resolver. Returns
-// { isLocal, baseUrl, modelId, providerName } for ANY provider
-// whose baseUrl points at localhost or 127.0.0.1 — covers
-// Ollama, LM Studio, llama.cpp server, vLLM, etc. Used by the
-// renderer to decide whether to show the local-LLM pill.
+// Generic "is this model local?" resolver.
 ipcMain.handle('llm:resolve-local', (event, { model } = {}) => {
   if (!model) return { isLocal: false };
   const ref = parseModelRef(model);
@@ -3084,11 +2308,7 @@ ipcMain.handle('llm:resolve-local', (event, { model } = {}) => {
   };
 });
 
-// v3.3.5: on app startup (and on demand from the renderer),
-// probe any provider in openclaw.json whose baseUrl is local.
-// Used to surface the pill proactively before the user opens
-// a chat. Returns a list of { providerId, baseUrl, reachable,
-// models: [...], lastProbedAt }.
+// On app startup (and on demand from the renderer), probe any provider in openclaw.json whose baseUrl is local.
 ipcMain.handle('llm:probe-all-local', async () => {
   const cfg = readOpenClawConfig();
   const providers = (cfg?.models?.providers) || {};
@@ -3137,10 +2357,7 @@ ipcMain.handle('llm:ollama-status', async (event, { model } = {}) => {
   return ollamaStatusImpl(model);
 });
 
-// Force-load a model into VRAM by sending a minimal generate
-// request with keep_alive set to 30m. Runs async (don't await
-// the model response — we don't need it; just the side-effect
-// of Ollama loading the weights).
+// Force-load a model into VRAM by sending a minimal generate request with keep_alive set to 30m.
 ipcMain.handle('llm:ollama-warm', async (event, { model } = {}) => {
   return ollamaWarmImpl(model);
 });
@@ -3158,10 +2375,7 @@ ipcMain.handle('llm:ollama-start', async () => {
   return ollamaStartImpl();
 });
 
-// v3.1.33: change a companion's primary model. Edits
-// openclaw.json directly (openclaw doesn't expose an
-// `agents edit --model` subcommand, so we patch the
-// config and let the gateway pick it up on next session).
+// Change a companion's primary model.
 ipcMain.handle('agent:set-model', (event, { agentId, model, fallbacks }) => {
   const cfg = readOpenClawConfig();
   if (!cfg) return { ok: false, error: 'openclaw.json not readable' };
@@ -3180,18 +2394,12 @@ ipcMain.handle('agent:set-model', (event, { agentId, model, fallbacks }) => {
   }
 });
 
-// v3.1.36: Train a custom openWakeWord model for a companion.
-// Receives audio sample paths from the phone, runs the
-// training script, streams progress events back, and
-// returns the trained .tflite path.
+// Train a custom openWakeWord model for a companion.
 ipcMain.handle('agent:train-wake-phrase', async (event, { agentId, phrase, samples }) => {
   if (!agentId || !phrase || !Array.isArray(samples) || !samples.length) {
     return { ok: false, error: 'agentId, phrase, samples required' };
   }
-  // v3.1.37: `samples` is an array of {name, data} where data is
-  // base64-encoded audio. We decode + write into the work dir.
-  // (Previously took `samplePaths` to local files; the renderer
-  // and the phone are now expected to ship bytes.)
+  // `samples` is an array of {name, data} where data is base64-encoded audio.
   for (const s of samples) {
     if (!s || !s.name || !s.data) {
       return { ok: false, error: 'each sample needs {name, data}' };
@@ -3324,10 +2532,7 @@ ipcMain.handle('agent:read-wake-model', (event, { tflitePath }) => {
   }
 });
 
-// ─── OpenClaw Config Read/Write ───────────────────────────────
-// CyberClaw companions are openclaw agents. We read `models.providers`
-// (the LLM provider list) and `agents.list` (the agent list) directly
-// from `~/.openclaw/openclaw.json` so changes in either app stay in sync.
+// ─── OpenClaw Config Read/Write ─────────────────────────────── CyberClaw companions are openclaw agents.
 const OPENCLAW_CONFIG = path.join(OPENCLAW_DIR, 'openclaw.json');
 
 function readOpenClawConfig() {
@@ -3471,14 +2676,7 @@ ipcMain.handle('quests:delete', (event, id) => {
   saveQuests(quests);
   return true;
 });
-// v3.1.50: set a quest as the active (working) one. Exactly one
-// quest can be active at a time; setting one clears the others.
-// Pass null/undefined to clear all (no active quest).
-//
-// We update the array in-place then saveQuests, which broadcasts
-// the new list to all connected mobiles. The mobile's
-// QuestsScreen reads the `active` flag from each quest in the
-// broadcast and shows an ACTIVE badge on the matching card.
+// Set a quest as the active (working) one.
 ipcMain.handle('quests:set-active', (event, id) => {
   const quests = loadQuests();
   let changed = false;
@@ -3492,14 +2690,7 @@ ipcMain.handle('quests:set-active', (event, id) => {
   if (changed) saveQuests(quests);
   return quests.find(q => q.active) || null;
 });
-// v3.1.50: append a change to the quest's `latestChanges` log.
-// Called by the agent (via the renderer's structured-output
-// parser) when it does something worth logging on the active
-// quest. Newest entry is at the end; the log is unbounded but
-// trimmed to the last 100 entries to keep the JSON file small.
-//
-// Returns the new entry so the caller can echo it back in chat
-// ("logged: <text>") if desired.
+// Append a change to the quest's `latestChanges` log.
 ipcMain.handle('quests:append-change', (event, id, text) => {
   if (!id || !text || typeof text !== 'string' || !text.trim()) return null;
   const quests = loadQuests();
@@ -3516,30 +2707,7 @@ ipcMain.handle('quests:append-change', (event, id, text) => {
   saveQuests(quests);
   return entry;
 });
-// v3.2.59: per-quest conversation log IPCs. Every chat
-// exchange (user + agent) when there's an active quest gets
-// stamped with the quest id and appended to that quest's
-// `conversationLog`. The companion reads the most-recent N
-// entries on every reply via buildActiveQuestContext so
-// project context carries across sessions / restarts / LLM
-// restarts.
-//
-// Field shape:
-//   { ts: ISO timestamp, role: 'user'|'agent'|'system',
-//     text: string (capped at 1000 chars),
-//     agentId: agent id of the speaker (or null for user),
-//     agentName: display name of the speaker (or null) }
-//
-// Storage:
-//   - Up to 200 entries per quest, FIFO-trimmed.
-//   - Each text capped at 1000 chars (long agent replies
-//     get the first 1000 chars + '…' to keep the JSON
-//     small; the full text is still in the desktop's
-//     chatHistoryByAgent for the UI).
-//   - Persisted to the same quests.json via saveQuests().
-//
-// Read IPC: quests:get-conversation-log (returns the array)
-// Clear IPC: quests:clear-conversation-log (resets the array)
+// Per-quest conversation log IPCs.
 const CONVERSATION_LOG_MAX_ENTRIES = 200;
 const CONVERSATION_LOG_MAX_TEXT_CHARS = 1000;
 function appendConversationLog(q, role, text, agentId, agentName) {
@@ -3561,32 +2729,13 @@ function appendConversationLog(q, role, text, agentId, agentName) {
   if (q.conversationLog.length > CONVERSATION_LOG_MAX_ENTRIES) {
     q.conversationLog = q.conversationLog.slice(-CONVERSATION_LOG_MAX_ENTRIES);
   }
-  // v3.2.61: also persist to the per-quest markdown file
-  // (<quest.directory>/CONVERSATION.md). The file is the
-  // canonical long-term store per Tobe's mental model
-  // ("all the files that a quest needs, including
-  // conversation log, quest instructions etc."). The
-  // JSON array stays as the fast-read mirror for
-  // buildActiveQuestContext's LLM-context injection.
-  //
-  // File format: one entry per line, prefixed with
-  // `[ts] role:`. Reads back via the existing
-  // buildActiveQuestContext path (which still reads the
-  // JSON array as the primary source — the file is
-  // advisory; we don't re-parse it for LLM context. That
-  // would double-write and double-parse.) The file IS
-  // what the user sees / cats / version-controls; the
-  // JSON is what the LLM sees.
+  // Also persist to the per-quest markdown file (<quest.directory>/CONVERSATION.md).
   try {
     const convFile = questConversationFilePath(q);
     if (convFile) {
       const parentDir = path.dirname(convFile);
       fs.mkdirSync(parentDir, { recursive: true });
-      // If the file doesn't exist (e.g. the quest was
-      // created before v3.2.61's scaffold, or the
-      // scaffold failed for some reason), create a
-      // minimal header so the next reader knows what
-      // they're looking at.
+      // If the file doesn't exist (e.g.
       if (!fs.existsSync(convFile)) {
         fs.writeFileSync(
           convFile,
@@ -3604,13 +2753,7 @@ function appendConversationLog(q, role, text, agentId, agentName) {
         );
       }
       const line = `[${entry.ts}] ${entry.role}${entry.agentName ? `(${entry.agentName})` : entry.agentId ? `(${entry.agentId})` : ''}: ${entry.text}\n`;
-      // We open with 'a' flag so the file is appended in
-      // place — keep the OS-level guarantee that the file
-      // is always consistent at rest for readers that
-      // tail -f. (Using writeFileSync over the whole
-      // file would atomically replace it every chat turn,
-      // which is wasted IO for a transcript that's only
-      // ever appended.)
+      // We open with 'a' flag so the file is appended in place — keep the OS-level guarantee that the file is always consistent at rest for…
       fs.appendFileSync(convFile, line, 'utf-8');
     }
   } catch (e) {
@@ -3638,12 +2781,7 @@ ipcMain.handle('quests:get-conversation-log', (event, questId) => {
   const quests = loadQuests();
   const q = quests.find(x => x.id === questId);
   if (!q) return { ok: false, error: 'quest not found' };
-  // v3.2.61: also return the file path so the caller
-  // (e.g. mobile UI) can navigate to the canonical
-  // long-term store. The JSON `log` is still what
-  // buildActiveQuestContext injects into the LLM
-  // context, but the file is what the user can
-  // version-control.
+  // Also return the file path so the caller (e.g.
   return {
     ok: true,
     log: Array.isArray(q.conversationLog) ? q.conversationLog : [],
@@ -3668,13 +2806,7 @@ ipcMain.handle('quests:clear-conversation-log', (event, questId) => {
   return { ok: true };
 });
 
-// v3.2.61: read the raw per-quest conversation file.
-// Returns the file content as a string, plus the path
-// so the caller can show "edit in your editor" or use
-// a future "open in file viewer" UI on the mobile.
-// If the file doesn't exist yet (brand new quest), returns
-// { ok: true, content: '', path } so the caller can
-// render an empty editor or show "(no messages yet)".
+// Read the raw per-quest conversation file.
 ipcMain.handle('quests:get-conversation-file', (event, questId) => {
   if (!questId) return { ok: false, error: 'no questId' };
   const quests = loadQuests();
@@ -3710,10 +2842,7 @@ ipcMain.handle('quests:mark-goal-done', (event, id, goalIndex, completed) => {
   saveQuests(quests);
   return q;
 });
-// v3.1.50: convenience getter for the currently active quest,
-// or null if none is selected. Used by the renderer's chat
-// context builder to avoid the round-trip of
-// `list().find(q => q.active)`.
+// Convenience getter for the currently active quest, or null if none is selected.
 ipcMain.handle('quests:get-active', () => {
   const quests = loadQuests();
   return quests.find(q => q.active) || null;
@@ -3737,11 +2866,7 @@ function execPromise(cmd) {
 }
 
 ipcMain.handle('wizard:get-version', () => {
-  // v3.1.34: read the actual package.json from disk so the
-  // wizard's version pill shows the real version (e.g. "v3.3.37")
-  // instead of the hardcoded fallback the renderer's CSP-blocked
-  // fetch had to use. Cached at module load so each call is cheap.
-  // main.js lives in src/, so package.json is one directory up.
+  // Read the actual package.json from disk so the wizard's version pill shows the real version (e.g.
   if (!wizardGetVersionCache) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
@@ -3813,12 +2938,7 @@ ipcMain.handle('wizard:check', async (event, what) => {
     case 'check-agents': {
       try {
         const config = readOpenClawConfig();
-        // v3.1.34: read from BOTH `entries` (modern key) and
-        // `list` (older key the wizard used to write). The
-        // openclaw CLI uses `entries`; the wizard's own
-        // create-agent handler was using `list`; the result
-        // was the wizard seeing 0 agents even when the openclaw
-        // CLI had registered them. Normalize.
+        // Read from BOTH `entries` (modern key) and `list` (older key the wizard used to write).
         const agents = (config?.agents?.entries && Object.values(config.agents.entries)) || config?.agents?.list || [];
         return { ok: agents.length > 0, count: agents.length };
       } catch { return { ok: false, count: 0 }; }
@@ -4067,32 +3187,16 @@ ipcMain.handle('wizard:create-agent', async (event, opts) => {
   const model = (opts?.model || '').toString().trim();
   const workspace = (opts?.workspace || path.join(os.homedir(), 'workspace', name)).toString();
 
-  // v3.1.33: actually pass --workspace and --model to
-  // `agents add` so the new agent is registered with the
-  // user's chosen LLM. Pre-v3.1.33 the wizard ran the
-  // command without these flags, so every new companion
-  // silently inherited the global default model.
+  // Actually pass --workspace and --model to `agents add` so the new agent is registered with the user's chosen LLM.
   const args = [`"${bin}"`, 'agents', 'add', '--non-interactive', '--workspace', `"${workspace}"`];
   if (model) args.push('--model', `"${model}"`);
-  // v3.3.37: use execPromise (async exec with 60s timeout)
-  // instead of bare execSync. The old execSync had NO timeout,
-  // so `openclaw agents add` could block the entire Electron
-  // main process for however long it took to write config /
-  // probe the model / etc. — making the WM show the
-  // "CyberClaw is not responding" dialog. Other wizard
-  // handlers already used execPromise; this one was missed.
-  // Falls through to the same set-model fallback on failure
-  // (covers the "agent already exists" case).
+  // Use execPromise (async exec with 60s timeout) instead of bare execSync.
   const result = await execPromise(args.join(' ') + ' 2>&1');
   if (result.ok) {
     await writeDefaultCompanionIdentity(workspace, name);
     return { ok: true, output: result.output };
   }
-  // Agent might already exist; fall through to set-model
-  // so the user's chosen model is applied even on retry.
-  // v3.3.37: defer the sync config read/write to the next
-  // tick via setImmediate so it doesn't block the main
-  // process while the IPC response is being sent back.
+  // Agent might already exist; fall through to set-model so the user's chosen model is applied even on retry.
   setImmediate(() => {
     try {
       const cfg = readOpenClawConfig();
@@ -4110,22 +3214,7 @@ ipcMain.handle('wizard:create-agent', async (event, opts) => {
   return { ok: true, warning: result.error };
 });
 
-// v3.1.34: write a default IDENTITY.md + avatar reference into a
-// brand-new companion's workspace so discoverAgents() picks up a
-// sprite instead of leaving the agent with `avatarPath: null` (which
-// shows up in the desktop UI as a missing/broken sprite and makes
-// the "edit companion" form look empty until the user manually
-// fills in the avatar field). Idempotent: if IDENTITY.md already
-// exists, we don't touch it.
-//
-// v3.3.37: converted to async (fs.promises). The old version used
-// fs.mkdirSync / fs.writeFileSync / fs.readdirSync which block the
-// Electron main process. On a slow disk (or a workspace on a
-// network mount) the sync calls would freeze the main process
-// long enough for the WM to show "not responding". This is the
-// second half of the wizard-hang fix — execPromise handles the
-// `openclaw agents add` CLI call, writeDefaultCompanionIdentity
-// handles the workspace file I/O.
+// Write a default IDENTITY.md + avatar reference into a brand-new companion's workspace so discoverAgents() picks up a sprite instead of…
 async function writeDefaultCompanionIdentity(workspace, name) {
   try {
     await fs.promises.mkdir(workspace, { recursive: true });
@@ -4223,13 +3312,7 @@ function cleanup() {
 app.whenReady().then(() => {
   createWindow();
 
-  // v3.1.33: auto-detect Ollama at the default port and
-  // register it as "Local Ollama" so the friendliest
-  // possible UX means the user's already-downloaded
-  // models are usable without manual setup. We only
-  // add it if no Ollama entry exists yet — don't
-  // stomp on a user-registered non-default port.
-  // Failures are silent (don't block app startup).
+  // Auto-detect Ollama at the default port and register it as "Local Ollama" so the friendliest possible UX means the user's…
   setImmediate(async () => {
     try {
       const probe = await probeLlmEndpoint('http://localhost:11434');
@@ -4267,11 +3350,7 @@ app.whenReady().then(() => {
       // Mark this ws for TTS reply — same as audio_input flow
       if (meta.ws && syncServer) syncServer._voiceReplyWs = meta.ws;
       discordLog('💬', 'Mobile chat received', `"${text.substring(0, 60)}"`, 'voice');
-      // v3.2.56: hold the text for MOBILE_CHAT_HOLD_MS to
-      // allow a follow-up attachment batch to merge. If
-      // an attachment arrives in the window, send a single
-      // combined IPC; otherwise fall through to the
-      // existing text-only send after the timer.
+      // Hold the text for MOBILE_CHAT_HOLD_MS to allow a follow-up attachment batch to merge.
       if (pendingMobileChatText && pendingMobileChatText.timer) {
         clearTimeout(pendingMobileChatText.timer);
       }
@@ -4306,13 +3385,7 @@ app.whenReady().then(() => {
       }
     },
     onVoiceTranscript: (transcript, context, meta) => {
-      // v3.2.78: strip the non-serializable `ws` from
-      // meta before IPC. Same fix as the arena_treat
-      // handlers below — Electron's structured-clone
-      // can't serialize a WebSocket instance. Defensive
-      // here even though we haven't seen this path
-      // fail yet, because it would be silent and the
-      // mobile-voice handler is just as critical.
+      // Strip the non-serializable `ws` from meta before IPC.
       if (mainWindow && !mainWindow.isDestroyed()) {
         const { ws: _ws, ...serializableMeta } = meta || {};
         mainWindow.webContents.send('mobile-voice', {
@@ -4321,58 +3394,19 @@ app.whenReady().then(() => {
       }
     },
     onMobileWakeAgent: (agentId, meta) => {
-      // v3.10.3: relay the mobile's wake-request to the
-      // renderer. The renderer's mobile-wake-request IPC
-      // handler flips sleepState for the targeted agent.
-      // The broadcastAgentsListToMobile() call inside the
-      // renderer pushes the new state back to all
-      // connected mobile clients.
+      // Relay the mobile's wake-request to the renderer.
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-wake-request', { agentId });
       }
     },
     onMobileActivityPing: (agentId, meta) => {
-      // v3.10.91: relay the mobile's activity heartbeat to
-      // the renderer. The renderer's mobile-activity-ping
-      // IPC handler bumps lastInteractionTs on the targeted
-      // agent so its auto-sleep timer resets. The agent
-      // stays awake while the mobile user is actively
-      // engaged (chat tab open + app foregrounded).
-      //
-      // Without this, a mobile-only user (no chat submit,
-      // no voice, no treats on desktop) sees the companion
-      // fall asleep after 12 min, even though they're
-      // actively looking at the chat on mobile. Tobe's
-      // report (2026-07-23 23:28): "The companions should
-      // sleep on the mobile also like they do on desktop."
-      //
-      // Implementation note: the IPC sends through to the
-      // renderer because the agents[] data structure lives
-      // there (renderer is the source of truth for
-      // sleepState + lastInteractionTs). The renderer's
-      // handler calls bumpCompanionInteraction() and is
-      // done — no state update needed since
-      // lastInteractionTs isn't broadcast to the mobile.
+      // Relay the mobile's activity heartbeat to the renderer.
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-activity-ping', { agentId });
       }
     },
     onLlmAction: (model, action, meta) => {
-      // v3.3.5: mobile tapped a button on LlmStatusPill
-      // (Start / Warm up / Unload). We run the same logic
-      // the desktop renderer uses, then broadcast the new
-      // status to all mobile clients so the phone's pill
-      // updates in real time.
-      //
-      // We deliberately do NOT forward this to the renderer
-      // — all the logic lives in main.js (the *Impl functions
-      // added alongside the IPC handlers), so we just call
-      // them directly. The desktop's own pill will refresh
-      // next time the user clicks the chat tab; we don't
-      // need to force a refresh here because the broadcast
-      // includes the new state and the renderer listens for
-      // sync-server broadcasts too (it doesn't today, but
-      // that's a minor polish item).
+      // Mobile tapped a button on LlmStatusPill (Start / Warm up / Unload).
       (async () => {
         let r;
         try {
@@ -4400,29 +3434,7 @@ app.whenReady().then(() => {
       })();
     },
     onArenaTreatPlaced: (treat, meta) => {
-      // v3.10.72: mobile dropped a food/treat on the
-      // arena. Forward to the renderer which calls
-      // promptCompanionReaction('I just gave you ' +
-      // TREAT_NAMES[treat] + '. What do you think?') so
-      // the AI text reply matches the visual reaction.
-      // Mirrors the desktop's placeTreatOnArena() in
-      // src/js/app.js:4905.
-      // v3.2.78: strip the non-serializable `ws`
-      // WebSocket from meta before crossing the IPC
-      // boundary. Same pattern as the mobile-chat
-      // handler (line ~3206) — destructures
-      // `const { ws: _ws, ...serializableMeta }`.
-      // Without this, mainWindow.webContents.send
-      // throws "Error: Failed to serialize arguments"
-      // (Electron's structured-clone can't serialize
-      // a ws.WebSocket instance), the IPC silently
-      // fails to reach the renderer, and
-      // promptCompanionReaction never runs. Tobe
-      // 2026-08-06 hit this immediately after the
-      // v3.2.77 fix landed (which finally wired the
-      // callbacks) — every treat_placed/treat_eaten
-      // was logged arriving at sync-server, every
-      // IPC send failed, no companion reacted.
+      // Mobile dropped a food/treat on the arena.
       if (mainWindow && !mainWindow.isDestroyed()) {
         const { ws: _ws, ...serializableMeta } = meta || {};
         mainWindow.webContents.send('mobile-arena-treat-placed', {
@@ -4431,12 +3443,7 @@ app.whenReady().then(() => {
       }
     },
     onArenaTreatEaten: (treat, meta) => {
-      // v3.10.72: companion ate a treat (from the
-      // mobile arena's seek-and-eat logic). Forward to
-      // the renderer for the same reaction as the
-      // desktop's promptCompanionEat() callback.
-      // v3.2.78: strip the non-serializable `ws` from
-      // meta — same fix as onArenaTreatPlaced above.
+      // Companion ate a treat (from the mobile arena's seek-and-eat logic).
       if (mainWindow && !mainWindow.isDestroyed()) {
         const { ws: _ws, ...serializableMeta } = meta || {};
         mainWindow.webContents.send('mobile-arena-treat-eaten', {
@@ -4471,15 +3478,7 @@ app.whenReady().then(() => {
       }
     },
     onRequestAgentsList: () => {
-      // v3.1.16: when a mobile reconnects after the desktop's
-      // initial agents_list broadcast already went out (or the
-      // cache was cleared), ask the renderer to re-broadcast the
-      // current agents list. The renderer's existing
-      // 'sync-broadcast-agents-list' IPC handler then sends the
-      // payload to the main process, which calls
-      // broadcastAgentsList — that hits the cache path in
-      // sync-server.js's _sendFullState for any subsequent
-      // reconnects.
+      // When a mobile reconnects after the desktop's initial agents_list broadcast already went out (or the cache was cleared), ask the renderer…
       console.log('[SyncServer] Asking renderer to re-broadcast agents list');
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('mobile-request-agents-list', {});
@@ -4487,11 +3486,7 @@ app.whenReady().then(() => {
         console.log('[SyncServer] Main window not available!');
       }
     },
-    // v3.1.95: quests live in main.js's domain (loadQuests/
-    // saveQuests), so this callback can read the source of truth
-    // directly and push it to the sync server — no renderer
-    // roundtrip needed. Mirrors the agents-list pattern but with
-    // one fewer hop.
+    // Quests live in main.js's domain (loadQuests/ saveQuests), so this callback can read the source of truth directly and push it to the sync…
     onRequestQuestsList: () => {
       console.log('[SyncServer] No cached quests_list — broadcasting fresh');
       if (syncServer) syncServer.broadcastQuestsList(loadQuests());
@@ -4515,15 +3510,7 @@ app.whenReady().then(() => {
       try { return companionPrompts.clearMemory(agentId); }
       catch (e) { return { ok: false, error: e?.message || String(e) }; }
     },
-    // v3.2.30: read a quest's project instructions file (markdown).
-    // The mobile is read-only on this file; the desktop's
-    // quest editor is the source of truth for changes.
-    // We call the same IPC the desktop's renderer uses
-    // (ipcMain.handle('quests:read-quest-instructions', ...)) so
-    // the resolution path is identical: if the quest has
-    // a directory, read <directory>/QUEST_QUEST_INSTRUCTIONS.md; else
-    // read ~/.openclaw/cyberclaw/quests/<id>/QUEST_QUEST_INSTRUCTIONS.md.
-    // Returns { ok, content, path } (or { ok: false, error }).
+    // Read a quest's project instructions file (markdown).
     onReadQuestInstructions: async (questId) => {
       try {
         // Re-use the IPC handler's logic by simulating a
@@ -4540,12 +3527,7 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
-    // v3.2.33: write counterpart for the read above. The
-    // mobile's quest editor sends save_quest_instructions
-    // with the file content; we write via the same IPC
-    // the desktop's renderer uses (which mkdirs the
-    // parent dir if needed). Returns { ok, path, bytes }
-    // or { ok: false, error }.
+    // Write counterpart for the read above.
     onSaveQuestInstructions: async (questId, content) => {
       try {
         const quests = loadQuests();
@@ -4560,22 +3542,7 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
-    // v3.2.26: phone-side companion edit (Personalize
-    // screen). The mobile sends a sprite_config_sync with
-    // { agentId, config: <partial patch> }. We forward it
-    // to the renderer which is the source of truth for the
-    // in-memory agents map — the renderer merges the patch
-    // with the existing config, calls the existing
-    // cyberclaw.agents.saveSpriteConfig (which writes
-    // sprites.json + regenerates the avatar if sprite
-    // changed), and triggers broadcastAgentsListToMobile()
-    // so every connected client (including the phone that
-    // initiated the edit) sees the updated agents_list.
-    //
-    // Return values: { ok: true } on success,
-    // { ok: false, reason, error } on failure. The
-    // sync-server uses this to send a sprite_config_sync_ok
-    // ack or a sprite_config_sync_failed error.
+    // Phone-side companion edit (Personalize screen).
     onSaveSpriteConfig: (agentId, patch) => {
       if (!agentId) return { ok: false, reason: 'missing_agentId', error: 'agentId is required' };
       if (!mainWindow || mainWindow.isDestroyed()) {
@@ -4589,24 +3556,14 @@ app.whenReady().then(() => {
         return { ok: false, reason: 'send_failed', error: e?.message || 'unknown' };
       }
     },
-    // v3.3.10: mobile sends an API key for a provider.
-    // We forward to the existing providers:save IPC
-    // handler (defined just below in the custom
-    // providers block). The IPC sanitizes + persists
-    // to ~/.openclaw/cyberclaw/providers.json. Returns
-    // the same { ok, ... } shape so the sync-server's
-    // provider_save_ok / _failed ack wiring works.
+    // Mobile sends an API key for a provider.
     onSaveProvider: (provider) => {
       try {
         // Invoke the IPC handler directly. The handler
         // returns { ok, provider } on success or
         // { ok: false, error } on validation failure.
         const result = ipcMain.emit('__providers_save_internal__', null, null, provider);
-        // ipcMain.emit doesn't return handler results;
-        // call the underlying IPC function instead.
-        // The IPC is registered with ipcMain.handle so
-        // we can't call it directly — instead, do the
-        // same sanitization + persist inline.
+        // IpcMain.emit doesn't return handler results; call the underlying IPC function instead.
         const list = loadProviders();
         if (!provider || !provider.name || !provider.baseUrl) {
           return { ok: false, reason: 'missing_fields', error: 'name and baseUrl are required' };
@@ -4636,21 +3593,7 @@ app.whenReady().then(() => {
         return { ok: false, reason: 'exception', error: e?.message || 'unknown' };
       }
     },
-    // v3.2.95: TTS voice picker is a mirror of the desktop's
-    // piper voice list. The mobile asks for the list + the
-    // current selection on app start; when the user picks a
-    // voice, the mobile sends set_tts_voice to us and we
-    // update the desktop's localStorage.cyberclaw-settings.
-    //
-    // The actual piper synthesis lives in src/local-ai.js
-    // (PIPER_VOICES) and the settings dropdown in src/index.html.
-    // The voice list below is the canonical mirror that the
-    // mobile renders. If the desktop ever adds a 9th voice
-    // to src/index.html's <select>, add it here too.
-    //
-    // Voices are derived from the HTML so the mobile and the
-    // desktop can't drift; if they ever do, the desktop's
-    // dropdown is the source of truth.
+    // TTS voice picker is a mirror of the desktop's piper voice list.
     onGetTtsSettings: async () => {
       try {
         if (!mainWindow || mainWindow.isDestroyed()) {
@@ -4684,15 +3627,7 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
-    // v3.2.95: mobile sets the desktop's ttsVoice. Writes
-    // the same localStorage key the renderer's saveSettings()
-    // writes, so the desktop's own dropdown + any code that
-    // reads s.ttsVoice (synthesizeSpeech at main.js:5098, the
-    // greeting/exit-reply synth paths at sync-server.js:1696/1795)
-    // see the new value on the next read.
-    //
-    // We also fire a 'tts-settings-changed' broadcast so
-    // other connected mobiles update their pickers live.
+    // Mobile sets the desktop's ttsVoice.
     onSetTtsVoice: async (voice) => {
       if (!voice || typeof voice !== 'string') {
         return { ok: false, reason: 'invalid_voice', error: 'voice must be a non-empty string' };
@@ -4715,11 +3650,7 @@ app.whenReady().then(() => {
         if (!valid) {
           return { ok: false, reason: 'unknown_voice', error: 'voice id not in the desktop dropdown' };
         }
-        // Update the desktop's localStorage + the <select>
-        // value so the dropdown reflects the new choice.
-        // We don't dispatch change (the dropdown's onchange
-        // is saveSettings, which would write localStorage
-        // again — redundant but harmless).
+        // Update the desktop's localStorage + the <select> value so the dropdown reflects the new choice.
         await mainWindow.webContents.executeJavaScript(`
           (() => {
             const s = JSON.parse(localStorage.getItem('cyberclaw-settings') || '{}');
@@ -4738,32 +3669,14 @@ app.whenReady().then(() => {
         return { ok: false, reason: 'execute_failed', error: e?.message || String(e) };
       }
     },
-    // v3.10.77: returns the current list of quests
-    // (with id + name) for diagnostic inclusion in
-    // failed-mutation error responses. Lets the mobile
-    // show "looking for X, available: [{id: a, name:
-    // foo}, {id: b, name: bar}]" so we can see whether
-    // the id is genuinely unknown or just stale.
-    // v3.10.74 returned just the ids; the user couldn't
-    // tell "wrong id for the right quest" from "quest
-    // doesn't exist anymore".
+    // Returns the current list of quests (with id + name) for diagnostic inclusion in failed-mutation error responses.
     onListQuests: () => {
       try {
         const all = loadQuests();
         return all.map(q => ({ id: q.id, name: q.name || '(unnamed)' }));
       } catch { return []; }
     },
-    // v3.8.0: phone-side quest edit. Each callback is the
-    // WebSocket counterpart of the corresponding IPC handler.
-    // The mutation goes through the same loadQuests → modify →
-    // saveQuests flow; saveQuests broadcasts the updated list
-    // back to all connected clients (including the mobile that
-    // initiated the edit) so the mobile's optimistic update
-    // is replaced with the canonical data within ~100ms.
-    //
-    // Return values: truthy on success, falsy on failure
-    // (quest not found, invalid id, etc.). The SyncServer uses
-    // this to send a `quests_update_failed` ack.
+    // Phone-side quest edit.
     onSetQuestActive: (id) => {
       const quests = loadQuests();
       let changed = false;
@@ -4781,28 +3694,7 @@ app.whenReady().then(() => {
       if (!id) return null;
       const quests = loadQuests();
       let idx = quests.findIndex(q => q.id === id);
-      // v3.10.77: name-based fallback. If the exact id
-      // doesn't match, try to find a quest with the
-      // same name (and directory, if provided). Tobe
-      // hit repeated "quest not found" errors on
-      // 2026-07-22 even with the v3.10.73 broadcast-
-      // acked gate on the mobile. The most likely cause
-      // is a desktop reinstall/restart that regenerated
-      // ids while the mobile's broadcast cached the old
-      // ones. The cache gets refreshed on the next
-      // broadcast but the editor's `editorOpen.id` is
-      // captured at open time — if the broadcast
-      // arrived mid-edit, the editor's id is from the
-      // OLD cache, the desktop has the NEW id.
-      //
-      // The fallback: if we can't find by id, try by
-      // name. If we find a single match, log the
-      // mismatch (so we can see how often it happens)
-      // and proceed with the update. This trades a
-      // little safety ("is the user's edit really
-      // meant for THIS quest?") for usability ("don't
-      // fail just because ids drifted"). The desktop
-      // log captures the warning so we can diagnose.
+      // Name-based fallback.
       if (idx < 0 && updates && typeof updates.name === 'string') {
         const wantedName = String(updates.name).trim();
         if (wantedName) {
@@ -4825,14 +3717,7 @@ app.whenReady().then(() => {
         }
       }
       if (idx < 0) return null;
-      // v3.8.0: only allow a safe set of fields to be
-      // updated over WebSocket. Block `active` and
-      // `latestChanges` (those have their own dedicated
-      // messages / are desktop-only), and block `id` and
-      // `created` (immutable after creation). The renderer
-      // is the only place that should set `active: true`
-      // on a quest — but we expose that via onSetQuestActive
-      // above so the user can star from the phone too.
+      // Only allow a safe set of fields to be updated over WebSocket.
       const safe = { ...updates };
       delete safe.id;
       delete safe.created;
@@ -4872,38 +3757,7 @@ app.whenReady().then(() => {
       return q;
     },
     onCreateQuest: (quest) => {
-      // v3.8.0: phone can create new quests. Mirror the
-      // IPC handler's logic: assign id, created, defaults
-      // (status: 'active', active: false, latestChanges: []).
-      // The mobile doesn't pick a directory in v3.8.0 (that
-      // needs the Android SAF picker which lands in v3.8.1);
-      // for now, the user can leave directory undefined or
-      // paste a path string.
-      //
-      // v3.2.61: conversationLog default for parity with the
-      // IPC handler (the renderer routes here for create_quest
-      // WS messages from the mobile).
-      //
-      // v3.10.156: auto-derive a directory when none is
-      // provided. The old behaviour was to leave the quest
-      // without a directory on disk, which meant the desktop
-      // never scaffolded INSTRUCTIONS.md / CONVERSATION.md
-      // and the user ended up with a "ghost quest" — visible
-      // in the list but no project files anywhere. Tobe
-      // (2026-08-11): 'i think we just need to adjust such
-      // that it will be created in the defualt directory
-      // with the quest name, what the user inputted as
-      // quest name'. We now resolve in this order:
-      //   1. Explicit quest.directory if provided
-      //   2. quest.defaultQuestDir (passed in by the
-      //      caller — the mobile or the renderer reads
-      //      it from localStorage and forwards; this
-      //      avoids an async bridge into the renderer
-      //      from the WS path) + '/<sanitized-name>'
-      //   3. ~/quests/<sanitized-name>
-      // The auto-derived directory is logged + persisted on
-      // the new quest so the user can see where it landed
-      // (and edit later from the quest detail page).
+      // Phone can create new quests.
       const quests = loadQuests();
       const newQuest = {
         name: quest.name || 'Untitled quest',
@@ -4916,10 +3770,7 @@ app.whenReady().then(() => {
       };
       newQuest.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       newQuest.created = new Date().toISOString();
-      // v3.10.156: resolve directory — explicit > caller-
-      // provided defaultDir > ~/quests fallback. Always
-      // pick a path so scaffolding has something to work
-      // with. Same helper as the IPC handler.
+      // Resolve directory — explicit > caller- provided defaultDir > ~/quests fallback.
       const existingDir = (typeof quest.directory === 'string' && quest.directory.trim())
         ? quest.directory.trim()
         : null;
@@ -4942,12 +3793,7 @@ app.whenReady().then(() => {
       saveQuests(quests);
       return newQuest;
     },
-    // v3.2.61: WS-side wiring for the per-quest conversation
-    // log IPCs. The mobile sends a `request_quest_conversation_log`
-    // WS message; the SyncServer routes it here; we return
-    // the same shape as the renderer-side IPC. The SyncServer
-    // also has its own shapes for file-path / clear, so we
-    // expose three callbacks.
+    // WS-side wiring for the per-quest conversation log IPCs.
     onGetQuestConversationLog: async (questId) => {
       if (!questId) return { ok: false, error: 'no questId' };
       const quests = loadQuests();
@@ -4987,15 +3833,7 @@ app.whenReady().then(() => {
       } catch (_) {}
       return { ok: true };
     },
-    // v3.2.62: CYBERCLAW.md (overarching system prompt)
-    // round-trip. The desktop's `system:get-cyberclaw` /
-    // `system:save-cyberclaw` / `system:reset-cyberclaw`
-    // IPC handlers wrap the file IO; the SyncServer
-    // callbacks here wrap those for the mobile. The
-    // same companion-prompts module is the source of
-    // truth for both Desktop's renderer AND the
-    // mobile's Settings screen, so edits from either
-    // side land in the same physical file.
+    // CYBERCLAW.md (overarching system prompt) round-trip.
     onGetCyberclawSystem: async () => {
       try {
         return {
@@ -5058,30 +3896,12 @@ app.whenReady().then(() => {
         discordLog('📤', 'Sending transcript to mobile', `ws=${wsOpen ? 'OPEN' : 'CLOSED'}`, wsOpen ? 'success' : 'warn');
         if (syncServer && ws) syncServer.sendTranscript(ws, transcript);
 
-        // 2.5 — v3.2.21 fix: route the transcript to the
-        // desktop renderer's chat/LLM pipeline. Without this
-        // send, the renderer's `mobile-voice` IPC handler
-        // (src/js/app.js:3794) never fires, the transcript
-        // never reaches the LLM, and the user sees
-        // "Transcribing..." forever on the mobile. This send
-        // used to exist in the original sync-server commit
-        // (c275eae) and got dropped at some point. Re-adding
-        // it restores the audio→LLM→audio_response loop.
+        // 2.5 — v3.2.21 fix: route the transcript to the desktop renderer's chat/LLM pipeline.
         if (mainWindow && !mainWindow.isDestroyed()) {
           const voiceSendTs = Date.now();
-          // v3.2.6: tag each routing with a unique id so
-          // the ack handler can remove the right queue
-          // entry. Without this, the ack handler can't
-          // tell which transcript the ack is for (and a
-          // re-routed transcript from drainPendingVoiceQueue
-          // could be ack'd twice if its original ack
-          // arrived late).
+          // Tag each routing with a unique id so the ack handler can remove the right queue entry.
           const voiceId = `voice-${voiceSendTs}-${Math.random().toString(36).slice(2, 8)}`;
-          // v3.2.6: queue the routing so we can replay
-          // it if the renderer hangs and we reload. Tobe's
-          // "user shouldn't have to repeat himself"
-          // complaint — without this queue, every hang
-          // means lost work.
+          // Queue the routing so we can replay it if the renderer hangs and we reload.
           pendingVoiceQueue.push({
             id: voiceId,
             transcript,
@@ -5101,31 +3921,10 @@ app.whenReady().then(() => {
           });
           console.log(`[Voice] Routed transcript to renderer via mobile-voice IPC (id=${voiceId}, queue=${pendingVoiceQueue.length})`);
 
-          // v3.2.3: ack-watcher. If the renderer doesn't
-          // ack within 8s, the renderer's JS context is
-          // hung (Tobe's v3.10.12 hang). Surface this to
-          // the mobile so the user knows the desktop
-          // pipeline is stuck — the mobile's transcribing
-          // timeout (30s) is the user's primary signal,
-          // but this 8s ack-watcher surfaces a more
-          // specific failure: "the desktop received the
-          // audio but its renderer is unresponsive."
-          //
-          // We use a Promise that resolves either when
-          // the ack IPC arrives OR after 8s. The ack IPC
-          // is handled separately above (mobile-voice-ack).
-          // Here we just observe the deadline.
+          // Ack-watcher.
           if (ws && ws.readyState === 1) {
             setTimeout(() => {
-              // v3.2.3 (extended): ack-watcher deadline.
-              // v3.2.7: distinguish three cases:
-              // 1. ackedVoiceIds has voiceId — renderer
-              //    received the IPC, may be working on LLM.
-              //    Don't fire the hang signal yet.
-              // 2. voiceResponseTracker has voiceId —
-              //    renderer is processing the voice but
-              //    hasn't sent a response yet. Wait.
-              // 3. Neither has voiceId — true hang.
+              // Ack-watcher deadline.
               const gotAck = ackedVoiceIds.has(voiceId);
               const inResponseTracker = voiceResponseTracker.has(voiceId);
               if (gotAck && inResponseTracker) {
@@ -5149,11 +3948,7 @@ app.whenReady().then(() => {
               // renderer after 3 consecutive hangs.
               // The reload clears the hung JS context.
               maybeReloadRenderer();
-              // Notify the mobile. The mobile uses
-              // this to surface a 'desktop received
-              // your message but isn't responding' hint
-              // earlier than its own 30s transcribing
-              // timeout.
+              // Notify the mobile.
               try {
                 if (syncServer) {
                   syncServer.sendToMobile({
@@ -5176,16 +3971,7 @@ app.whenReady().then(() => {
         if (syncServer && ws) syncServer.sendTranscript(ws, '');
       }
     },
-    // v3.2.8: image / file attachment upload from
-    // mobile. Writes to disk under ~/.openclaw/cyberclaw/
-    // attachments/ (auto-created), broadcasts via the
-    // renderer's chat pipeline so the LLM can use it
-    // for vision tasks (text-only models ignore it).
-    // Tobe's v3.10.20 follow-up: "handle the desktop
-    // side with the image handling". The mobile was
-    // already sending the bytes (v3.10.20 added
-    // sendAttachment on the SyncClient), but the desktop
-    // had no handler so they were silently dropped.
+    // Image / file attachment upload from mobile.
     onAttachment: async (base64, mimeType, fileName, ws, meta) => {
       try {
         const fs = require('fs');
@@ -5209,23 +3995,9 @@ app.whenReady().then(() => {
         const fileSize = fs.statSync(savedPath).size;
         console.log(`[Attachment] Saved ${fileName} (${fileSize} bytes) -> ${savedPath}`);
         discordLog('📎', 'Attachment saved', `${fileName} (${fileSize} bytes)`, 'info');
-        // Broadcast to renderer so the LLM gets a
-        // message that includes the attachment path.
-        // The renderer's chat pipeline can then forward
-        // this to the LLM as a vision-enabled message
-        // (GPT-4V / Claude Sonnet 4 / etc.) or skip it
-        // for text-only models.
+        // Broadcast to renderer so the LLM gets a message that includes the attachment path.
         if (mainWindow && !mainWindow.isDestroyed()) {
-          // v3.2.51: include the base64-encoded attachment
-          // data in the IPC payload. The renderer-side
-          // handler passes it through to chat:send-message
-          // v3.2.52: buffer attachments for 700ms before
-          // firing the IPC, so a multi-image paste
-          // results in ONE multimodal chat send instead
-          // of N. The mobile sends each image as a
-          // separate WS message, but the user's
-          // intent is "send all of these together" —
-          // batching preserves that.
+          // Include the base64-encoded attachment data in the IPC payload.
           let dataBase64 = null;
           try {
             dataBase64 = fs.readFileSync(savedPath, 'base64');
@@ -5307,104 +4079,24 @@ app.whenReady().then(() => {
   });
   syncServer.start();
 
-  // v3.2.21: start the OpenClaw session tailer. When a
-  // Discord-routed agent run completes (e.g. user types
-  // in Discord #cyber-dev), the tailer picks up the
-  // assistant text message from the OpenClaw session
-  // JSONL file and broadcasts it via sync-broadcast-chat
-  // to the mobile. Without this, the mobile's chat
-  // history shows nothing when the user types in Discord
-  // — the chat pipeline only handles replies from its
-  // own channel (mobile chat, voice, typed desktop).
-  //
-  // Sessions owned by the desktop's own chat pipeline
-  // (key `agent:clawsuu:main` and friends) are skipped
-  // because they already broadcast via the normal
-  // addChatMsg + sync-broadcast-chat IPC path. Skipping
-  // them prevents double-broadcasting the same message.
+  // Start the OpenClaw session tailer.
   const openclawSessionTail = new OpenClawSessionTail({
     sessionsDir: path.join(os.homedir(), '.openclaw', 'agents', 'clawsuu', 'sessions'),
     agentId: 'clawsuu',
     onTyping: (active) => {
-      // v3.2.25: don't broadcast typing from Discord-routed
-      // runs to mobile. Same rationale as onChatMessage
-      // (Tobe: "discord conversation should not appear on
-      // the app"). The mobile's chat panel should only
-      // react to activity that's part of an in-app
-      // conversation. Tool-call broadcasts (onToolCall
-      // below) are similarly suppressed because the user
-      // isn't engaging with the agent via the mobile.
-      // (The onChatMessage and onToolCall callbacks are
-      // all no-ops now since the chat panel shouldn't
-      // show anything from Discord. The tailer is kept
-      // alive because it owns session-key bookkeeping
-      // and the activeQuestRef update for cases where
-      // the desktop-pipeline session does need it.)
-      // See CHANGES_3.2.25.md for the full rationale.
+      // Don't broadcast typing from Discord-routed runs to mobile.
     },
     onChatMessage: ({ agentId, agentName, text, isUser }) => {
-      // v3.2.25: Discord-routed agent replies do NOT broadcast
-      // to the mobile. Tobe reported (2026-07-24 00:13): "if we
-      // have conversation here on discord it should not appear
-      // on the app." The original v3.2.21 tailer existed to
-      // bridge Discord-routed replies to mobile (which was the
-      // missing case at the time), but that was wrong — the
-      // mobile chat panel should reflect conversations the user
-      // had IN THE APP, not conversations the agent had in
-      // parallel channels (Discord / webchat / cron / etc.).
-      //
-      // The cyberclaw chat pipeline path (mobile-typed,
-      // voice-typed) already broadcasts via
-      // sync-broadcast-chat. This tailer was redundant for
-      // that case. Removing the broadcast keeps the channels
-      // cleanly separated:
-      //   - User → mobile chat → desktop pipeline →
-      //     addChatMsg → sync-broadcast-chat → mobile
-      //   - User → Discord → OpenClaw → agent reply →
-      //     (no mobile broadcast; reply goes to Discord only)
-      //
-      // We still send the IPC to the renderer so the
-      // renderer's chatHistoryByAgent stays in sync — in case
-      // the user later switches to the desktop and views the
-      // chat there. But we do NOT broadcast to mobile.
+      // Discord-routed agent replies do NOT broadcast to the mobile.
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('openclaw-session-chat-message', {
           agentId, agentName, text, isUser, ts: Date.now(),
         });
       }
     },
-    // v3.2.21: tool-call events for the better "thinking"
-    // indicator on mobile. When the agent calls a tool
-    // (exec, read, etc.), we broadcast a tool-call event
-    // so the mobile can show "💭 Running command..."
-    // or "💭 Reading file...". This is a thin event that
-    // doesn't replace the typing broadcast — the mobile
-    // shows it briefly while typing is on. The text is
-    // intentionally short (Tobe asked for "short and
-    // concise") — the mobile cycles the text based on
-    // the tool name.
+    // Tool-call events for the better "thinking" indicator on mobile.
     onToolCall: ({ tool, sessionKey }) => {
-      // v3.3.12: broadcast tool-call events to mobile so
-      // the thinking bar can show the action log (Tobe's
-      // 2026-09-23 16:24 ask: "claude-style actions"
-      // in the thinking bar).
-      //
-      // The tailer's v3.3.12 gate inverted the v3.2.21
-      // bug — onToolCall now fires for CHAT-PIPELINE
-      // sessions (mobile-typed / voice-typed / desktop
-      // typed chat) and is suppressed for Discord-routed
-      // sessions. We can assume every call here is
-      // non-Discord (the tailer filters before
-      // dispatching). This callback only maps the raw
-      // tool name to a friendly text and sends it to
-      // mobile via syncServer.sendToMobile.
-      //
-      // The mobile (v3.11.1 HomeScreen onAgentTool
-      // handler) listens for 'agent_tool' events with
-      // a 'friendly' string and pushes them into the
-      // rolling chatActions list under the pulsing
-      // spinner. No mobile change is needed beyond
-      // already-landed v3.11.1.
+      // Broadcast tool-call events to mobile so the thinking bar can show the action log (Tobe's 2026-09-23 16:24 ask: "claude-style actions" in…
       const friendly = toolFriendlyName(tool);
       try {
         if (syncServer) {
@@ -5417,10 +4109,7 @@ app.whenReady().then(() => {
           });
         }
       } catch (e) {
-        // Best-effort broadcast. A failure here
-        // shouldn't take down the desktop or stall
-        // the agent — the user just won't see the
-        // action log for this turn.
+        // Best-effort broadcast.
         console.warn(`[openclaw-tail] agent_tool broadcast failed: ${e?.message ?? e}`);
       }
     },
@@ -5432,21 +4121,10 @@ app.whenReady().then(() => {
     console.error('[main] OpenClawSessionTail start failed:', e);
   });
 
-  // v3.1.95: prime the quests cache so a mobile that connects
-  // immediately after desktop boot doesn't have to wait for the
-  // first user action (create/update/delete) to see the list.
-  // Mirrors the agents-list pattern: loadQuests reads the same
-  // source-of-truth file the IPC handlers write to.
+  // Prime the quests cache so a mobile that connects immediately after desktop boot doesn't have to wait for the first user action…
   try { syncServer.broadcastQuestsList(loadQuests()); } catch (e) { console.warn('[IPC] initial broadcastQuestsList failed:', e?.message); }
 
-  // v3.1.40: cache the most recent wake-training result per agent
-  // for 15 minutes, so a mobile that lost its WebSocket mid-training
-  // (Android background-killed the socket, brief network blip, etc.)
-  // can re-fetch the result on reconnect instead of having to
-  // re-record + re-train from scratch. Tobe hit this when the
-  // progress bar stuck at 30% on a 5-10 minute training run: the
-  // desktop was grinding away on the GPU but the phone had no
-  // way to find out the result.
+  // Cache the most recent wake-training result per agent for 15 minutes, so a mobile that lost its WebSocket mid-training (Android…
   const WAKE_RESULT_TTL_MS = 15 * 60 * 1000;
   const lastWakeResult = new Map(); // agentId -> { result, completedAt }
 
@@ -5465,13 +4143,7 @@ app.whenReady().then(() => {
   // Expose for the sync-server 'get_latest_wake_training_result' case
   syncServer._getCachedWakeResult = getCachedWakeResult;
 
-  // v3.1.46: track the most recent wake_training_progress per
-  // agent for the same reason as the result cache above. A
-  // phone that lost its WebSocket mid-training reconnects,
-  // the watchdog polls get_latest_wake_training_result, and
-  // we attach the latest progress so the bar re-paints to
-  // where it actually is. Without this, the bar is stuck at
-  // whatever the phone last saw before the WS died.
+  // Track the most recent wake_training_progress per agent for the same reason as the result cache above.
   const lastWakeProgress = new Map();  // agentId -> { stage, percent, message, ts }
   function setLastWakeProgress(agentId, payload) {
     lastWakeProgress.set(agentId, payload);
@@ -5481,10 +4153,7 @@ app.whenReady().then(() => {
   }
   syncServer._getLastWakeProgress = getLastWakeProgress;
 
-  // v3.5.0: parallel cache for exit-phrase training results.
-  // Same TTL/cache pattern as wake (15 minutes). The exit
-  // path is single-keyed by phrase (not per-agent), so a
-  // re-train of the same phrase replaces the cached result.
+  // Parallel cache for exit-phrase training results.
   let lastExitResult = null;
   let lastExitResultCompletedAt = 0;
   let lastExitProgress = null;
@@ -5509,17 +4178,7 @@ app.whenReady().then(() => {
   syncServer._getCachedExitResult = getCachedExitResult;
   syncServer._getLastExitProgress = getLastExitProgress;
 
-  // v3.6.0: parallel cache for send-word training results.
-  // Mirror of the exit-phrase cache above: single-keyed by
-  // phrase (the send word is user-level, not per-companion),
-  // 15-minute TTL, latest-progress stash for the mobile's
-  // watchdog-poll path. The send-word pipeline was added to
-  // the mobile in v3.6.0 but the desktop never wired up the
-  // request handler — Tobe hit this when the trainer stuck
-  // at "Uploading samples to desktop…" for 5 minutes: the
-  // desktop's _handleMessage switch had no case for
-  // `request_send_training` and silently dropped the
-  // message into the default arm.
+  // Parallel cache for send-word training results.
   let lastSendResult = null;
   let lastSendResultCompletedAt = 0;
   let lastSendProgress = null;
@@ -5544,19 +4203,12 @@ app.whenReady().then(() => {
   syncServer._getCachedSendResult = getCachedSendResult;
   syncServer._getLastSendProgress = getLastSendProgress;
 
-  // v3.2.0: wake-word training request from the mobile.
-  // The mobile sends `request_wake_training` over the sync-server
-  // WebSocket. We run the same openWakeWord training script the
-  // desktop renderer's IPC handler uses, and forward progress +
-  // completion events back to the originating mobile client.
+  // Wake-word training request from the mobile.
   syncServer.on('wake_training_request', ({ ws, agentId, phrase, samples, nearMissSamples }) => {
     if (!syncServer) return;
     console.log(`[wake-train] Mobile requested: agent=${agentId} phrase="${phrase}" samples=${samples?.length || 0} nearMisses=${Array.isArray(nearMissSamples) ? nearMissSamples.length : 0}`);
 
-    // v3.1.38: `samples` is now [{name, data}] (base64 audio), not
-    // file paths. The phone can't expose its filesystem to us, so
-    // we always wrote to `/data/user/0/...` which never existed
-    // here.
+    // `samples` is now [{name, data}] (base64 audio), not file paths.
     if (!Array.isArray(samples) || !samples.length) {
       syncServer._send(ws, { type: 'wake_training_result', ok: false, error: 'no samples provided' });
       return;
@@ -5579,18 +4231,9 @@ app.whenReady().then(() => {
     const samplesDir = path.join(workDir, 'user_samples');
     fs.mkdirSync(samplesDir, { recursive: true });
 
-    // v3.2.7: clear any cached result for this agent from a previous
-    // run. Without this, a phone that polls for the latest result
-    // mid-training (e.g. it reconnected after our WebSocket died)
-    // could get back the OLD error from the previous failed run
-    // instead of learning that a fresh training is in progress.
-    // The new run will overwrite the cache entry on completion.
+    // Clear any cached result for this agent from a previous run.
     lastWakeResult.delete(agentId);
-    // v3.1.46: also clear the cached progress. Otherwise a
-    // phone that reconnects mid-training would see the OLD
-    // progress (from the previous run) before seeing any of
-    // the new run's progress events. We want a clean slate
-    // at the start of each new run.
+    // Also clear the cached progress.
     lastWakeProgress.delete(agentId);
 
     // Decode + write each sample into the work dir
@@ -5603,29 +4246,10 @@ app.whenReady().then(() => {
       localPaths.push(dst);
     }
 
-    // v3.1.53: optional user-recorded near-miss clips. The
-    // trainer on the phone lets the user record 0-3 phrases
-    // that sound similar but aren't the wake word, and
-    // ships them here as base64 audio bytes. We decode
-    // them into a separate `user_near_miss_samples/` dir
-    // and pass the dir path to the python training script
-    // via --user-negative-dir. If nearMissSamples is
-    // missing or empty, the script falls back to using
-    // only the Piper-TTS-generated adversarial negatives
-    // (the v3.1.49 pattern).
-    //
-    // The python script copies the contents of this dir
-    // into negative_train / negative_test (80/20 split) so
-    // the augmentation step picks them up automatically.
-    // Backward-compat: if no near-misses, the dir doesn't
-    // exist and the script's `if user_neg_dir.exists()`
-    // check is a no-op.
+    // Optional user-recorded near-miss clips.
     let userNegativeDir = null;
     if (Array.isArray(nearMissSamples) && nearMissSamples.length > 0) {
-      // v3.1.53: validate shape — each entry needs name + data,
-      // mirroring the positive-samples validation above. This
-      // prevents a malformed client from crashing the training
-      // pipeline by sending garbage.
+      // Validate shape — each entry needs name + data, mirroring the positive-samples validation above.
       const valid = nearMissSamples.every((s) => s && s.name && s.data);
       if (!valid) {
         syncServer._send(ws, { type: 'wake_training_result', ok: false, error: 'near-miss samples need {name, data}' });
@@ -5655,10 +4279,7 @@ app.whenReady().then(() => {
       '--n-samples-val', '2000',
       '--epochs', '20',
     ];
-    // v3.1.53: pass the user-negative dir only if we
-    // actually wrote some near-miss samples. Without
-    // this, the script defaults to using only the Piper
-    // adversarial negatives (v3.1.49 pattern).
+    // Pass the user-negative dir only if we actually wrote some near-miss samples.
     if (userNegativeDir) {
       args.push('--user-negative-dir', userNegativeDir);
     }
@@ -5673,24 +4294,9 @@ app.whenReady().then(() => {
         if (line.startsWith('PROGRESS::')) {
           try {
             const payload = JSON.parse(line.slice('PROGRESS::'.length));
-            // Strip the redundant 'type' field from the payload so
-            // it doesn't override our 'wake_training_progress'
-            // type when we spread it. (emit_progress() in
-            // train_wake_phrase.py sets payload.type='progress'
-            // for its own internal logging; we use
-            // 'wake_training_progress' as the wire type the phone
-            // listens for.)
+            // Strip the redundant 'type' field from the payload so it doesn't override our 'wake_training_progress' type when we spread it.
             const { type: _ignore, ...fields } = payload;
-            // Forward to the renderer (if any) and BROADCAST to all
-            // authenticated mobile clients. We broadcast (not just
-            // send to the originating ws) because the phone's
-            // WebSocket may have died since the training started
-            // — the user might have backgrounded the app, lost
-            // wifi, etc. — and we want a reconnected phone to
-            // pick up progress events too, not just the final
-            // cached result. Filtering by agentId happens on the
-            // phone side: the trainer ignores progress for other
-            // agents.
+            // Forward to the renderer (if any) and BROADCAST to all authenticated mobile clients.
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('wake-training-progress', { agentId, ...fields });
             }
@@ -5765,10 +4371,7 @@ app.whenReady().then(() => {
     });
   });
 
-  // v3.5.0: exit-phrase training request from the mobile.
-  // Mirror of wake_training_request but routed to a per-phrase
-  // working directory and a separate message chain. Same training
-  // script — openWakeWord doesn't care about the semantic phrase.
+  // Exit-phrase training request from the mobile.
   syncServer.on('exit_training_request', ({ ws, phrase, samples }) => {
     if (!syncServer) return;
     console.log(`[exit-train] Mobile requested: phrase="${phrase}" samples=${samples?.length || 0}`);
@@ -5891,22 +4494,7 @@ app.whenReady().then(() => {
     });
   });
 
-  // v3.6.0: send-word training request from the mobile.
-  // Third in the wake/exit/send trio. The send word is
-  // user-level (not per-companion) so we key the work
-  // directory on the sanitised phrase. Same training
-  // script, same PROGRESS:: / OUTPUT_TFLITE:: protocol,
-  // separate message chain (`send_training_progress` /
-  // `send_training_result` / `send_model_data`) so wake
-  // and exit trainings don't collide when the user has
-  // multiple in flight.
-  //
-  // Why a separate pipeline (vs reusing exit): the
-  // desktop routing distinguishes by message type, and
-  // using distinct types keeps the wake/exit/send models
-  // from colliding when the user has multiple trainings
-  // queued (e.g. they kick off a retrain of exit while a
-  // send training is still in flight).
+  // Send-word training request from the mobile.
   syncServer.on('send_training_request', ({ ws, phrase, samples }) => {
     if (!syncServer) return;
     console.log(`[send-train] Mobile requested: phrase="${phrase}" samples=${samples?.length || 0}`);
@@ -5979,21 +4567,7 @@ app.whenReady().then(() => {
             }
           } catch (_) {}
         } else if (line.startsWith('OUTPUT_TFLITE::')) {
-          // v3.1.55: the .length suffix is mandatory —
-          // `String.prototype.slice` accepts a string arg
-          // but treats it as a number via Number(str),
-          // which is NaN. slice(NaN) is slice(0), so the
-          // marker wasn't being stripped and tflitePath
-          // came out as the full "OUTPUT_TFLITE::<path>"
-          // string. The not-absolute-path branch below
-          // then re-prepended outputDir to the marker-
-          // prefixed string, producing a doubled path
-          // like "output/OUTPUT_TFLITE::/home/.../model.tflite"
-          // that fs.existsSync could never find. v3.1.54
-          // had this exact bug (Tobe's training run took
-          // 40 min and the desktop reported a false
-          // "tflite path does not exist" error). Wake and
-          // exit handlers correctly use .length.
+          // The .length suffix is mandatory — `String.prototype.slice` accepts a string arg but treats it as a number via Number(str), which is NaN.
           tflitePath = line.slice('OUTPUT_TFLITE::'.length).trim();
         } else if (line.startsWith('OUTPUT_ONNX::')) {
           tflitePath = line.slice('OUTPUT_ONNX::'.length).trim();
@@ -6030,12 +4604,7 @@ app.whenReady().then(() => {
         syncServer._send(ws, errResult);
         return;
       }
-      // The python script emits an absolute path (verified —
-      // it's the result of Path(...).resolve() at script
-      // boot). Sanity-check it exists before sending it to
-      // the mobile — fs.existsSync catches the case where
-      // the script's print line was missed (chunked across
-      // a stdout buffer boundary) and tflitePath stayed null.
+      // The python script emits an absolute path (verified — it's the result of Path(...).resolve() at script boot).
       if (!fs.existsSync(tflitePath)) {
         const errMsg = `tflite path does not exist after training: ${tflitePath}`;
         console.error(`[send-train:${safePhrase}] ${errMsg}`);
@@ -6056,17 +4625,7 @@ app.whenReady().then(() => {
     });
   });
 
-  // v3.9.0: trainer manager (wake). The desktop's
-  // ~/.openclaw/cyberclaw/wake-training/ tree is the
-  // canonical backup of every .tflite the mobile ever
-  // trained. The mobile's WakeSetManagerScreen queries
-  // this list so the user can pull an old training
-  // back to the device (e.g. after a phone wipe), and
-  // pushes new trainings back as an extra backup.
-  //
-  // The send / exit versions of this trio will ship in
-  // v3.9.1 / v3.9.2 alongside the corresponding
-  // SetListScreen variants.
+  // Trainer manager (wake).
   const fs = require('fs');
 
   syncServer.on('list_wake_sets_from_desktop', ({ ws }) => {
@@ -6131,11 +4690,7 @@ app.whenReady().then(() => {
     if (!syncServer) return;
     try {
       const safePhrase = phrase.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-      // Mirror the python script's output layout:
-      //   ~/.openclaw/cyberclaw/wake-training/<agentId>/output/model/<name>.tflite
-      // We don't have an agentId here (just a setId), so we
-      // extract it from the setId (format: <agentId>/<phrase>)
-      // or fall back to "imported" if the shape is wrong.
+      // Mirror the python script's output layout: ~/.openclaw/cyberclaw/wake-training/<agentId>/output/model/<name>.tflite We don't have an…
       const slashIdx = setId.indexOf('/');
       const agentDir = slashIdx > 0 ? setId.slice(0, slashIdx) : 'imported';
       const outDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'wake-training', agentDir, 'output', 'model');
@@ -6178,11 +4733,7 @@ ipcMain.handle('sync-broadcast-state', (e, state) => {
   if (syncServer) syncServer.broadcastState(state);
 });
 
-// v3.3.5: push local-LLM pill status from desktop renderer to
-// mobile clients. The renderer calls this on chat-open and
-// after every pill action (warm/unload/start). Mobile renders
-// a matching pill. If no sync-server is running (e.g. user
-// disabled mobile sync), this is a no-op.
+// Push local-LLM pill status from desktop renderer to mobile clients.
 ipcMain.handle('sync-broadcast-llm-status', (e, status) => {
   if (syncServer && typeof syncServer.broadcastLlmStatus === 'function') {
     try { syncServer.broadcastLlmStatus(status); } catch (err) {
@@ -6192,12 +4743,7 @@ ipcMain.handle('sync-broadcast-llm-status', (e, status) => {
   return { ok: true };
 });
 
-// v3.3.5: mobile-initiated pill actions. The phone can trigger
-// warm / unload / start on the desktop. We resolve the model
-// string the same way the desktop does, run the action, then
-// broadcast the new status so the mobile pill updates.
-//   action: 'start' | 'warm' | 'unload'
-//   model:  e.g. 'ollama/qwen2.5-coder:32b'
+// Mobile-initiated pill actions.
 ipcMain.handle('llm:ollama-action', async (e, { model, action } = {}) => {
   if (!action) return { ok: false, error: 'action required' };
   try {
@@ -6232,10 +4778,7 @@ ipcMain.handle('llm:ollama-action', async (e, { model, action } = {}) => {
   }
 });
 
-// Reusable implementations, called by both IPC handlers and
-// the mobile action dispatcher above. Kept as named functions
-// so they're easy to test and reuse without going through
-// ipcMain's listener registry.
+// Reusable implementations, called by both IPC handlers and the mobile action dispatcher above.
 async function ollamaStatusImpl(model) {
   const resolved = resolveOllamaEndpoint(model);
   if (!resolved) {
@@ -6323,27 +4866,7 @@ async function ollamaStartImpl() {
 }
 
 ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName, attachments }) => {
-  // v3.3.19: forward activeQuestId/activeQuestName to the
-  // sync-server's broadcastChatMessage so the realtime
-  // mobile broadcast carries quest attribution. v3.3.18
-  // destructured these OUT of the IPC payload, dropping
-  // the field. The mobile's appendAgentMessage needs the
-  // attribution to route incoming messages into the
-  // correct per-quest bucket on the mobile side. Without
-  // this, realtime messages landed in the mobile's
-  // DEFAULT bucket even when sent under an active quest
-  // — meaning the user's active-quest chat and the
-  // realtime arrival always disagreed, and on cold start
-  // the active-quest view would briefly flash DEFAULT
-  // content until the projection effect reconciled.
-  //
-  // v3.3.20: also forward `attachments`. The renderer
-  // attaches an attachments array to image bubbles (the
-  // [SCREENSHOT target=...] directive flow — see app.js
-  // addChatMsg('agent-image', ...)). The mobile renders
-  // `attachments` inline on the chat bubble (HomeScreen.tsx
-  // renderMessage, v3.10.20). Without forwarding it here,
-  // the mobile sees the chat_message but no image preview.
+  // Forward activeQuestId/activeQuestName to the sync-server's broadcastChatMessage so the realtime mobile broadcast carries quest attribution.
   console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser, activeQuestId: activeQuestId ?? '(none)', attachments: Array.isArray(attachments) ? attachments.length : 0 });
   const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
   console.log('[IPC] _voiceReplyWs state:', wsState);
@@ -6396,11 +4919,7 @@ ipcMain.handle('sync-broadcast-typing', (e, { active }) => {
   if (syncServer) syncServer.broadcastTyping(active);
 });
 
-// v3.1.15: broadcast the full list of agents so the mobile can mirror
-// the desktop arena (one companion per agent). Each entry has the
-// fields needed to render the sprite: id, name, sprite (companionId),
-// scale.
-// v3.4.12: renderer → phones: current chat context (casual vs quest).
+// Broadcast the full list of agents so the mobile can mirror the desktop arena (one companion per agent).
 ipcMain.handle('sync-broadcast-chat-context', (e, payload) => {
   if (syncServer) syncServer.broadcastChatContext(payload || {});
   return true;
@@ -6411,13 +4930,7 @@ ipcMain.handle('sync-broadcast-agents-list', (e, { agents }) => {
   if (syncServer) syncServer.broadcastAgentsList(agents);
 });
 
-// v3.1.95: broadcast the full list of quests so the mobile can
-// mirror the desktop's quest panel. Same pattern as
-// sync-broadcast-agents-list: the renderer reads quests.json and
-// sends the array here, we forward it to every connected mobile
-// via sync-server.broadcastQuestsList. Quests are global (not
-// per-companion) on the desktop, so we don't include a companionId
-// in the payload.
+// Broadcast the full list of quests so the mobile can mirror the desktop's quest panel.
 ipcMain.handle('sync-broadcast-quests-list', (e, { quests } = {}) => {
   console.log('[IPC] sync-broadcast-quests-list received:', quests?.length, 'quest(s)');
   if (syncServer) syncServer.broadcastQuestsList(quests || []);
@@ -6437,11 +4950,7 @@ ipcMain.handle('sync-send-agent-history', (e, { agentId, buckets, messages }) =>
   // Drain the FIFO of ws requests for this specific agent
   const pending = syncServer._pendingAgentHistoryWs.filter(p => p.agentId === agentId);
   syncServer._pendingAgentHistoryWs = syncServer._pendingAgentHistoryWs.filter(p => p.agentId !== agentId);
-  // v3.3.19: prefer `buckets` (the v3.3.19+ per-quest shape).
-  // Fall back to `messages` for backwards compat with
-  // v3.1.17-v3.3.18 IPC call sites that haven't been
-  // updated. The sync-server sendAgentHistory signature
-  // handles both shapes.
+  // Prefer `buckets` (the v3.3.19+ per-quest shape).
   for (const p of pending) {
     syncServer.sendAgentHistory(p.ws, agentId, buckets || messages);
   }
@@ -6642,13 +5151,7 @@ ipcMain.handle('settings:get-tts-voice', async (e) => {
   }
 });
 
-// ─── Quest memory files (v3.5.0) ───
-// Every quest folder holds INSTRUCTIONS / CONVERSATION / NOTES plus:
-//   SUMMARY.md   — where the quest stands now; rewritten by the companion
-//                  ([QUEST_SUMMARY]) and injected into every turn instead
-//                  of the long conversation log.
-//   DECISIONS.md — settled choices, one line each ([QUEST_DECISION]);
-//                  injected so the companion doesn't reopen them.
+// ─── Quest memory files (v3.5.0) ─── Every quest folder holds INSTRUCTIONS / CONVERSATION / NOTES plus: SUMMARY.md — where the quest stands…
 function questMemoryFilePath(quest, name) {
   if (!quest) return null;
   const root = questFilesRoot(quest);

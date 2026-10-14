@@ -2,10 +2,7 @@
    CyberClaw — Setup Wizard Logic
    ============================================================ */
 
-// v3.1.34: Auto-detect companions from the local OpenClaw config.
-// Reads the existing openclaw:discover payload, then creates a
-// cyberclaw companion for each agent that isn't already registered
-// as a companion. One click — the user just sees a result list.
+// Auto-detect companions from the local OpenClaw config.
 window.autoDetectCompanions = async function() {
   const result = document.getElementById('auto-detect-result');
   if (result) { result.classList.remove('hidden'); result.textContent = 'Scanning ~/.openclaw/openclaw.json…'; }
@@ -55,10 +52,7 @@ window.showManualImport = async function() {
   const header = document.querySelector('.quest-import-header');
   if (header) header.textContent = 'Pick a folder to use as a companion workspace:';
 };
-// so the user can confirm at a glance which code is loaded.
-// Uses the `wizard:get-version` IPC bridge (CSP blocks the renderer's
-// file:// fetch, so we ask main.js to read package.json for us).
-// Falls back to a literal "v-dev" so the pill is never blank.
+// So the user can confirm at a glance which code is loaded.
 (async function stampWizardVersion() {
   let version = null;
   try {
@@ -85,19 +79,11 @@ function goStep(n) {
   document.getElementById(`step-${n}`).classList.add('active');
   currentStep = n;
   updateDots();
-  // v3.3.37: also update the top step-bar dots so the user
-  // can see where they are. The old code only updated the
-  // hidden progress-dots at the bottom of the wizard, which
-  // meant the step-bar was always stuck on "1 Check" no
-  // matter which step the user was actually on.
+  // Also update the top step-bar dots so the user can see where they are.
   updateStepBar(n);
 }
 
-// v3.3.37: highlight the right dot in the top step-bar.
-// stepMap maps wizard step IDs to dot indices. Steps not in
-// the new 4-step flow (1–5 from the old wizard) are ignored
-// so the bar doesn't flicker if the user lands on a legacy
-// step somehow.
+// Highlight the right dot in the top step-bar.
 function updateStepBar(n) {
   const stepMap = { 0: 0, '0b': 1, '0c': 2, 6: 3 };
   const currentIndex = stepMap[n];
@@ -128,11 +114,7 @@ async function runChecks() {
     { id: 'gateway', cmd: 'check-gateway' },
   ];
 
-  // v3.1.34: run every check in isolation so a single IPC failure
-  // (e.g. timeout, disconnected preload) doesn't block the whole
-  // row. If the IPC throws or returns no result we mark the
-  // status as 'not reachable' (with a ⛔ icon) so the user
-  // sees a clear failure mode instead of a permanent 'checking…'.
+  // Run every check in isolation so a single IPC failure (e.g.
   for (const check of checks) {
     const icon = document.getElementById(`check-${check.id}-icon`);
     const status = document.getElementById(`check-${check.id}-status`);
@@ -161,13 +143,7 @@ async function runChecks() {
   const btn = document.getElementById('btn-check');
   btn.disabled = false;
 
-  // v3.3.37: simplified flow. The wizard's job is now just
-  // import companions + import quests. Other settings (install,
-  // API key, channel, gateway) can be done later in the main
-  // app. So the Continue button always says "Next →" and
-  // advances to step-0b (Import Companions). The status of
-  // the system check is still shown above so the user can see
-  // if anything's missing, but they can proceed regardless.
+  // Simplified flow.
   btn.textContent = 'Next →';
   btn.onclick = () => goStep('0b');
 }
@@ -323,12 +299,7 @@ async function createCompanion() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// v3.1.34: Import page — multi-select from BOTH OpenClaw config
-// and cyberdrive project directories, plus a folder browser for
-// picking any directory manually. One import button to register
-// them all.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- v3.1.34: Import page — multi-select from BOTH OpenClaw config…
 
 // Render the multi-select import list. Re-runs every time the
 // user adds a manual directory or switches back to this step.
@@ -433,27 +404,6 @@ function buildImportRowEl(item) {
 }
 
 // Import all checked items from whichever list is active.
-// v3.3.37: Next button handler. Imports everything in the
-// active step's selected list, then advances. If the list
-// is empty, just advances (same as Skip).
-//
-// The two steps use DIFFERENT IPCs:
-//   - Companions (0b) → cyberclaw.wizard.createAgent
-//     (registers an OpenClaw agent / companion at the
-//     given workspace, writes IDENTITY.md).
-//   - Quests (0c) → cyberclaw.quests.create
-//     (registers a project directory as a quest workspace,
-//     scaffolds INSTRUCTIONS.md + CONVERSATION.md).
-// Earlier the wizard used createAgent for both, which meant
-// quests never got registered as quests — they just got
-// added as duplicate agent entries.
-//
-// v3.3.37: shows a live "Importing X/Y: name" status and
-// disables the Next button while the import is running.
-// The `openclaw agents add` CLI takes 3-8s per item (it
-// writes config + probes the model), so without this the
-// wizard looks frozen on Next click. The status updates
-// after each item so the user knows it's working.
 async function importSelected() {
   const activeStep = document.querySelector('.step.active');
   if (!activeStep) return;
@@ -468,10 +418,7 @@ async function importSelected() {
     return;
   }
 
-  // Live status + button disable while importing. The
-  // import can take 10-30s for a few items, so we want
-  // the user to see progress and not be able to double-
-  // click Next.
+  // Live status + button disable while importing.
   const statusId = which === 'quests' ? 'import-status-quests' : 'import-status-companions';
   const statusEl = document.getElementById(statusId);
   const nextBtn = activeStep.querySelector('.wizard-btn.primary');
@@ -499,18 +446,12 @@ async function importSelected() {
     try {
       if (which === 'quests') {
         // Register the directory as a quest workspace.
-        // quests:create auto-derives the directory if none
-        // is supplied, but we always have one from Scan
-        // or Pick, so pass it through.
         await cyberclaw.quests.create({
           name: it.name,
           directory: it.workspace,
         });
       } else {
-        // Register as a companion agent. The workspace
-        // comes from the OpenClaw config entry (for Scan
-        // results) or the manually picked directory (for
-        // Pick results).
+        // Register as a companion agent.
         const name = String(it.id || it.name || it.workspace).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
         await cyberclaw.wizard.createAgent({
           name,
@@ -557,24 +498,11 @@ async function importSelected() {
   }, 600);
 }
 
-// v3.3.37: unified selected-items model. Both Scan and
-// Pick add items to the same list (per step). The list is
-// persistent across Scan/Pick calls — items stay there
-// with their names until the user removes them with the
-// × button or hits Next (which imports everything and
-// clears the list). Companions and Quests have separate
-// buckets so they don't leak into each other.
+// Unified selected-items model.
 window.__selectedCompanions = window.__selectedCompanions || [];
 window.__selectedQuests = window.__selectedQuests || [];
 
-// v3.3.37: Default directory. Both import steps show a
-// "Default directory:" text input. The value is stored in
-// localStorage and shared between the two steps. Scan on
-// the companions step reads the OpenClaw config AND (if
-// a default dir is set) also scans that dir for AGENTS.md
-// workspaces. Scan on the quests step uses the default dir
-// as the projects root instead of the hardcoded
-// /media…cts/ path.
+// Default directory.
 const DEFAULT_DIR_STORAGE_KEY = 'cyberclaw_wizard_default_dir';
 
 function loadDefaultDir() {
@@ -614,15 +542,7 @@ async function pickDefaultDir(which) {
   saveDefaultDir(dir);
 }
 
-// v3.3.37: Scan = quick auto-search of OpenClaw config
-// for existing agents. Each found agent is added to the
-// companions list (deduped by id). v3.3.38: removed the
-// default-directory scan from this step — the user said
-// it caused double-ups (a companion registered in OpenClaw
-// config also showing up because its workspace is in the
-// default dir). The default-dir input stays on the page
-// (for reference and for the quests step) but the
-// companion Scan only reads the OpenClaw config.
+// Scan = quick auto-search of OpenClaw config for existing agents.
 async function scanOpenclawAgents() {
   const listEl = document.getElementById('selected-list-companions');
   try {
@@ -658,19 +578,7 @@ async function scanOpenclawAgents() {
   }
 }
 
-// v3.3.37: Scan for quests. If a default directory is set,
-// scans it via the new wizard:scan-projects-dir IPC. Otherwise
-// falls back to the hardcoded quests:scan-projects (which
-// always scans /media…cts/). Each found project is added
-// to the quests list (deduped by path).
-//
-// v3.3.38: fallback to the quests-step input value if
-// loadDefaultDir() returns empty. This handles the case
-// where the user typed a path but the oninput handler
-// didn't fire for some reason (e.g. focus / tab order
-// issue, localStorage was cleared, etc.). Also logs both
-// the localStorage value and the input value so we can
-// see where they diverge.
+// Scan for quests.
 async function scanQuestProjects() {
   const listEl = document.getElementById('selected-list-quests');
   try {
@@ -725,11 +633,7 @@ async function scanQuestProjects() {
   }
 }
 
-// v3.3.37: Pick a directory manually. The picked directory
-// is added to the selected list for the given step. Can be
-// called multiple times to add several — each pick stays
-// in the list until removed or until Next imports them.
-// Deduped by path.
+// Pick a directory manually.
 async function importFromManualDir(which) {
   if (!window.cyberclaw || !cyberclaw.quests || !cyberclaw.quests.pickDirectory) return;
   const dir = await cyberclaw.quests.pickDirectory();
@@ -748,10 +652,7 @@ async function importFromManualDir(which) {
   renderSelectedList(which);
 }
 
-// v3.3.37: render the persistent selected-items list.
-// Each row shows a type icon (🤖 openclaw / 📦 project /
-// 📁 manual), the item name, and an × remove button.
-// Items stay in the list across Scan/Pick calls.
+// Render the persistent selected-items list.
 function renderSelectedList(which) {
   const listId = which === 'quests' ? 'selected-list-quests' : 'selected-list-companions';
   const listEl = document.getElementById(listId);
@@ -800,22 +701,12 @@ function removeSelectedItem(which, index) {
   }
 }
 
-// Single goStep wrapper. v3.3.37 merged the import-list
-// and model-picker wrappers into one — the file used to have
-// two `const _origGoStep` declarations which threw
-// `Identifier '_origGoStep' has already been declared` at
-// load time and broke the whole wizard. The wrapper now
-// (1) re-renders the picked-list for 0b/0c and
-// (2) populates the model picker when entering step 3.
+// Single goStep wrapper.
 const _origGoStep = window.goStep;
 window.goStep = function(n) {
   if (typeof _origGoStep === 'function') _origGoStep(n);
   if (n === '0b') {
-    // Companions step — render whatever the user has
-    // selected so far (initially "No companions selected
-    // yet."). The list is persistent across Scan/Pick
-    // calls so the user can build it up. Also populate
-    // the default-directory input from localStorage.
+    // Companions step — render whatever the user has selected so far (initially "No companions selected yet.").
     setTimeout(() => {
       const dir = loadDefaultDir();
       const inp = document.getElementById('default-dir-companions');
@@ -832,10 +723,7 @@ window.goStep = function(n) {
       renderSelectedList('quests');
     }, 30);
   } else if (n === 3) {
-    // Legacy step 3 (Create Companion) — populate the LLM
-    // picker. Step 3 is not in the new step-bar but the
-    // code path still exists for any deep-link that lands
-    // here.
+    // Legacy step 3 (Create Companion) — populate the LLM picker.
     populateWizardModelPicker().catch(() => {});
   }
 };
@@ -969,11 +857,7 @@ async function useOpenclawAgent(agent) {
   }
 }
 
-// v3.1.33: populate the wizard's model picker from the
-// configured providers + LLM endpoints. Called when the
-// user first reaches step 3. We mirror refreshForgeModelDropdowns
-// in the desktop app, but keep it minimal — just the
-// picker options, no edit/delete UI.
+// Populate the wizard's model picker from the configured providers + LLM endpoints.
 async function populateWizardModelPicker() {
   const sel = document.getElementById('input-model');
   if (!sel) return;
@@ -1036,10 +920,7 @@ async function populateWizardModelPicker() {
   } catch (_) {}
 }
 
-// v3.1.33: model-picker populator for step 3 was folded
-// into the single goStep wrapper above (v3.3.37). The
-// previous duplicate `const _origGoStep` declaration here
-// threw a SyntaxError and broke the wizard.
+// Model-picker populator for step 3 was folded into the single goStep wrapper above (v3.3.37).
 
 // ---------------------------------------------------------------------------
 // Step 4: Channel
@@ -1144,13 +1025,7 @@ function addTermLine(termOrId, text, cls) {
 // Boot
 document.addEventListener('DOMContentLoaded', () => {
   runChecks();
-  // v3.3.40: pre-populate the default-dir inputs on initial page
-  // load so the wizard never opens with empty directory fields
-  // even if the user is re-running the wizard after a previous
-  // session. The inputs are on step 0b/0c (hidden at boot), but
-  // setting their .value now means they're ready the moment the
-  // step becomes visible. Tobe 2026-10-11 16:59: 'the stored
-  // should already be selected in the setup wizard.'
+  // Pre-populate the default-dir inputs on initial page load so the wizard never opens with empty directory fields even if the user is…
   const dir = loadDefaultDir();
   document.querySelectorAll('.default-dir-input').forEach((inp) => {
     if (inp && document.activeElement !== inp) inp.value = dir;

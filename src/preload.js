@@ -5,15 +5,7 @@ window.ipcRenderer = ipcRenderer;
 
 // Expose API on window for renderer scripts
 window.cyberclaw = {
-  // v3.2.21: listener for OpenClaw-session-tailing chat
-  // messages. The main process watches the OpenClaw
-  // session JSONL files for Discord-routed agent runs
-  // and pushes the assistant replies here so the
-  // renderer's chat history stays in sync. The handler
-  // in app.js (around line 2xxx — see comment on
-  // openclaw-session-tail.js) adds the message to
-  // chatHistoryByAgent + chatHistory so it's visible
-  // on subsequent request_chat_history pulls.
+  // Listener for OpenClaw-session-tailing chat messages.
   onSessionChatMessage: (cb) =>
     ipcRenderer.on('openclaw-session-chat-message', (_, payload) => cb(payload)),
   onSessionTyping: (cb) =>
@@ -25,33 +17,13 @@ window.cyberclaw = {
     write: (data) => ipcRenderer.send('terminal:input', data),
     resize: (cols, rows) => ipcRenderer.send('terminal:resize', { cols, rows }),
   },
-  // v3.2.83: screenshot. Called by the renderer (clawsuu)
-  // when the agent's reply contains a [SCREENSHOT target=...]
-  // directive. Returns { ok, filePath, dataUri, target, width,
-  // height }. See main.js screenshot:capture handler for the
-  // target semantics.
+  // Screenshot.
   screenshot: ({ target, windowName } = {}) =>
     ipcRenderer.invoke('screenshot:capture', { target, windowName }),
   chat: {
-    // v3.2.51: accept optional attachments array for
-    // multimodal (text + image) content. main.js's
-    // chat:send-message handler turns each attachment's
-    // dataUri / base64 into an OpenAI image_url content
-    // block when the gateway's /v1/chat/completions
-    // endpoint is enabled. Without attachments, behaves
-    // the same as before (plain text message).
+    // Accept optional attachments array for multimodal (text + image) content.
     sendMessage: (agentId, message, attachments) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments }),
-    // v3.2.64: silent variant of sendMessage. Same IPC
-    // path, but `silent: true` is forwarded through the
-    // payload so the chat pipeline can suppress the
-    // addChatMsg broadcast on success. Used by the
-    // snack-logging flow (promptCompanionSilent) where
-    // the LLM's job is to write a [REMEMBER] tag to
-    // memory.md, not to chat with the user. The
-    // renderer-side wrapper that calls this expects to
-    // find remember-tags in the reply (via
-    // extractRememberTags) and route them to memory.md
-    // without showing the agent bubble.
+    // Silent variant of sendMessage.
     sendSilentMessage: (agentId, message) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments: null, silent: true }),
   },
   window: {
@@ -74,10 +46,7 @@ window.cyberclaw = {
     saveAvatar: (agentId, dataUrl) => ipcRenderer.invoke('companion:save-avatar', agentId, dataUrl),
     listSkills: () => ipcRenderer.invoke('openclaw:list-skills'),
     addXP: (agentId, skill, amount) => ipcRenderer.invoke('companion:add-xp', agentId, skill, amount),
-    // v3.2.32: companion soul + memory. The soul is the
-    // character definition (user-editable). The memory is
-    // auto-written by the companion via remember-memory,
-    // read back via get-memory, cleared via clear-memory.
+    // Companion soul + memory.
     getSoul: (agentId) => ipcRenderer.invoke('companion:get-soul', agentId),
     saveSoul: (agentId, content) => ipcRenderer.invoke('companion:save-soul', agentId, content),
     applySoulPreset: (agentId, presetKey) => ipcRenderer.invoke('companion:apply-soul-preset', agentId, presetKey),
@@ -142,33 +111,12 @@ window.cyberclaw = {
     // v3.1.50: toggle a goal's completed flag by index. Returns
     // the updated quest or null if the id/index is invalid.
     markGoalDone: (id, goalIndex, completed) => ipcRenderer.invoke('quests:mark-goal-done', id, goalIndex, completed),
-    // v3.2.30: per-quest project instructions file. Read/write the
-    // markdown file associated with a quest (default:
-    // <quest.directory>/QUEST_QUEST_INSTRUCTIONS.md). The file content
-    // is injected into the chat prompt as a per-quest
-    // "quest instructions" context block, so the LLM sees
-    // project-specific instructions before generating
-    // a reply. Read returns { ok, content, path }.
+    // Per-quest project instructions file.
     readQuestInstructions: (id) => ipcRenderer.invoke('quests:read-quest-instructions', id),
     saveQuestInstructions: (id, content) => ipcRenderer.invoke('quests:save-quest-instructions', id, content),
-    // v3.2.41: companion-side note append. The companion
-    // emits [QUEST_NOTE: text="..."] in its reply and the
-    // desktop appends a timestamped "## Companion notes"
-    // section to the active quest's instructions file.
-    // Future turns + future sessions see the note via
-    // buildActiveQuestContext's instructions injection.
+    // Companion-side note append.
     appendQuestInstructions: (id, text) => ipcRenderer.invoke('quests:append-quest-instructions', id, text),
-    // v3.2.59: per-quest conversation log IPCs. Every user
-    // + agent chat message exchanged while a quest is active
-    // is automatically appended to that quest's
-    // `conversationLog` (capped 200 entries, text capped 1000
-    // chars; FIFO-trim). getConversationLog returns the
-    // full array so the mobile / desktop can render a
-    // "view past chats" panel; clearConversationLog wipes
-    // it (used by a future UI button — for now it's just
-    // available for tooling). appendConversationLog is the
-    // primary write path, fired from addChatMsg on the
-    // renderer whenever there's an active quest.
+    // Per-quest conversation log IPCs.
     appendConversationLog: (id, role, text, agentId, agentName) => ipcRenderer.invoke('quests:append-conversation-log', id, role, text, agentId, agentName),
     getConversationLog: (id) => ipcRenderer.invoke('quests:get-conversation-log', id),
     clearConversationLog: (id) => ipcRenderer.invoke('quests:clear-conversation-log', id),
@@ -190,22 +138,13 @@ window.cyberclaw = {
     updateAgent: (id, updates) => ipcRenderer.invoke('openclaw:update-agent', id, updates),
     deleteAgent: (id) => ipcRenderer.invoke('openclaw:delete-agent', id),
     setAgentModel: (agentId, model, fallbacks) => ipcRenderer.invoke('agent:set-model', { agentId, model, fallbacks }),
-    // v3.1.36: wake-phrase training pipeline. Phone records
-    // samples locally and ships the base64-encoded audio
-    // (NOT paths — the desktop can't reach the phone's
-    // filesystem). The desktop decodes them and runs
-    // openWakeWord training on the RTX 2070, streaming
-    // progress events back via 'wake-training-progress'.
+    // Wake-phrase training pipeline.
     trainWakePhrase: (agentId, phrase, samples) =>
       ipcRenderer.invoke('agent:train-wake-phrase', { agentId, phrase, samples }),
     readWakeModel: (tflitePath) =>
       ipcRenderer.invoke('agent:read-wake-model', { tflitePath }),
   },
-  // v3.1.33: user-managed LLM endpoints. Each endpoint is
-  // an OpenAI-compatible HTTP server (Ollama, LM Studio,
-  // llama.cpp server, Jan.ai, vLLM, etc.) that exposes
-  // /v1/models + /v1/chat/completions. CyberClaw probes
-  // the endpoint to discover its available models.
+  // User-managed LLM endpoints.
   llm: {
     endpoints: {
       list: () => ipcRenderer.invoke('llm:endpoints:list'),
@@ -235,11 +174,7 @@ window.cyberclaw = {
   },
   wizard: {
     check: (what) => ipcRenderer.invoke('wizard:check', what),
-    // v3.3.37: scan a user-picked directory. Used by the
-    // setup wizard's new user-driven import flow (step
-    // 0b Companions, step 0c Quests). The wizard calls
-    // this once per picked directory when the user hits
-    // the 🔍 Scan button.
+    // Scan a user-picked directory.
     scanDirectory: (dir) => ipcRenderer.invoke('wizard:scan-directory', dir),
     // v3.3.37: scan a user-chosen parent directory for
     // project subdirectories. Used by the wizard's

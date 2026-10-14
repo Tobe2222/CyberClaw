@@ -1,11 +1,5 @@
 try { require('fs').appendFileSync(require('path').join(require('os').homedir(), '.openclaw', 'cyberclaw', 'debug.log'), `[${new Date().toISOString()}] pixel-arena.js TOP\n`); } catch {}
-/* ============================================================
-   PixelArena — Shared 2D arena with Companions
-   
-   Companion = an agent's visual representation in the arena.
-   Each agent renders as one or more companions positioned across
-   the arena width.
-   ============================================================ */
+/* ============================================================ PixelArena — Shared 2D arena with Companions Companion = an agent's visual… */
 
 const _path = require('path');
 const _fs = require('fs');
@@ -131,13 +125,7 @@ class PixelArena {
 
   // ── COMPANION (main, pixel sprite) ──────────────────────────
 
-  // v3.1.5: Helper to build a companion object (used by setCompanion
-  // and addCompanion). Returns the companion, doesn't mutate state.
-  // v3.1.6: accepts an optional `scale` (defaults to 5) so the
-  // companion's saved size from the sprite config is honored.
-  // v3.1.7: restore the missing catalog lookup (regressed in the
-  // v3.1.5 refactor — _buildCompanion was referencing an undefined
-  // compData, so every addCompanion() threw and no companions rendered).
+  // Helper to build a companion object (used by setCompanion and addCompanion).
   async _buildCompanion(agentId, pixelCompanionId, name, scale) {
     const catalog = window.loadPixelCatalog ? window.loadPixelCatalog() : { companions: [] };
     const compData = catalog.companions.find(c => c.id === pixelCompanionId);
@@ -162,19 +150,7 @@ class PixelArena {
       images[animName] = { img, frames: animData.frames, cols: animData.cols || animData.frames, rowMap: animData.rowMap || null };
     }
 
-    // v3.1.17: per-companion chase personality so they don't all
-    // converge on the same toy at the same speed. Tobe: 'I noticed
-    // they sync up when chasing the ball. They need a hitbox or
-    // something which the others crash in. And some variation
-    // when chasing the ball.' Three axes of variation:
-    //   - speedMult (0.75–1.30): scales chase speeds (some lazy,
-    //     some eager)
-    //   - reactRadius (60–180 px): some companions only chase
-    //     close toys, others spot them from far away
-    //   - reactionDelay (0–800 ms): some react instantly, some
-    //     have a small lag before they commit to chasing
-    // Together these break the lockstep behavior so each
-    // companion feels distinct.
+    // Per-companion chase personality so they don't all converge on the same toy at the same speed.
     const chasePersonality = {
       speedMult: 0.75 + Math.random() * 0.55,
       reactRadius: 60 + Math.random() * 120,
@@ -204,9 +180,6 @@ class PixelArena {
       // chasePersonality block above for the meaning of each axis.
       chasePersonality,
       // Cylindrical collision body for companion↔companion repulsion.
-      // radius scales with sprite width so big companions don't
-      // overlap less than small ones. bodyRadius is set after the
-      // sprite dimensions are known below.
       bodyRadius: 0,
     };
   }
@@ -465,20 +438,7 @@ class PixelArena {
     this.canvas.addEventListener('mouseleave', stopDrag);
   }
 
-  // v3.1.17: drag-and-drop companions for picture-taking. Mirrors
-  // _initToyDrag but with companion-specific handling:
-  //   - Hit-test uses the sprite bounding box.
-  //   - While dragging, freeze autonomous behavior
-  //     (state='idle', vx/vy=0, stateTimer pushed far into the
-  //     future so the AI loop won't re-arm).
-  //   - On release, give a small throw velocity from the drag
-  //     motion (so a flick scatters the companion), then let it
-  //     resume normal AI from idle after a short delay.
-  //   - Cursor switches to 'grab' over a companion and
-  //     'grabbing' while one is being dragged.
-  //   - Click-to-select still works (separate listener); the
-  //     mousedown here stops propagation only when it actually
-  //     grabbed a companion.
+  // Drag-and-drop companions for picture-taking.
   _initCompanionDrag() {
     const arena = this;
     let dragging = null;
@@ -576,10 +536,7 @@ class PixelArena {
     this.canvas.addEventListener('mouseup', stopDrag);
     this.canvas.addEventListener('mouseleave', stopDrag);
 
-    // v3.1.17: hover cursor — 'grab' over a companion so the user
-    // knows it's draggable, back to 'pointer' (set by _initClick)
-    // when not hovering one. mousemove fires for every pixel so
-    // this is cheap.
+    // Hover cursor — 'grab' over a companion so the user knows it's draggable, back to 'pointer' (set by _initClick) when not hovering one.
     this.canvas.addEventListener('mousemove', function(e) {
       if (arena._draggedCompanion) return;
       const pos = canvasCoord(e);
@@ -740,10 +697,7 @@ class PixelArena {
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
   _updateCompanion(comp, dt) {
-    // v3.1.17: while the user is dragging this companion, skip
-    // the entire AI loop. The drag handler (in _initCompanionDrag)
-    // writes comp.x/comp.y directly each mousemove, so we just
-    // animate the frame and bail.
+    // While the user is dragging this companion, skip the entire AI loop.
     if (this._draggedCompanion === comp) {
       comp.frameTimer += dt;
       const animData = comp.images[comp.animation];
@@ -753,17 +707,7 @@ class PixelArena {
       }
       return;
     }
-    // ── SLEEP MODE ────────────────────────────────────────────
-    // v3.1.4: two sources of sleep:
-    //   1. Manual: comp.sleepState === 'sleeping' (set via the inspect
-    //      panel's sleep button). Takes priority.
-    //   2. Time-based: night (22:00–06:30) AND the user hasn't woken
-    //      the session in the last 10 min.
-    // Both use the same "death" sprite frame as a sleeping pose.
-    //
-    // v3.1.16: use the shared isNightTime() from app.js so the boundary
-    // can't drift between the two files. Defensive fallback to the old
-    // local check in case isNightTime isn't on window yet.
+    // ── SLEEP MODE ──────────────────────────────────────────── v3.1.4: two sources of sleep: 1.
     const manualSleep = comp.sleepState === 'sleeping';
     const isNight = (typeof window.isNightTime === 'function')
       ? window.isNightTime()
@@ -867,12 +811,7 @@ class PixelArena {
       // hitbox collision below.
       if (!comp.bodyRadius) comp.bodyRadius = fw2 * 0.45;
 
-      // v3.1.17: per-companion chase personality. reactRadius
-      // limits which toys this companion notices — some only
-      // chase toys within 60px, others spot toys up to 180px away.
-      // reactionDelay adds a small lag before the companion commits
-      // to a chase, so two companions seeing the same toy don't
-      // both arrive at the exact same instant.
+      // Per-companion chase personality.
       const cp = comp.chasePersonality;
       const reactionLag = cp.reactionDelay;
 
@@ -886,10 +825,7 @@ class PixelArena {
         const dx = (toy.x + toy.radius) - compCX2;
         const dy = (toy.y + toy.radius) - compCY2;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        // v3.4.3: reactRadius (60–180 px) was tuned for a ~500 px
-        // arena; on the current ~1300 px arena a thrown ball was
-        // almost never noticed. Scale it with the arena width, and
-        // let everyone notice a toy that was just thrown/kicked.
+        // ReactRadius (60–180 px) was tuned for a ~500 px arena; on the current ~1300 px arena a thrown ball was almost never noticed.
         const fresh = (performance.now() - (toy.lastTouched || 0)) < 6000;
         const radius = cp.reactRadius * Math.max(1, this.width / 500);
         if (!fresh && dist > radius) continue;
@@ -958,10 +894,7 @@ class PixelArena {
             } else {
               comp.direction = dy < 0 ? 1 : 0;
             }
-            // v3.1.17: reactionDelay adds a small lag before this
-            // companion commits to the chase — so two companions
-            // seeing the same toy don't both arrive at the exact
-            // same instant.
+            // ReactionDelay adds a small lag before this companion commits to the chase — so two companions seeing the same toy don't both arrive at the…
             comp.stateTimer = 150 + (cp.reactionDelay || 0);
           }
         }
@@ -1078,10 +1011,7 @@ class PixelArena {
     const margin = 20;
     const horizonY = this.height * this.horizonLine;
 
-    // Hard bounds — companion can clip into sides/bottom, walks ON the horizon
-    // Feet at comp.y + fh. For feet ON horizon: comp.y = horizonY - fh
-    // Shift down slightly so companion doesn't go too far into the trees
-    // Feet end up ~10% of sprite height below horizon (visually standing on it)
+    // Hard bounds — companion can clip into sides/bottom, walks ON the horizon Feet at comp.y + fh.
     const minY = horizonY - fh * 0.90;
     // Bottom/sides: allow clipping — only bounce when center goes past edge
     const halfW = fw / 2;
@@ -1091,20 +1021,7 @@ class PixelArena {
     if (comp.y < minY) { comp.y = minY; comp.vy = Math.abs(comp.vy); }
     if (comp.y + halfH > this.height) { comp.y = this.height - halfH; comp.vy = -Math.abs(comp.vy); }
 
-    // v3.1.17: companion↔companion hitbox collision. Iterates
-    // every other companion and applies a soft-body push when
-    // their bodies overlap. Tobe: 'I noticed the background
-    // allows them to go a bit too high up... They need a hitbox
-    // or something which the others crash in.' Each push:
-    //   1. Compute center-to-center distance d.
-    //   2. Required min distance = sum of body radii.
-    //   3. If d < required, push each companion along the
-    //      separation axis by half the overlap.
-    //   4. Reflect their velocity component along the axis so
-    //      they actually bounce away instead of just sliding
-    //      through each other.
-    // Cylindrical body so the bounce doesn't care about which
-    // sprite frame they're on.
+    // Companion↔companion hitbox collision.
     if (!comp.bodyRadius) comp.bodyRadius = halfW * 0.9;
     const compCX = comp.x + halfW;
     const compCY = comp.y + halfH;

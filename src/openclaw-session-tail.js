@@ -1,29 +1,4 @@
-// v3.2.21: OpenClaw session tailer. Watches the OpenClaw
-// session JSONL files for clawsuu (and other agents) and
-// emits events when the agent receives a Discord-routed
-// user message and produces an assistant reply. Used by
-// main.js to broadcast typing state + chat messages to
-// the mobile, fixing the bug where Discord replies don't
-// reach the mobile chat because they bypass the desktop's
-// chat pipeline.
-//
-// Why this exists:
-// When the user sends a message via Discord, OpenClaw's
-// gateway routes it directly to the clawsuu agent. The
-// agent's reply goes back through OpenClaw's `message`
-// tool to Discord. The desktop's chat renderer never
-// sees this — it only handles replies from its own chat
-// pipeline (mobile chat, voice mode, typed desktop chat).
-//
-// To fix this without OpenClaw cooperation, we tail
-// OpenClaw's session JSONL files. When we detect a new
-// assistant text message in a Discord-routed session,
-// we broadcast it via `sync-broadcast-chat` to the mobile.
-//
-// We skip sessions whose key matches the desktop's own
-// pipeline (e.g. `agent:clawsuu:main`) — those replies
-// already go through the chat pipeline's normal path and
-// double-broadcasting would create duplicates.
+// OpenClaw session tailer.
 
 const fs = require('fs');
 const path = require('path');
@@ -33,20 +8,12 @@ const { spawn, exec } = require('child_process');
 class OpenClawSessionTail {
   constructor(options = {}) {
     // Directory containing OpenClaw session JSONL files.
-    // Default: <workspace>/sessions/ for the configured
-    // agent. The desktop knows the workspace from
-    // OPENCLAW_AGENT_DIR or the agent config.
     this.sessionsDir = options.sessionsDir ||
       path.join(os.homedir(), '.openclaw', 'agents', 'clawsuu', 'sessions');
     this.agentId = options.agentId || 'clawsuu';
     this.onTyping = options.onTyping || (() => {});
     this.onChatMessage = options.onChatMessage || (() => {});
-    // v3.2.21: tool-call events for the better "thinking"
-    // indicator on the mobile. The tailer watches for
-    // assistant messages that contain tool calls and
-    // emits a "tool-call" event with the tool name. The
-    // mobile uses this to show short, accurate progress
-    // ("💭 Running command..." vs "💭 Reading file...").
+    // Tool-call events for the better "thinking" indicator on the mobile.
     this.onToolCall = options.onToolCall || (() => {});
     this.onLog = options.onLog || (() => {});
 
@@ -57,28 +24,13 @@ class OpenClawSessionTail {
     // Map: sessionFilePath -> sessionKey. We need this
     // to know which sessions are Discord-routed.
     this.fileToKey = new Map();
-    // Map: sessionFilePath -> last message id we've
-    // already broadcast. Even within a single file,
-    // session turns reuse the file across multiple model
-    // runs — we need to track which assistant messages
-    // have been emitted so we don't double-broadcast.
+    // Map: sessionFilePath -> last message id we've already broadcast.
     this.fileLastBroadcastId = new Map();
-    // Set of message ids that are "owned" by the
-    // desktop's own chat pipeline. The chat pipeline
-    // emits assistant messages via addChatMsg + the
-    // sync-broadcast-chat IPC. If we see the same
-    // message id here (because the chat pipeline's agent
-    // run also wrote to the same OpenClaw session), we
-    // skip it. Set externally by main.js when the chat
-    // pipeline runs an agent.
+    // Set of message ids that are "owned" by the desktop's own chat pipeline.
     this.pipelineOwnedIds = new Set();
   }
 
-  // Called by main.js when the desktop's chat pipeline
-  // emits an assistant message. We add the message id to
-  // a "don't re-emit" set so the tail doesn't broadcast
-  // it twice. Message ids are unique enough to use as
-  // dedup keys (OpenClaw's JSONL uses uuid-style ids).
+  // Called by main.js when the desktop's chat pipeline emits an assistant message.
   markPipelineOwned(messageId) {
     if (messageId) this.pipelineOwnedIds.add(messageId);
   }
@@ -107,10 +59,7 @@ class OpenClawSessionTail {
       }
       this.onLog('info', `SessionTail seeded ${files.length} files at end-of-file (no history replay)`);
 
-      // Start a polling loop. fs.watch is unreliable on
-      // Linux when files are appended to vs rewritten,
-      // and OpenClaw appends. Polling every 1.5s is good
-      // enough for "near-real-time" delivery to mobile.
+      // Start a polling loop.
       this.pollTimer = setInterval(() => this.pollFiles(), 1500);
 
       // Refresh session keys every 10s so new sessions
@@ -129,11 +78,7 @@ class OpenClawSessionTail {
   }
 
   async refreshSessionKeys() {
-    // sessions.json can be either a list (older format)
-    // or a dict keyed by sessionKey (newer format). Both
-    // formats have sessionId fields per entry. We rebuild
-    // fileToKey based on filenames so we can map a JSONL
-    // file to its sessionKey (for Discord-vs-pipeline filtering).
+    // Sessions.json can be either a list (older format) or a dict keyed by sessionKey (newer format).
     const sessionsFile = path.join(this.sessionsDir, 'sessions.json');
     let entries = [];
     try {
@@ -158,20 +103,7 @@ class OpenClawSessionTail {
       return;
     }
     for (const s of entries) {
-      // v3.3.12: prefer s.sessionFile (basename) over
-      // s.sessionId for the JSONL filename. Tobe's
-      // 2026-09-23 17:55 report: "the desktop is bugged,
-      // its not loading anything". The desktop tailer
-      // was logging every chat-pipeline tool call as
-      // `sessionKey=unknown` because the disk filename
-      // (e.g. `7633a997-a2de-41ac-8aeb-34fc9d05f027.jsonl`)
-      // no longer matches s.sessionId (e.g.
-      // `c3508d4a-30c1-4400-98df-c6abeddc0b7b`) — OpenClaw
-      // now stores the JSONL path under `sessionFile` and
-      // the sessionId is a separate identifier.
-      //
-      // Fall back to sessionId if sessionFile is missing
-      // (older sessions.json entries predate the rename).
+      // Prefer s.sessionFile (basename) over s.sessionId for the JSONL filename.
       const fname = s.sessionFile
         ? path.basename(s.sessionFile)
         : (s.sessionId ? `${s.sessionId}.jsonl` : null);
@@ -246,65 +178,17 @@ class OpenClawSessionTail {
     const msg = entry.message;
     if (!msg) return;
 
-    // Only handle the clawsuu agent (or whatever this tail
-    // is configured for). We can identify by the
-    // sessionKey in fileToKey, but session keys aren't
-    // per-message — they're per-file. Since the desktop
-    // only configures ONE tail per agent, and the
-    // sessionsDir is per-agent, we can safely process
-    // all entries here.
+    // Only handle the clawsuu agent (or whatever this tail is configured for).
     if (msg.role !== 'assistant') return;
 
     // Only handle messages with text content (skip
     // toolCall-only and toolResult-only messages).
     if (!Array.isArray(msg.content)) return;
-    // v3.3.12: tool-call detection. If the assistant
-    // message contains a tool call (not just text),
-    // emit a tool-call event so the mobile can show
-    // "💭 Running command..." or similar.
-    //
-    // The gate was inverted by accident in v3.2.21 and
-    // left that way through v3.2.25. Original intent
-    // (per the v3.2.21 commit message and the file-
-    // header comment): the chat pipeline on the desktop
-    // shows its own progress via the renderer's typing
-    // bubble, so Discord-routed sessions needed help
-    // reaching the mobile ("Discord replies reach
-    // mobile chat + better thinking indicator").
-    // That's the CHAT MESSAGE concern — v3.2.25 fixed
-    // it correctly by suppressing onChatMessage for
-    // Discord (so Discord noise doesn't pollute the
-    // mobile chat panel).
-    //
-    // The TOOL-CALL concern is the inverse. The chat
-    // pipeline (mobile-typed, voice-typed, desktop
-    // typed chat) does NOT broadcast tool calls to
-    // mobile — it only emits the FINAL reply via
-    // addChatMsg. Tool calls happen inside the
-    // gateway and never surface as IPC events on the
-    // chat pipeline side. So if the user is actively
-    // chatting on the mobile, they get
-    // "💭 Clawsuu is thinking..." and nothing else for
-    // the entire tool-use round-trip, even if the
-    // agent runs a 6-step research loop. Tobe's
-    // 2026-09-23 16:24 ask: "it would be cool to have
-    // it like claude has its web interface where you
-    // see the actions more or less also."
-    //
-    // Fix: emit onToolCall for chat-pipeline sessions
-    // (the user is engaging via mobile/voice/desktop
-    // chat) and SUPPRESS for Discord-routed sessions
-    // (per v3.2.25 — mobile shouldn't react to
-    // activity from conversations the user isn't
-    // having in the app).
+    // Tool-call detection.
     const sessionKey = this.fileToKey.get(filePath) || '';
     const isDiscord = this.isDiscordSessionKey(sessionKey);
     if (!isDiscord && sessionKey) {
-      // Chat-pipeline session (or cron/webchat, all
-      // classified as non-Discord). Emit each tool
-      // call. main.js's onToolCall handler maps the
-      // raw tool name to a friendly text and
-      // broadcasts via syncServer.sendToMobile.
+      // Chat-pipeline session (or cron/webchat, all classified as non-Discord).
       for (const part of msg.content) {
         if (part && part.type === 'toolCall' && part.name) {
           this.onLog('debug', `SessionTail: tool call detected: ${part.name} in session ${path.basename(filePath)}`);
@@ -312,18 +196,10 @@ class OpenClawSessionTail {
         }
       }
     } else if (isDiscord) {
-      // v3.2.25: explicitly suppress tool events for
-      // Discord-routed runs. The chat-pipeline message
-      // suppression above prevents the user's mobile
-      // chat panel from filling with Discord noise;
-      // tool events follow the same rule (mobile
-      // shouldn't react to Discord tool activity).
+      // Explicitly suppress tool events for Discord-routed runs.
       this.onLog('debug', `SessionTail: suppressing tool call from Discord session ${path.basename(filePath)}`);
     } else if (!sessionKey) {
-      // sessionKey is empty — sessions.json hasn't been
-      // populated yet for this file. This is the
-      // most common cause of "agent_tool events aren't
-      // firing" bugs. Log it once per file.
+      // SessionKey is empty — sessions.json hasn't been populated yet for this file.
       this.onLog('debug', `SessionTail: file ${path.basename(filePath)} has no sessionKey mapping (sessions.json out of sync)`);
       // Trigger a refresh of sessions.json so future
       // polls pick up the mapping.
@@ -343,31 +219,12 @@ class OpenClawSessionTail {
     if (this.pipelineOwnedIds.has(msgId)) return;
     if (this.fileLastBroadcastId.get(filePath) === msgId) return;
 
-    // v3.2.22: only broadcast FINAL replies, not mid-run
-    // continuations. The JSONL writes an assistant
-    // message for every model response — some have
-    // `stopReason: "toolUse"` (the agent wants to call
-    // another tool, more assistant messages will follow)
-    // and some have `stopReason: "stop"` or `"end_turn"`
-    // (the agent finished, this is the user-facing reply).
-    //
-    // Without this filter, every exec-driven agent run
-    // fires a chat message broadcast, including my own
-    // internal debugging runs that ended with a final
-    // text reply (none of which were meant for the
-    // user). Tobe reported (2026-07-23 17:54) that the
-    // mobile was "spamming" with 90+ messages during a
-    // debug session because of this. The fix: skip
-    // `stopReason: "toolUse"` messages; only broadcast
-    // `"stop"`, `"end_turn"`, or any non-toolUse stop.
+    // Only broadcast FINAL replies, not mid-run continuations.
     const stopReason = msg.stopReason;
     const isFinalReply =
       !stopReason || stopReason === 'stop' || stopReason === 'end_turn' || stopReason === 'max_tokens';
     if (!isFinalReply) {
       // Mid-run tool-use message — don't broadcast.
-      // Mark this file as recently seen so we don't
-      // reprocess the same line, but skip the
-      // broadcast.
       this.fileLastBroadcastId.set(filePath, msgId);
       return;
     }
@@ -381,11 +238,7 @@ class OpenClawSessionTail {
       return;
     }
 
-    // Skip if this message is from before our start()
-    // (fileOffsets already handles this, but double-check).
-    // If fileOffsets is 0 for this file, we may be reading
-    // from the beginning — that's fine, just don't track
-    // lastBroadcastId for entries that came before start().
+    // Skip if this message is from before our start() (fileOffsets already handles this, but double-check).
 
     // Broadcast typing-off + chat message.
     this.onTyping(false);

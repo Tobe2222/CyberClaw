@@ -1,21 +1,4 @@
-/**
- * RemoteToolBridge — lets the desktop agent call ops on paired mobile devices.
- * Sends remote_tool messages via syncServer and awaits remote_tool_result responses.
- *
- * Class-based API (v2):
- *   const RemoteToolBridge = require('./remote-tool-bridge');
- *   const bridge = new RemoteToolBridge(syncServer);
- *   const result = await bridge.call('file_read', { path: '/sdcard/Download/foo.txt' });
- *   // → { ok: true, data: { content: '<base64>' } }
- *
- * Renderer can also call via IPC:
- *   ipcRenderer.invoke('remote-tool:call', { op, params, timeoutMs })
- *
- * Module-level convenience (backward compat):
- *   const bridge = require('./remote-tool-bridge');
- *   bridge.init(syncServer);
- *   await bridge.remoteToolCall('op', params, timeoutMs);
- */
+/** RemoteToolBridge — lets the desktop agent call ops on paired mobile devices. */
 const { ipcMain } = require('electron');
 const crypto = require('crypto');
 
@@ -42,10 +25,7 @@ class RemoteToolBridge {
     });
   }
 
-  /**
-   * Call an op on the connected mobile device.
-   * Returns { ok, data, error }
-   */
+  /** Call an op on the connected mobile device. */
   async call(op, params = {}, timeoutMs = 15000) {
     const id = crypto.randomUUID();
     const msg = { type: 'remote_tool', id, op, ...params };
