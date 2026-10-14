@@ -385,7 +385,42 @@ async function ensureWhisper() {
 
 // ── PUBLIC API ─────────────────────────────────────────────────────────────
 
+// ─── Local voice server (v3.6.0) ───
+// faster-whisper + Kokoro, kept loaded by ~/.openclaw/cyberclaw/voice/voice_server.py
+// (user service cyberclaw-voice, 127.0.0.1:9251). whisper.cpp / Piper stay as fallback.
+const VOICE_SERVER_PORT = parseInt(process.env.CC_VOICE_PORT || '9251', 10);
+function voiceServer(pathname, body, timeoutMs) {
+  const http = require('http');
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(JSON.stringify(body || {}));
+    const req = http.request({ host: '127.0.0.1', port: VOICE_SERVER_PORT, path: pathname, method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }, timeout: timeoutMs || 60000 }, (res) => {
+      const chunks = []; res.on('data', c => chunks.push(c));
+      res.on('end', () => { try { const j = JSON.parse(Buffer.concat(chunks).toString()); res.statusCode === 200 ? resolve(j) : reject(new Error(j.error || ('HTTP ' + res.statusCode))); } catch (e) { reject(e); } });
+    });
+    req.on('timeout', () => req.destroy(new Error('voice server timeout')));
+    req.on('error', reject);
+    if (body) req.write(data);
+    req.end();
+  });
+}
+async function voiceServerHealth() { try { return await voiceServer('/health', null, 3000); } catch (e) { return { ok: false, error: e.message }; } }
+const isKokoroVoice = (v) => /^[abjzefhip][fm]_[a-z]+$/.test(String(v || ''));
+
 async function transcribeAudio(audioBase64, mimeType) {
+  try {
+    let prompt = '';
+    try { prompt = require('./voice-learning').buildPrompt(); } catch (_) {}
+    const r = await voiceServer('/stt', { audio_b64: audioBase64, mime: mimeType || '', prompt, language: 'en' }, 90000);
+    console.log('[transcribeAudio] local server (' + r.device + ') ' + r.ms + 'ms: "' + String(r.text || '').slice(0, 80) + '"');
+    return String(r.text || '').trim();
+  } catch (e) {
+    console.warn('[transcribeAudio] voice server unavailable, falling back to whisper.cpp:', e.message);
+  }
+  return transcribeAudioWhisperCpp(audioBase64, mimeType);
+}
+
+async function transcribeAudioWhisperCpp(audioBase64, mimeType) {
   const { binaryPath, modelPath } = await ensureWhisper();
 
   // Convert to wav if needed — whisper.cpp needs wav
@@ -499,6 +534,13 @@ async function transcribeAudio(audioBase64, mimeType) {
 }
 
 async function synthesizeSpeech(text, voice = 'lessac') {
+  if (isKokoroVoice(voice)) {
+    try {
+      const r = await voiceServer('/tts', { text, voice }, 60000);
+      console.log('[synthesizeSpeech] kokoro ' + voice + ' ' + r.ms + 'ms');
+      return r.audio_b64;
+    } catch (e) { console.warn('[synthesizeSpeech] kokoro failed, using piper:', e.message); voice = 'lessac'; }
+  }
   const { voiceOnnx, voiceJson } = await ensurePiper(voice);
   const tmpOut = path.join(os.tmpdir(), `cyberclaw-tts-${Date.now()}.wav`);
   const piperScript = path.join(__dirname, 'piper-tts.py');
@@ -520,4 +562,4 @@ async function synthesizeSpeech(text, voice = 'lessac') {
   }
 }
 
-module.exports = { init, transcribeAudio, synthesizeSpeech, ensureWhisper, ensurePiper };
+module.exports = { init, transcribeAudio, synthesizeSpeech, ensureWhisper, ensurePiper, voiceServerHealth };

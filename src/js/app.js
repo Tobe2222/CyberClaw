@@ -8536,3 +8536,19 @@ window.changeAppPath = async function(key) {
   loadPathsUI();
 };
 { const _openSettingsV350 = window.openSettings; window.openSettings = function() { const r = _openSettingsV350.apply(this, arguments); loadPathsUI(); return r; }; }
+
+// v3.6.0: local voice engine status in Settings → Voice.
+async function refreshVoiceEngineStatus() {
+  const el = document.getElementById('settings-voice-engine');
+  if (!el) return;
+  try {
+    const s = await cyberclaw.voice.status();
+    const sv = s.server || {};
+    const l = s.learning || {};
+    el.textContent = sv.ok
+      ? ('✅ Whisper ' + sv.stt + ' on ' + (sv.device || '?').toUpperCase() + ' · Kokoro voices · learned ' + l.terms + ' words, ' + l.corrections + ' corrections, ' + l.samples + ' clips')
+      : '⚠️ local voice server not running — using basic fallback (whisper.cpp + Piper)';
+    el.title = l.prompt || '';
+  } catch (e) { el.textContent = '⚠️ ' + e.message; }
+}
+{ const _os360 = window.openSettings; window.openSettings = function() { const r = _os360.apply(this, arguments); refreshVoiceEngineStatus(); return r; }; }

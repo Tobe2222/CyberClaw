@@ -5,6 +5,7 @@ const fs = require('fs');
 const pty = require('node-pty');
 // v3.2.32: companion soul + memory + CYBERCLAW.md prompt loader
 const companionPrompts = require('./companion-prompts');
+const voiceLearning = require('./voice-learning');
 // v3.3.0: user-managed Skill library (per-companion toggles + prompt augmentation)
 const skillStore = require('./skill-store');
 
@@ -950,6 +951,7 @@ function extractFirstJsonObject(buf) {
 }
 
 ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments, silent }) => {
+  if (!silent) { try { voiceLearning.learnFromText(message); } catch (_) {} }
   // Prefer the OpenAI-compatible HTTP API on the gateway over the `openclaw agent -m` CLI.
   const gw = readGatewayConfig();
   // Log which path we picked.
@@ -3924,6 +3926,7 @@ app.whenReady().then(() => {
         console.log('[Voice] Starting transcription...');
         discordLog('🎤', 'Voice received', 'transcribing...', 'voice');
         const transcript = await transcribeAudio(audioBase64, mimeType);
+        try { voiceLearning.recordSample(audioBase64, mimeType, transcript, { source: 'mobile-voice' }); } catch (_) {}
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) {
           console.warn('[Voice] Transcription returned empty result');
@@ -5162,6 +5165,7 @@ ipcMain.handle('whisper:transcribe', async (e, { audioBase64, mimeType, language
     
     // Transcribe using local Whisper
     const transcript = await transcribeAudio(audioBase64, mimeType);
+    try { voiceLearning.recordSample(audioBase64, mimeType, transcript, { source: 'whisper-ipc' }); } catch (_) {}
     
     // Clean up temp file
     try { fs.unlinkSync(tmpPath); } catch {}
@@ -5277,3 +5281,13 @@ ipcMain.handle('paths:pick', async (event, title) => {
   const r = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || mainWindow, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] });
   return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
+
+// v3.6.0: voice learning seed + status
+setTimeout(() => {
+  try {
+    const cfg = readOpenClawConfig() || {};
+    const names = Object.entries(cfg.agents?.entries || {}).map(([id, e]) => e.name || id).concat((cfg.agents?.list || []).map(a => a.name || a.id));
+    voiceLearning.seed(names.concat(loadQuests().map(q => q.name)).concat(['CyberClaw', 'OpenClaw', 'CyberHive']));
+  } catch (e) { console.warn('[voice-learning] seed failed:', e.message); }
+}, 5000);
+ipcMain.handle('voice:status', async () => ({ server: await localAI.voiceServerHealth(), learning: voiceLearning.stats() }));

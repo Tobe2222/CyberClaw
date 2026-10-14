@@ -563,6 +563,8 @@
                  auto-downloads the .onnx files on first
                  use (~30MB each). -->
             <select id="settings-tts-voice" class="settings-select" onchange="saveSettings()">
+              <optgroup label="Natural — female (local Kokoro)"><option value="af_heart">Heart — warm (US)</option><option value="af_bella">Bella — bright (US)</option><option value="af_nicole">Nicole — soft, whispery (US)</option><option value="af_sky">Sky — light (US)</option><option value="bf_emma">Emma — calm (UK)</option></optgroup>
+              <optgroup label="Natural — male (local Kokoro)"><option value="am_michael">Michael — friendly (US)</option><option value="am_fenrir">Fenrir — deep (US)</option><option value="am_puck">Puck — playful (US)</option><option value="am_echo">Echo — clear (US)</option><option value="bm_george">George — classic (UK)</option><option value="bm_fable">Fable — storyteller (UK)</option></optgroup>
               <optgroup label="Female">
                 <option value="amy">Amy (US, warm & conversational)</option>
                 <option value="kathleen">Kathleen (US, clear & professional)</option>
@@ -576,6 +578,10 @@
                 <option value="sam">Sam (US, smooth + warm)</option>
               </optgroup>
             </select>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Local voice engine</span>
+            <span class="settings-value" id="settings-voice-engine">—</span>
           </div>
           <div class="settings-row">
             <span class="settings-label">Test Voice</span>
@@ -1098,6 +1104,8 @@
             <span class="settings-label">Voice</span>
             <select id="forge-voice" class="settings-select">
               <option value="">Default (Settings → Voice)</option>
+              <optgroup label="Natural — female (local Kokoro)"><option value="af_heart">Heart — warm (US)</option><option value="af_bella">Bella — bright (US)</option><option value="af_nicole">Nicole — soft, whispery (US)</option><option value="af_sky">Sky — light (US)</option><option value="bf_emma">Emma — calm (UK)</option></optgroup>
+              <optgroup label="Natural — male (local Kokoro)"><option value="am_michael">Michael — friendly (US)</option><option value="am_fenrir">Fenrir — deep (US)</option><option value="am_puck">Puck — playful (US)</option><option value="am_echo">Echo — clear (US)</option><option value="bm_george">George — classic (UK)</option><option value="bm_fable">Fable — storyteller (UK)</option></optgroup>
               <optgroup label="Female"><option value="amy">Amy — warm</option><option value="kathleen">Kathleen — clear</option><option value="jenny">Jenny — British</option><option value="kristin">Kristin — low, breathy</option></optgroup>
               <optgroup label="Male"><option value="lessac">Lessac — baseline</option><option value="joe">Joe — deeper</option><option value="ryan">Ryan</option><option value="sam">Sam — smooth</option></optgroup>
             </select>
