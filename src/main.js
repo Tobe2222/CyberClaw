@@ -261,7 +261,25 @@ function loadQuests() {
 function deriveQuestFilesDir(quest) {
   if (!quest) return null;
   if (quest.directory && typeof quest.directory === 'string' && quest.directory.trim()) {
-    return path.join(quest.directory.trim(), 'quest');
+    const dir = quest.directory.trim();
+    const std = path.join(dir, 'quest');
+    // v3.5.3: importing a project that already has quest files in a
+    // differently named subfolder (e.g. "Cyberclaw_quest/" from an older
+    // install) must ADOPT that folder, not start an empty quest/ next to it.
+    const hasLog = (d) => { try { return fs.statSync(path.join(d, 'CONVERSATION.md')).size > 400; } catch { return false; } };
+    if (hasLog(std)) return std;
+    try {
+      let best = null, bestSize = 0;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name === 'node_modules' || e.name.startsWith('.')) continue;
+        const cand = path.join(dir, e.name);
+        if (!fs.existsSync(path.join(cand, 'INSTRUCTIONS.md')) && !fs.existsSync(path.join(cand, 'NOTES.md'))) continue;
+        let size = 0; try { size = fs.statSync(path.join(cand, 'CONVERSATION.md')).size; } catch { continue; }
+        if (size > bestSize) { best = cand; bestSize = size; }
+      }
+      if (best && bestSize > 400) return best;
+    } catch {}
+    return std;
   }
   if (quest.id) {
     return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id);
