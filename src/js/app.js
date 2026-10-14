@@ -2033,7 +2033,7 @@ window.switchActiveChat = function(agentId) {
 };
 
 // Per-quest chat history from <quest.directory>/quest/CONVERSATION.md.
-const QUEST_FILE_HISTORY_LIMIT = 150;
+const QUEST_FILE_HISTORY_LIMIT = 300;
 const _questFileHistory = {};   // "agentId::questId" -> [msg] | null (loading)
 function questFileHistoryFor(agentId, qk) {
   const v = _questFileHistory[agentId + '::' + qk];
@@ -6481,14 +6481,28 @@ try {
   // v3.1.17: per-agent chat history for the mobile companion tab bar.
   // Mobile sends this when the user taps a different companion tab;
   // we send back the last 50 messages for that companion only.
-  ipcRenderer.on('mobile-request-agent-history', (e, { agentId }) => {
-    // Normalize the message shape before sending to mobile.
-    const agentBuckets = chatHistoryByAgentAndQuest[agentId] || {};
+  ipcRenderer.on('mobile-request-agent-history', async (e, { agentId }) => {
+    // v3.5.2: full history for the phone. Quest chats include the
+    // quest's CONVERSATION.md history (same as the desktop shows),
+    // merged with this session's messages. Casual + active quest get
+    // up to 300 messages, other quests 100 (the phone pages them).
+    const agentBuckets = { ...(chatHistoryByAgentAndQuest[agentId] || {}) };
+    const activeKey = questKeyForStorage(activeQuestId || _casualFromQuestId || null);
+    for (const q of (cachedQuestsList || [])) {
+      if (!q || !q.id) continue;
+      try { await loadQuestFileHistory(agentId, q.id); } catch (_) {}
+      const fileHist = questFileHistoryFor(agentId, q.id) || [];
+      if (!fileHist.length) continue;
+      const live = agentBuckets[q.id] || [];
+      const seen = new Set(live.map(chatDedupeKey));
+      agentBuckets[q.id] = fileHist.filter(m => !seen.has(chatDedupeKey(m))).concat(live)
+        .sort((x, y) => (x.ts || 0) - (y.ts || 0));
+    }
     const buckets = {};
     for (const [bucketKey, msgs] of Object.entries(agentBuckets)) {
       if (!Array.isArray(msgs) || msgs.length === 0) continue;
-      // V3.2.63 strip + v3.3.11 normalize + v3.3.19 quest attribution.
-      buckets[bucketKey] = msgs.slice(-50).map((m) => ({
+      const cap = (bucketKey === DEFAULT_QUEST_KEY || bucketKey === activeKey) ? 300 : 100;
+      buckets[bucketKey] = msgs.filter(m => m && (m.type === 'user' || m.type === 'agent' || m.type === 'agent-image')).slice(-cap).map((m) => ({
         text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
         isUser: m.type === 'user',
         agentId: m.name || agentId,

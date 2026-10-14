@@ -2710,6 +2710,30 @@ ipcMain.handle('quests:append-change', (event, id, text) => {
 // Per-quest conversation log IPCs.
 const CONVERSATION_LOG_MAX_ENTRIES = 200;
 const CONVERSATION_LOG_MAX_TEXT_CHARS = 1000;
+// v3.5.2: CONVERSATION.md rolls itself. Past ~400 KB the older half is
+// dropped (cut on an entry boundary, header kept) and logging continues.
+// SUMMARY.md / DECISIONS.md carry the long-term context.
+const CONVERSATION_FILE_MAX_BYTES = 400 * 1024;
+function rollConversationFile(convFile) {
+  try {
+    if (fs.statSync(convFile).size <= CONVERSATION_FILE_MAX_BYTES) return false;
+    const text = fs.readFileSync(convFile, 'utf-8');
+    const first = text.search(/^\[\d{4}-\d\d-\d\dT/m);
+    if (first < 0) return false;
+    const header = text.slice(0, first).replace(/\n*_\(Older entries trimmed[^\n]*\n*/g, '\n').replace(/\s+$/, '');
+    const body = text.slice(first);
+    const mid = Math.floor(body.length / 2);
+    const rel = body.slice(mid).search(/\n\[\d{4}-\d\d-\d\dT/);
+    if (rel < 0) return false;
+    const kept = body.slice(mid + rel + 1);
+    const note = '_(Older entries trimmed automatically on ' + new Date().toISOString().slice(0, 10) + ' — the log keeps the newest half. See SUMMARY.md and DECISIONS.md for long-term context.)_';
+    fs.writeFileSync(convFile + '.tmp', header + '\n\n' + note + '\n\n' + kept, 'utf-8');
+    fs.renameSync(convFile + '.tmp', convFile);
+    console.log('[ConversationLog] rolled', convFile, (text.length / 1024 | 0) + 'KB →', (kept.length / 1024 | 0) + 'KB');
+    return true;
+  } catch (e) { console.warn('[ConversationLog] roll failed:', e.message); return false; }
+}
+
 function appendConversationLog(q, role, text, agentId, agentName) {
   if (!q) return null;
   if (!Array.isArray(q.conversationLog)) q.conversationLog = [];
@@ -2755,6 +2779,7 @@ function appendConversationLog(q, role, text, agentId, agentName) {
       const line = `[${entry.ts}] ${entry.role}${entry.agentName ? `(${entry.agentName})` : entry.agentId ? `(${entry.agentId})` : ''}: ${entry.text}\n`;
       // We open with 'a' flag so the file is appended in place — keep the OS-level guarantee that the file is always consistent at rest for…
       fs.appendFileSync(convFile, line, 'utf-8');
+      rollConversationFile(convFile);
     }
   } catch (e) {
     // Best-effort. A failed append to the file doesn't
