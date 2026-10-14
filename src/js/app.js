@@ -8552,3 +8552,33 @@ async function refreshVoiceEngineStatus() {
   } catch (e) { el.textContent = '⚠️ ' + e.message; }
 }
 { const _os360 = window.openSettings; window.openSettings = function() { const r = _os360.apply(this, arguments); refreshVoiceEngineStatus(); return r; }; }
+
+// v3.6.1: speech model tier + one-click install.
+window.setSpeechTier = async function(tier) {
+  const el = document.getElementById('settings-voice-engine');
+  if (el) el.textContent = '⏳ switching speech model…';
+  await cyberclaw.voice.setModel(tier);
+  setTimeout(refreshVoiceEngineStatus, 4000);
+};
+window.installVoiceEngine = async function() {
+  const btn = document.getElementById('settings-voice-install-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Installing (a few minutes)…'; }
+  const r = await cyberclaw.voice.install();
+  if (btn) { btn.disabled = false; btn.textContent = r.ok ? '✅ Installed' : '⬇️ Install local voice engine'; }
+  if (!r.ok) alert('Voice engine install failed: ' + r.error);
+  setTimeout(refreshVoiceEngineStatus, 5000);
+};
+{ const _rv = refreshVoiceEngineStatus; refreshVoiceEngineStatus = async function() {
+    await _rv();
+    try {
+      const s = await cyberclaw.voice.status();
+      const sv = s.server || {};
+      const row = document.getElementById('settings-voice-install-row');
+      if (row) row.style.display = sv.ok ? 'none' : '';
+      const sel = document.getElementById('settings-stt-tier');
+      if (sel && sv.ok) sel.title = 'Now: ' + sv.stt + ' (' + sv.tier + ')';
+      const el = document.getElementById('settings-voice-engine');
+      if (el && sv.ok && sv.tier) el.textContent = el.textContent.replace('Whisper ' + sv.stt, 'Whisper ' + sv.stt + ' [' + sv.tier + ']');
+    } catch (_) {}
+  };
+}

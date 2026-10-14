@@ -584,6 +584,19 @@
             <span class="settings-value" id="settings-voice-engine">—</span>
           </div>
           <div class="settings-row">
+            <span class="settings-label">Speech model</span>
+            <select id="settings-stt-tier" class="settings-select" onchange="setSpeechTier(this.value)">
+              <option value="auto">Auto (pick for this computer)</option>
+              <option value="high">High — Whisper large-v3-turbo (GPU)</option>
+              <option value="balanced">Balanced — Whisper small (GPU or fast CPU)</option>
+              <option value="light">Light — Whisper base (any CPU, a bit slower to understand)</option>
+            </select>
+          </div>
+          <div class="settings-row" id="settings-voice-install-row" style="display:none">
+            <span class="settings-label">Not installed</span>
+            <button class="settings-btn" id="settings-voice-install-btn" onclick="installVoiceEngine()">⬇️ Install local voice engine</button>
+          </div>
+          <div class="settings-row">
             <span class="settings-label">Test Voice</span>
             <button class="settings-btn" onclick="testTTSVoice()">🔊 Play Sample</button>
           </div>

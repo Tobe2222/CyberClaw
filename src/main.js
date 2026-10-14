@@ -3905,6 +3905,14 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
+    onVoicePeek: async (msg, ws) => {
+      const t0 = Date.now();
+      let text = '';
+      try { text = await transcribeAudio(msg.audioBase64, msg.mimeType || 'audio/wav'); } catch (e) { console.warn('[Voice] peek failed:', e.message); }
+      const complete = turnLooksComplete(text);
+      console.log('[Voice] peek ' + (Date.now() - t0) + 'ms complete=' + complete + ' "' + text.slice(0, 60) + '"');
+      if (syncServer && ws && ws.readyState === 1) syncServer._send(ws, { type: 'voice_peek_result', id: msg.id, text, complete, ms: Date.now() - t0 });
+    },
     onAudioInput: async (audioBase64, mimeType, ws, meta) => {
       try {
         // Immediately ack receipt so mobile can show "received at desktop"
@@ -3925,8 +3933,11 @@ app.whenReady().then(() => {
         // 1. Transcribe audio via Whisper
         console.log('[Voice] Starting transcription...');
         discordLog('🎤', 'Voice received', 'transcribing...', 'voice');
-        const transcript = await transcribeAudio(audioBase64, mimeType);
-        try { voiceLearning.recordSample(audioBase64, mimeType, transcript, { source: 'mobile-voice' }); } catch (_) {}
+        // v3.6.1: the phone may already have the text from its end-of-turn check.
+        const transcript = (meta && typeof meta.transcript === 'string' && meta.transcript.trim())
+          ? meta.transcript.trim()
+          : await transcribeAudio(audioBase64, mimeType);
+        try { voiceLearning.recordSample(audioBase64, mimeType, transcript, { source: 'mobile-voice', peek: !!(meta && meta.transcript) }); } catch (_) {}
         if (mainWindow) mainWindow.webContents.send('mobile-voice-transcribed', { transcript });
         if (!transcript) {
           console.warn('[Voice] Transcription returned empty result');
@@ -4945,10 +4956,19 @@ ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUs
     console.log(`[TTS] Synthesizing voice response with ${ttsVoice}: "${cleanText.substring(0, 60)}..."`);
     discordLog('🔊', 'TTS synthesizing', `${ttsVoice}: "${cleanText.substring(0, 60)}"`);
     try {
-      const audioBase64 = await synthesizeSpeech(cleanText, ttsVoice);
+      // v3.6.1: speak sentence by sentence — the first sentence goes out as
+      // soon as it's synthesized, so the phone starts talking while the rest
+      // is still being generated.
+      const parts = splitForSpeech(cleanText);
+      for (let i = 0; i < parts.length - 1; i++) {
+        const chunk = await synthesizeSpeech(parts[i], ttsVoice);
+        if (chunk) syncServer.sendAudioResponse(ws, chunk, 'audio/wav', { part: i, final: false, text: parts[i] });
+      }
+      const lastText = parts.length > 1 ? parts[parts.length - 1] : cleanText;
+      const audioBase64 = await synthesizeSpeech(lastText, ttsVoice);
       if (audioBase64) {
-        console.log(`[TTS] Synthesized ${audioBase64.length} chars, sending to mobile...`);
-        syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav');
+        console.log('[TTS] Synthesized ' + audioBase64.length + ' chars (' + parts.length + ' part(s)), sending to mobile...');
+        syncServer.sendAudioResponse(ws, audioBase64, 'audio/wav', parts.length > 1 ? { part: parts.length - 1, final: true, text: cleanText } : undefined);
         console.log('[TTS] Audio response sent to mobile');
         discordLog('✅', 'Audio sent to mobile', `${audioBase64.length} chars`);
       } else {
@@ -5291,3 +5311,87 @@ setTimeout(() => {
   } catch (e) { console.warn('[voice-learning] seed failed:', e.message); }
 }, 5000);
 ipcMain.handle('voice:status', async () => ({ server: await localAI.voiceServerHealth(), learning: voiceLearning.stats() }));
+
+// ─── Voice turn helpers (v3.6.1) ───
+const TURN_TRAILERS = new Set(('and but or so because the a an to of with for in on at um uh erm hmm like if then that my your our his her their is are was were be been i we you it can could would should will just also about from into than when while which who what how where whether plus').split(' '));
+function turnLooksComplete(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const s = t.toLowerCase().replace(/["'\u201c\u201d\u2018\u2019]/g, '');
+  if (/(,|;|:|-|\u2013|\u2014|\.\.\.|\u2026)$/.test(s)) return false;
+  const last = (s.replace(/[.!?]+$/, '').match(/[a-z0-9']+$/) || [''])[0];
+  return !TURN_TRAILERS.has(last);
+}
+function splitForSpeech(text) {
+  // Split only where . ! ? is followed by whitespace (keeps v2.1.115, 3.5 etc. intact).
+  const sentences = String(text || '').split(/(?<=[.!?]["')\]]*)\s+/);
+  const out = [];
+  for (const raw of sentences) {
+    const s = raw.trim();
+    if (!s) continue;
+    // First sentence alone (fast start); later ones grouped up to ~220 chars.
+    if (out.length <= 1 || out[out.length - 1].length + s.length > 220) out.push(s);
+    else out[out.length - 1] += ' ' + s;
+  }
+  return out.length ? out : [String(text || '')];
+}
+
+// ─── Local voice server manager (v3.6.1) ───
+// Uses the systemd user service if present (Linux autostart); otherwise the
+// app starts the server itself. Install + speech-model tier from Settings.
+const VOICE_HOME = path.join(CYBERCLAW_DIR, 'voice');
+const VOICE_PY = path.join(VOICE_HOME, 'env', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python3');
+let voiceChild = null;
+function syncVoiceServerScript() {
+  try {
+    const a = fs.readFileSync(path.join(__dirname, 'voice', 'voice_server.py'), 'utf8');
+    const dst = path.join(VOICE_HOME, 'voice_server.py');
+    let b = ''; try { b = fs.readFileSync(dst, 'utf8'); } catch {}
+    if (a !== b) { fs.mkdirSync(VOICE_HOME, { recursive: true }); fs.writeFileSync(dst, a); return true; }
+  } catch (e) { console.warn('[voice] script sync failed:', e.message); }
+  return false;
+}
+async function ensureVoiceServer() {
+  const changed = syncVoiceServerScript();
+  const unit = path.join(os.homedir(), '.config', 'systemd', 'user', 'cyberclaw-voice.service');
+  if (fs.existsSync(unit)) { if (changed) require('child_process').exec('systemctl --user restart cyberclaw-voice', () => {}); return 'systemd'; }
+  const h = await localAI.voiceServerHealth();
+  if (h && h.ok) return 'running';
+  if (!fs.existsSync(VOICE_PY)) return 'not-installed';
+  if (voiceChild) return 'starting';
+  const { spawn } = require('child_process');
+  const log = fs.openSync(path.join(VOICE_HOME, 'server.log'), 'a');
+  voiceChild = spawn(VOICE_PY, ['-u', path.join(VOICE_HOME, 'voice_server.py')], { stdio: ['ignore', log, log] });
+  voiceChild.on('exit', (code) => { console.warn('[voice] server exited', code); voiceChild = null; });
+  return 'spawned';
+}
+app.on('will-quit', () => { try { if (voiceChild) voiceChild.kill(); } catch (_) {} });
+setTimeout(() => { ensureVoiceServer().then(m => console.log('[voice] server:', m)).catch(() => {}); }, 3000);
+ipcMain.handle('voice:install', async () => {
+  if (process.platform === 'win32') return { ok: false, error: 'Automatic install is Linux/macOS only for now.' };
+  const { spawn } = require('child_process');
+  fs.mkdirSync(VOICE_HOME, { recursive: true });
+  const logPath = path.join(VOICE_HOME, 'install.log');
+  return await new Promise((resolve) => {
+    const p = spawn('bash', [path.join(__dirname, 'voice', 'setup.sh')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    const addOut = (d) => { out += d.toString(); try { fs.appendFileSync(logPath, d); } catch (_) {} };
+    p.stdout.on('data', addOut); p.stderr.on('data', addOut);
+    p.on('exit', async (code) => {
+      const missing = (out.match(/MISSING: [^\n]+/) || [null])[0];
+      if (code === 0) { await ensureVoiceServer(); resolve({ ok: true }); }
+      else resolve({ ok: false, error: missing || ('installer exited ' + code + ' — see ' + logPath) });
+    });
+  });
+});
+ipcMain.handle('voice:set-model', async (e, tier) => {
+  const http = require('http');
+  return await new Promise((resolve) => {
+    const body = Buffer.from(JSON.stringify({ stt_model: tier || 'auto' }));
+    const req = http.request({ host: '127.0.0.1', port: 9251, path: '/config', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': body.length }, timeout: 10000 }, (res) => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ ok: false }); } });
+    });
+    req.on('error', (err) => resolve({ ok: false, error: err.message }));
+    req.write(body); req.end();
+  });
+});

@@ -439,9 +439,19 @@ class SyncServer extends EventEmitter {
         if (this.onAudioInput) {
           this.onAudioInput(msg.audioBase64, msg.mimeType || 'audio/wav', ws, {
             source: 'mobile',
-            deviceName: client.name
+            deviceName: client.name,
+            transcript: typeof msg.transcript === 'string' ? msg.transcript : null,
           });
         }
+        break;
+      }
+
+      // v3.6.1: end-of-turn check. The phone sends what it has recorded so
+      // far after a short pause; we transcribe it and say whether the
+      // sentence sounds finished.
+      case 'voice_peek': {
+        if (!client.authenticated) return;
+        if (this.onVoicePeek) this.onVoicePeek(msg, ws);
         break;
       }
 
@@ -1868,8 +1878,8 @@ class SyncServer extends EventEmitter {
     this._broadcast(payload);
   }
 
-  sendAudioResponse(ws, audioBase64, mimeType = 'audio/mpeg') {
-    const payload = { type: 'audio_response', audioBase64, mimeType };
+  sendAudioResponse(ws, audioBase64, mimeType = 'audio/mpeg', extra) {
+    const payload = { type: 'audio_response', audioBase64, mimeType, ...(extra || {}) };
     // Cache for reconnect replay (5s window)
     this._lastAudioResponse = { payload, ts: Date.now() };
     // Try original ws; fallback to any authenticated client
