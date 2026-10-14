@@ -591,6 +591,9 @@ function saveDefaultDir(dir) {
     if (dir) localStorage.setItem(DEFAULT_DIR_STORAGE_KEY, dir);
     else localStorage.removeItem(DEFAULT_DIR_STORAGE_KEY);
   } catch (e) { console.warn('[wizard] saveDefaultDir failed:', e); }
+  // v3.5.0: also persist as the app-wide projects folder (paths.json),
+  // so Import quest / auto-detect use it instead of a hardcoded path.
+  try { if (window.cyberclaw && cyberclaw.paths) cyberclaw.paths.set({ projectsRoot: dir || '' }); } catch (_) {}
   // Sync both input fields (one per step) so the user
   // sees the same value regardless of which step they
   // edited it on.

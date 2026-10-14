@@ -1428,6 +1428,7 @@ async function buildActiveQuestContext(quest) {
   // in the chat." The exception: short acknowledgement
   // replies like "logged." are fine if the action was the
   // main point of the message.
+  ctx += ` | [QUEST_SUMMARY: text=\"...\"] rewrites this quest's SUMMARY.md (current state, next steps, open problems) — do it after a work session or a milestone, keep it short | [QUEST_DECISION: text=\"...\"] records one settled decision in DECISIONS.md — never contradict a listed decision without asking`;
   ctx += ` | IMPORTANT: tags alone are silent in the user's chat — always pair a tag with a normal chat-visible reply (or a short "logged." ack).`;
   ctx += `] `;
 
@@ -1516,6 +1517,18 @@ async function buildActiveQuestContext(quest) {
   // The empty case (no log yet on a fresh quest) is
   // silent — we don't say "no prior conversation" because
   // that's a meta-comment that doesn't help the model.
+  // v3.5.0: SUMMARY.md + DECISIONS.md — the quest's compact memory.
+  try {
+    const mem = await cyberclaw.quests.readQuestMemory(quest.id);
+    if (mem && mem.ok) {
+      const body = (t) => String(t || '').replace(/^#.*$/m, '').replace(/^_.*_$/gm, '').trim();
+      const sum = body(mem.summary.content);
+      if (sum && sum !== '(nothing yet)') ctx += `\n[Quest summary — ${mem.summary.path}]\n${sum.slice(0, 4000)}\n[/Quest summary] `;
+      const dec = body(mem.decisions.content).split('\n').filter(l => l.trim()).slice(-60).join('\n');
+      if (dec) ctx += `\n[Settled decisions — ${mem.decisions.path}]\n${dec.slice(-4000)}\n[/Settled decisions] `;
+    }
+  } catch (e) { console.warn('[quest-memory] read failed:', e && e.message); }
+
   const CONVERSATION_LOG_CONTEXT_INJECT = 8;
   const CONVERSATION_LOG_LINE_CHARS = 300;
   if (Array.isArray(quest.conversationLog) && quest.conversationLog.length > 0) {
@@ -1557,7 +1570,7 @@ async function buildActiveQuestContext(quest) {
 // "QUEST_MARK_GOAL" / "CREATE_QUEST"). The hint is one
 // short clause to minimize context-window bloat.
 function buildQuestToolsHint() {
-  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
+  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_SUMMARY: text="..."] to rewrite the active quest\'s SUMMARY.md, [QUEST_DECISION: text="..."] to record a settled decision, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
 
 // v3.2.48: work-first reminder appended at the END of
@@ -1621,6 +1634,8 @@ function stripQuestTags(reply) {
     .replace(/\[CREATE_QUEST:[^\]]*\]/g, '')
     .replace(/\[QUEST_APPEND_CHANGE:[^\]]*\]/g, '')
     .replace(/\[QUEST_NOTE:[^\]]*\]/g, '')
+    .replace(/\[QUEST_SUMMARY:[\s\S]*?"\]/g, '')
+    .replace(/\[QUEST_DECISION:[^\]]*\]/g, '')
     .replace(/\[QUEST_MARK_GOAL:[^\]]*\]/g, '')
     .replace(/\[QUEST_SET_ACTIVE:[^\]]*\]/g, '')
     // v3.2.64: [REMEMBER: text="..."] is the silent-log
@@ -3822,6 +3837,16 @@ window.sendChat = async function() {
         // notes" section. We invalidate the in-memory
         // cache here so the next chat send sees the new
         // note in the context block.
+        // v3.5.0: quest memory tags
+        const summaryMatch = result.reply.match(/\[QUEST_SUMMARY:\s*text="([\s\S]*?)"\]/i);
+        if (summaryMatch && activeQuestId) {
+          try { const r = await cyberclaw.quests.writeQuestSummary(activeQuestId, summaryMatch[1]); if (r && r.ok) addChatMsg('system', '🧭 Quest summary updated'); } catch (e) { addChatMsg('system', '⚠️ Summary update failed: ' + e.message); }
+        }
+        const decisionRe = /\[QUEST_DECISION:\s*text="([^"]+)"\]/gi;
+        let decM;
+        while (activeQuestId && (decM = decisionRe.exec(result.reply))) {
+          try { const r = await cyberclaw.quests.appendQuestDecision(activeQuestId, decM[1]); if (r && r.ok) addChatMsg('system', '📌 Decision recorded: ' + (decM[1].length > 80 ? decM[1].slice(0, 77) + '…' : decM[1])); } catch (e) { addChatMsg('system', '⚠️ Decision save failed: ' + e.message); }
+        }
         const noteMatch = result.reply.match(/\[QUEST_NOTE:\s*text="([^"]+)"\]/i);
         if (noteMatch) {
           if (activeQuestId) {
@@ -11296,3 +11321,21 @@ try {
 
 const _origUpdateChatQuestToggle = updateChatQuestToggle;
 updateChatQuestToggle = function() { const r = _origUpdateChatQuestToggle.apply(this, arguments); broadcastChatContextToMobile(); return r; };
+
+// v3.5.0: Settings → Data: editable folders (were hardcoded).
+async function loadPathsUI() {
+  try {
+    const p = await cyberclaw.paths.get();
+    const a = document.getElementById('settings-projects-root');
+    const b = document.getElementById('settings-default-quest-dir');
+    if (a) a.textContent = p.projectsRoot || (p.effectiveProjectsRoot + '  (default)');
+    if (b) b.textContent = p.defaultQuestDir || '(same as projects folder)';
+  } catch (e) { console.warn('[paths] load failed', e); }
+}
+window.changeAppPath = async function(key) {
+  const dir = await cyberclaw.paths.pick(key === 'projectsRoot' ? 'Choose your projects folder' : 'Choose where new quests are created');
+  if (!dir) return;
+  await cyberclaw.paths.set({ [key]: dir });
+  loadPathsUI();
+};
+{ const _openSettingsV350 = window.openSettings; window.openSettings = function() { const r = _openSettingsV350.apply(this, arguments); loadPathsUI(); return r; }; }

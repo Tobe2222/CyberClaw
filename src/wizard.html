@@ -363,7 +363,7 @@
            it as the projects root (instead of the hardcoded
            /media…cts/ path). -->
       <div style="display:flex; gap:6px; align-items:center; width:100%; max-width:640px; margin:8px 0 4px 0;">
-        <label style="font-size:10px; color:var(--text-muted); white-space:nowrap;">Default directory:</label>
+        <label style="font-size:10px; color:var(--text-muted); white-space:nowrap;" title="Where your project folders live. Saved as the app's projects folder (editable later in Settings → Data).">Projects folder:</label>
         <input type="text" id="default-dir-quests" class="wizard-input default-dir-input" style="flex:1; margin:0; font-size:11px; padding:6px 8px;" placeholder="(optional — scan will search this dir for project subdirectories)" oninput="saveDefaultDir(this.value)" />
         <button class="wizard-btn" onclick="pickDefaultDir('quests')" style="margin:0; padding:4px 10px; font-size:11px;">📂…</button>
       </div>

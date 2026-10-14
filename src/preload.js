@@ -112,7 +112,16 @@ window.cyberclaw = {
   arena: {
     popout: (state) => ipcRenderer.invoke('arena:popout', state),
   },
+  // v3.5.0: user-editable paths
+  paths: {
+    get: () => ipcRenderer.invoke('paths:get'),
+    set: (patch) => ipcRenderer.invoke('paths:set', patch),
+    pick: (title) => ipcRenderer.invoke('paths:pick', title),
+  },
   quests: {
+    readQuestMemory: (id) => ipcRenderer.invoke('quests:read-quest-memory', id),
+    writeQuestSummary: (id, text) => ipcRenderer.invoke('quests:write-summary', id, text),
+    appendQuestDecision: (id, text) => ipcRenderer.invoke('quests:append-decision', id, text),
     list: () => ipcRenderer.invoke('quests:list'),
     create: (quest) => ipcRenderer.invoke('quests:create', quest),
     update: (id, updates) => ipcRenderer.invoke('quests:update', id, updates),

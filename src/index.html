@@ -832,6 +832,19 @@
             <span class="settings-label">Data directory</span>
             <span class="settings-value settings-path" id="settings-data-path">—</span>
           </div>
+          <!-- v3.5.0: editable folders (set in the wizard too) -->
+          <div class="settings-row">
+            <span class="settings-label">Projects folder</span>
+            <span class="settings-value settings-path" id="settings-projects-root">—</span>
+            <button class="btn-sm btn-muted" onclick="changeAppPath('projectsRoot')">Change…</button>
+          </div>
+          <div class="settings-info cp-hint">Where your project folders live. Import quest and auto-detect scan this folder.</div>
+          <div class="settings-row">
+            <span class="settings-label">New quests folder</span>
+            <span class="settings-value settings-path" id="settings-default-quest-dir">—</span>
+            <button class="btn-sm btn-muted" onclick="changeAppPath('defaultQuestDir')">Change…</button>
+          </div>
+          <div class="settings-info cp-hint">Where a new quest gets its folder when you don't pick one.</div>
           <div class="settings-row">
             <button class="settings-action-btn" onclick="openDataDir()">📂 Open data folder</button>
             <button class="settings-action-btn danger" onclick="resetSettings()">🗑️ Reset to defaults</button>

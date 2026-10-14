@@ -201,6 +201,12 @@ function maybeReloadRenderer() {
 const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const CYBERCLAW_DIR = path.join(OPENCLAW_DIR, 'cyberclaw');
 const QUESTS_FILE = path.join(CYBERCLAW_DIR, 'quests.json');
+// v3.5.0: user-editable paths (paths.json). No machine-specific defaults.
+const PATHS_FILE = path.join(CYBERCLAW_DIR, 'paths.json');
+const APP_ROOT = path.resolve(__dirname, '..');
+function loadPaths() { let p = {}; try { p = JSON.parse(fs.readFileSync(PATHS_FILE, 'utf8')); } catch {} return { projectsRoot: p.projectsRoot || '', defaultQuestDir: p.defaultQuestDir || '' }; }
+function savePaths(patch) { const next = { ...loadPaths(), ...patch }; fs.mkdirSync(CYBERCLAW_DIR, { recursive: true }); fs.writeFileSync(PATHS_FILE, JSON.stringify(next, null, 2)); return next; }
+function getProjectsRoot() { return loadPaths().projectsRoot || path.join(os.homedir(), 'projects'); }
 const STATS_FILE = path.join(CYBERCLAW_DIR, 'companion-stats.json');
 const PROVIDERS_FILE = path.join(CYBERCLAW_DIR, 'providers.json');
 // v3.1.33: user-managed LLM endpoints (Ollama, LM Studio,
@@ -1846,7 +1852,7 @@ ipcMain.handle('quests:scan-projects', async () => {
   // so the picker doesn't show duplicates.
   // v3.3.37: switched to fs.promises.readdir so the main
   // process doesn't block on slow disks.
-  const projectsRoot = '/media/dick/CYBERDRIVE/2B/work/projects';
+  const projectsRoot = getProjectsRoot();
   const out = [];
   try {
     const existing = loadQuests();
@@ -1855,7 +1861,7 @@ ipcMain.handle('quests:scan-projects', async () => {
     for (const e of entries) {
       if (!e.isDirectory()) continue;
       const full = path.join(projectsRoot, e.name);
-      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue; // the app itself
+      if (path.resolve(full) === APP_ROOT) continue; // the app itself
       if (existingDirs.has(full)) continue;
       out.push({ name: e.name, path: full });
     }
@@ -1892,7 +1898,7 @@ ipcMain.handle('wizard:scan-projects-dir', async (event, parentDir) => {
       const full = path.join(parentDir, e.name);
       // Skip the app itself (if user points the default at
       // the projects root that contains the cyberclaw dir).
-      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue;
+      if (path.resolve(full) === APP_ROOT) continue;
       // Probe each subdir for key files. Best-effort: if the
       // subdir is unreadable, just skip the flags.
       let hasPackage = false, hasReadme = false, hasAgents = false;
@@ -2077,7 +2083,7 @@ ipcMain.handle('companions:import', async (event, folder) => {
 // projects directory, skips already-registered ones, and
 // registers each remaining one in a single pass.
 ipcMain.handle('quests:auto-detect', async () => {
-  const projectsRoot = '/media/dick/CYBERDRIVE/2B/work/projects';
+  const projectsRoot = getProjectsRoot();
   const created = [];
   const skipped = [];
   try {
@@ -2087,7 +2093,7 @@ ipcMain.handle('quests:auto-detect', async () => {
     for (const e of entries) {
       if (!e.isDirectory()) continue;
       const full = path.join(projectsRoot, e.name);
-      if (full === '/media/dick/CYBERDRIVE/2B/work/projects/cyberclaw') continue;
+      if (path.resolve(full) === APP_ROOT) continue;
       if (existingDirs.has(full)) { skipped.push(e.name); continue; }
       try {
         loadQuests().push({
@@ -2376,6 +2382,8 @@ function resolveQuestDirectory(name, explicitDir, callerDefaultDir) {
   if (callerDefaultDir && typeof callerDefaultDir === 'string' && callerDefaultDir.trim()) {
     return path.join(callerDefaultDir.trim().replace(/\/+$/, ''), safeName);
   }
+  const userBase = loadPaths().defaultQuestDir || loadPaths().projectsRoot;
+  if (userBase) return path.join(userBase, safeName);
   if (DEFAULT_QUEST_DIR) {
     return path.join(DEFAULT_QUEST_DIR, safeName);
   }
@@ -2485,6 +2493,7 @@ function scaffoldQuestDirectory(quest) {
         'utf-8',
       );
     }
+    ensureQuestMemoryFiles(quest);
     return { ok: true, instructionsPath: instructions, conversationPath: conversation, notesPath: notes, mkdirOk: true, filesDir: filesDir || null, migration };
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
@@ -6631,4 +6640,94 @@ ipcMain.handle('settings:get-tts-voice', async (e) => {
     console.warn('[SETTINGS] Could not get TTS voice:', err.message);
     return 'lessac';
   }
+});
+
+// ─── Quest memory files (v3.5.0) ───
+// Every quest folder holds INSTRUCTIONS / CONVERSATION / NOTES plus:
+//   SUMMARY.md   — where the quest stands now; rewritten by the companion
+//                  ([QUEST_SUMMARY]) and injected into every turn instead
+//                  of the long conversation log.
+//   DECISIONS.md — settled choices, one line each ([QUEST_DECISION]);
+//                  injected so the companion doesn't reopen them.
+function questMemoryFilePath(quest, name) {
+  if (!quest) return null;
+  const root = questFilesRoot(quest);
+  if (root) return path.join(root, name);
+  if (quest.directory) return path.join(quest.directory, name);
+  return path.join(os.homedir(), '.openclaw', 'cyberclaw', 'quests', quest.id, name);
+}
+const QUEST_SUMMARY_PLACEHOLDER = '(nothing yet)';
+function ensureQuestMemoryFiles(quest) {
+  const name = (quest && quest.name) || 'Untitled';
+  const sum = questMemoryFilePath(quest, 'SUMMARY.md');
+  const dec = questMemoryFilePath(quest, 'DECISIONS.md');
+  try {
+    if (sum && !fs.existsSync(sum)) {
+      fs.mkdirSync(path.dirname(sum), { recursive: true });
+      fs.writeFileSync(sum, [
+        '# Summary — ' + name, '',
+        '_Where this quest stands right now: current state, what is next, open problems._',
+        '_The companion rewrites this with [QUEST_SUMMARY] after a work session or a milestone. Keep it short._',
+        '', QUEST_SUMMARY_PLACEHOLDER, '',
+      ].join('\n'), 'utf-8');
+    }
+    if (dec && !fs.existsSync(dec)) {
+      fs.mkdirSync(path.dirname(dec), { recursive: true });
+      fs.writeFileSync(dec, [
+        '# Decisions — ' + name, '',
+        '_Settled choices for this project, one line each, newest at the bottom._',
+        '_The companion appends with [QUEST_DECISION] and must not reopen these without asking. Edit freely._',
+        '',
+      ].join('\n'), 'utf-8');
+    }
+  } catch (e) { console.warn('[quest-memory] scaffold failed for', quest && quest.id, e.message); }
+  return { summaryPath: sum, decisionsPath: dec };
+}
+function readQuestMemory(quest) {
+  const { summaryPath, decisionsPath } = ensureQuestMemoryFiles(quest);
+  const rd = (p) => { try { return fs.readFileSync(p, 'utf-8'); } catch { return ''; } };
+  return { summary: { path: summaryPath, content: rd(summaryPath) }, decisions: { path: decisionsPath, content: rd(decisionsPath) } };
+}
+ipcMain.handle('quests:read-quest-memory', (event, questId) => {
+  const quest = loadQuests().find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  return { ok: true, ...readQuestMemory(quest) };
+});
+ipcMain.handle('quests:write-summary', (event, questId, text) => {
+  const quest = loadQuests().find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  const { summaryPath } = ensureQuestMemoryFiles(quest);
+  const body = String(text || '').replace(/\\n/g, '\n').trim().slice(0, 6000);
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  fs.writeFileSync(summaryPath, ['# Summary — ' + (quest.name || 'Untitled'), '', '_Updated ' + stamp + '._', '', body, ''].join('\n'), 'utf-8');
+  return { ok: true, path: summaryPath, bytes: body.length };
+});
+ipcMain.handle('quests:append-decision', (event, questId, text) => {
+  const quest = loadQuests().find(q => q.id === questId);
+  if (!quest) return { ok: false, error: 'quest not found' };
+  const { decisionsPath } = ensureQuestMemoryFiles(quest);
+  const line = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!line) return { ok: false, error: 'empty' };
+  fs.appendFileSync(decisionsPath, '- ' + new Date().toISOString().slice(0, 10) + ' — ' + line + '\n', 'utf-8');
+  return { ok: true, path: decisionsPath };
+});
+// Backfill existing quests once the app is up.
+setTimeout(() => {
+  try { for (const q of loadQuests()) if (q.directory && fs.existsSync(q.directory)) ensureQuestMemoryFiles(q); }
+  catch (e) { console.warn('[quest-memory] backfill failed:', e.message); }
+}, 4000);
+
+// ─── User-editable paths (v3.5.0) ───
+// Replaces paths that were hardcoded to one machine. Set in the setup
+// wizard (Quests step) or Settings → Data.
+ipcMain.handle('paths:get', () => ({ ...loadPaths(), effectiveProjectsRoot: getProjectsRoot(), appRoot: APP_ROOT }));
+ipcMain.handle('paths:set', (event, patch) => {
+  const clean = {};
+  for (const k of ['projectsRoot', 'defaultQuestDir']) if (patch && typeof patch[k] === 'string') clean[k] = patch[k].trim();
+  return savePaths(clean);
+});
+ipcMain.handle('paths:pick', async (event, title) => {
+  const { dialog } = require('electron');
+  const r = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || mainWindow, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] });
+  return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
