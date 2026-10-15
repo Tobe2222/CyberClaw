@@ -1791,7 +1791,7 @@ class SyncServer extends EventEmitter {
     this._broadcast({ type: 'state_sync', ...state, ts: Date.now() });
   }
 
-  broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null, attachments = null) {
+  broadcastChatMessage(agentId, text, isUser = false, agentName = null, activeQuestId = null, activeQuestName = null, attachments = null, extra = null) {
     // Include activeQuestId + activeQuestName on the realtime chat_message broadcast so the mobile's appendAgentMessage can route incoming…
     const payload = {
       type: 'chat_message',
@@ -1805,6 +1805,7 @@ class SyncServer extends EventEmitter {
       // Shape: [{ uri, data, type, name, size }]. Same
       // shape the mobile renders for outbound attachments.
       attachments: (Array.isArray(attachments) && attachments.length > 0) ? attachments : null,
+      ...(extra && extra.ambient ? { ambient: true } : {}),
       ts: Date.now(),
     };
     // Cache recent AI messages for reconnect replay.

@@ -4922,14 +4922,16 @@ async function ollamaStartImpl() {
   }
 }
 
-ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName, attachments }) => {
+ipcMain.handle('sync-broadcast-chat', async (e, { agentId, agentName, text, isUser, activeQuestId, activeQuestName, attachments, forceNoQuest }) => {
   // Forward activeQuestId/activeQuestName to the sync-server's broadcastChatMessage so the realtime mobile broadcast carries quest attribution.
   console.log('[IPC] sync-broadcast-chat received:', { agentId, agentName, text: text.substring(0, 100), isUser, activeQuestId: activeQuestId ?? '(none)', attachments: Array.isArray(attachments) ? attachments.length : 0 });
   const wsState = syncServer?._voiceReplyWs ? `OPEN(${syncServer._voiceReplyWs.readyState})` : 'NULL';
   console.log('[IPC] _voiceReplyWs state:', wsState);
   discordLog('📡', 'Chat broadcast', `isUser=${isUser} voiceWs=${wsState}`);
   if (syncServer) {
-    syncServer.broadcastChatMessage(agentId, text, isUser, agentName, activeQuestId ?? null, activeQuestName ?? null, attachments || null);
+    // v3.6.2: ambient = unprompted chatter (idle comments, toy/snack reactions).
+    // The phone shows it in casual chat but doesn't notify for it.
+    syncServer.broadcastChatMessage(agentId, text, isUser, agentName, activeQuestId ?? null, activeQuestName ?? null, attachments || null, { ambient: !!forceNoQuest && !isUser });
     console.log('[IPC] Message broadcast to mobile clients');
   }
   // If this AI reply follows a voice input, synthesize TTS and send audio back
@@ -5395,3 +5397,62 @@ ipcMain.handle('voice:set-model', async (e, tier) => {
     req.write(body); req.end();
   });
 });
+
+// ─── Live tool activity (v3.6.2) ───
+// OpenClaw now stores transcripts in per-agent SQLite, so the JSONL session
+// tail sees nothing. A small read-only watcher reports each tool call; the
+// phone shows it in the thinking bar ("📖 Reading SUMMARY.md").
+function describeToolCall(tool, args) {
+  const a = args || {};
+  const base = (p) => String(p || '').split('/').filter(Boolean).pop() || '';
+  const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  switch (tool) {
+    case 'exec': return a.title ? '⚙️ ' + clip(a.title, 60) : (a.command ? '⚙️ Running ' + clip(a.command, 50) : '⚙️ Running a command');
+    case 'read': return '📖 Reading ' + (base(a.path || a.file_path) || 'a file');
+    case 'write': return '✍️ Writing ' + (base(a.path || a.file_path) || 'a file');
+    case 'edit': return '✏️ Editing ' + (base(a.path || a.file_path) || 'a file');
+    case 'web_search': case 'brave_search': case 'brave_answers': return '🔍 Searching: ' + clip(a.query || '', 50);
+    case 'web_fetch': return '🌐 Reading ' + clip(String(a.url || '').replace(/^https?:\/\//, ''), 50);
+    case 'process': return '⏳ Checking a running task';
+    case 'sessions_search': case 'sessions_history': case 'memory_search': return '🧠 Searching memory';
+    case 'memory_write': return '🧠 Saving to memory';
+    case 'browser': return '🌐 Using the browser';
+    default: return '🔧 ' + String(tool || 'Working').replace(/_/g, ' ');
+  }
+}
+let toolWatch = null;
+function startToolWatch() {
+  try {
+    const cfg = readOpenClawConfig() || {};
+    const ids = Object.keys(cfg.agents?.entries || {}).concat((cfg.agents?.list || []).map(a => a.id)).filter(Boolean);
+    const args = [];
+    for (const id of [...new Set(ids)]) {
+      const e = (cfg.agents?.entries || {})[id] || (cfg.agents?.list || []).find(a => a.id === id) || {};
+      const dir = e.agentDir || path.join(OPENCLAW_DIR, 'agents', id, 'agent');
+      const db = path.join(dir, 'openclaw-agent.sqlite');
+      if (fs.existsSync(db)) args.push(id + '=' + db);
+    }
+    if (!args.length) return;
+    const py = fs.existsSync(VOICE_PY) ? VOICE_PY : 'python3';
+    const { spawn } = require('child_process');
+    toolWatch = spawn(py, ['-u', path.join(__dirname, 'openclaw-tool-watch.py'), ...args], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let buf = '';
+    toolWatch.stdout.on('data', (d) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        try {
+          const ev = JSON.parse(line);
+          const friendly = describeToolCall(ev.tool, ev.args);
+          if (syncServer) syncServer.sendToMobile({ type: 'agent_tool', tool: ev.tool, friendly, agentId: ev.agent, ts: Date.now() });
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent-tool-activity', { agentId: ev.agent, friendly });
+        } catch (_) {}
+      }
+    });
+    toolWatch.on('exit', () => { toolWatch = null; setTimeout(startToolWatch, 10000); });
+    console.log('[tool-watch] watching', args.length, 'agent database(s)');
+  } catch (e) { console.warn('[tool-watch] failed to start:', e.message); }
+}
+setTimeout(startToolWatch, 4000);
+app.on('will-quit', () => { try { if (toolWatch) { toolWatch.removeAllListeners('exit'); toolWatch.kill(); } } catch (_) {} });
