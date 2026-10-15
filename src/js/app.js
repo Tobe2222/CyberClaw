@@ -2908,7 +2908,7 @@ window.sendChat = async function() {
       await awardXpForReply(result, mainAgentId);
     } else {
       // Surface the verbose stderr / output from the failed agent run so the user can see what actually went wrong.
-      const friendly = result.error || 'Failed to get response';
+      const friendly = describeAgentError(result.error);
       const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
         || (typeof result.output === 'string' && result.output)
         || '';
@@ -3110,7 +3110,7 @@ const __sendChatMessageImpl = async function(message, attachments) {
       await awardXpForReply(result, mainAgentId);
     } else {
       // Surface the verbose stderr / output from the failed agent run (mirrors the v3.3.17 fix in the desktop sendChatMessage path above).
-      const friendly = result.error || 'Failed to get response';
+      const friendly = describeAgentError(result.error);
       const verbose = (typeof result.cliStderr === 'string' && result.cliStderr)
         || (typeof result.output === 'string' && result.output)
         || '';
@@ -6502,9 +6502,10 @@ try {
     for (const [bucketKey, msgs] of Object.entries(agentBuckets)) {
       if (!Array.isArray(msgs) || msgs.length === 0) continue;
       const cap = (bucketKey === DEFAULT_QUEST_KEY || bucketKey === activeKey) ? 300 : 100;
-      buckets[bucketKey] = msgs.filter(m => m && (m.type === 'user' || m.type === 'agent' || m.type === 'agent-image')).slice(-cap).map((m) => ({
+      buckets[bucketKey] = msgs.filter(m => m && (m.type === 'user' || m.type === 'agent' || m.type === 'agent-image' || m.type === 'error')).slice(-cap).map((m) => ({
         text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
         isUser: m.type === 'user',
+        isError: m.type === 'error',
         agentId: m.name || agentId,
         agentName: m.name || null,
         ts: m.ts,
@@ -8581,4 +8582,14 @@ window.installVoiceEngine = async function() {
       if (el && sv.ok && sv.tier) el.textContent = el.textContent.replace('Whisper ' + sv.stt, 'Whisper ' + sv.stt + ' [' + sv.tier + ']');
     } catch (_) {}
   };
+}
+
+// v3.6.3: readable agent errors (was "Error: [object Object]").
+function describeAgentError(err) {
+  if (!err) return 'Failed to get response';
+  let t = typeof err === 'string' ? err : (err.message || err.error || err.reason || '');
+  if (!t) { try { t = JSON.stringify(err); } catch (_) { t = String(err); } }
+  if (/rate.?limit|429|too many requests|overloaded|quota/i.test(t)) return 'Rate limited by the AI provider — try again in a minute (' + t.slice(0, 120) + ')';
+  if (/timed?\s*out|timeout/i.test(t)) return 'Timed out — the model took too long (often because the provider is rate-limiting or overloaded). ' + t.slice(0, 160);
+  return t.slice(0, 300);
 }

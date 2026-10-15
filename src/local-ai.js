@@ -534,6 +534,16 @@ async function transcribeAudioWhisperCpp(audioBase64, mimeType) {
 }
 
 async function synthesizeSpeech(text, voice = 'lessac') {
+  try { return await synthesizeSpeechInner(text, voice); }
+  catch (e) {
+    if (isKokoroVoice(voice)) throw e;
+    console.warn('[synthesizeSpeech] ' + voice + ' failed, using local Kokoro voice instead:', String(e.message).slice(0, 120));
+    const r = await voiceServer('/tts', { text, voice: 'af_heart' }, 60000);
+    return r.audio_b64;
+  }
+}
+
+async function synthesizeSpeechInner(text, voice = 'lessac') {
   if (isKokoroVoice(voice)) {
     try {
       const r = await voiceServer('/tts', { text, voice }, 60000);
