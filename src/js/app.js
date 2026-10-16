@@ -3505,6 +3505,16 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   if (Array.isArray(attachments) && attachments.length > 0) {
     // Normalize desktop's image-send attachment shape to the same `{ uri, data, type, name, size }` shape the mobile already understands.
     attachmentsForPersistence = attachments.map((a) => {
+      // v3.6.4: images saved on disk are persisted as path + small JPEG
+      // thumbnail (no truncated base64, which rendered as a broken image).
+      if (a.path) {
+        let thumb = '';
+        try {
+          const ni = require('electron').nativeImage.createFromPath(a.path);
+          if (!ni.isEmpty()) { const sz = ni.getSize(); thumb = (sz.width > 720 ? ni.resize({ width: 720 }) : ni).toJPEG(72).toString('base64'); }
+        } catch (_) {}
+        return { path: a.path, data: thumb, type: 'image/jpeg', name: a.name || a.fileName || 'image', size: a.size || 0 };
+      }
       const dataUri = a.dataUri || a.uri || null;
       const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
       // Same size guard as agent-image: cap at 200KB base64
@@ -6506,6 +6516,8 @@ try {
         text: typeof m.text === 'string' ? stripAgentReplyDecorations(m.text) : m.text,
         isUser: m.type === 'user',
         isError: m.type === 'error',
+        // v3.6.4: images (thumbnails) travel with history so they stay visible on the phone.
+        attachments: Array.isArray(m.attachments) ? m.attachments.filter(x => x && x.data && !x.thumbOnly).map(x => ({ data: x.data, type: x.type, name: x.name, size: x.size })) : undefined,
         agentId: m.name || agentId,
         agentName: m.name || null,
         ts: m.ts,

@@ -1096,7 +1096,7 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   let finalMessage = ctx ? ctx + message : message;
   if (Array.isArray(attachments) && attachments.length > 0) {
     const lines = attachments.map((a, i) => `  ${i + 1}. ${a.fileName || 'attachment'} (${a.mimeType || 'image/png'}, ${a.size || '?'} bytes) — saved at ${a.path || a.uri || 'unknown'}`);
-    finalMessage += `\n\n[Attachments received but not embedded inline (CLI path doesn't support image content):\n${lines.join('\n')}\n\nPlease acknowledge the attachments and ask the user to describe them if you cannot view them.]`;
+    finalMessage += `\n\n[The user attached ${attachments.length} image(s), saved on this computer:\n${lines.join('\n')}\n\nOpen each image with your read tool (it returns the picture) and look at it before you reply. Don't ask the user to describe it.]`;
   }
   if (hint) {
     finalMessage = `[Note: the HTTP API path was attempted but failed: ${hint}]\n\n` + finalMessage;
@@ -4036,7 +4036,14 @@ app.whenReady().then(() => {
         const os = require('os');
         // Auto-create the attachments dir if missing.
         // mkdir with recursive is idempotent.
-        const attachDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'attachments');
+        // v3.6.4: images go into the active quest's folder (quest/images/),
+        // casual chat images into ~/.openclaw/cyberclaw/attachments.
+        let attachDir = path.join(os.homedir(), '.openclaw', 'cyberclaw', 'attachments');
+        try {
+          const aq = loadQuests().find(q => q && q.active);
+          const qd = aq ? deriveQuestFilesDir(aq) : null;
+          if (qd) attachDir = path.join(qd, 'images');
+        } catch (_) {}
         fs.mkdirSync(attachDir, { recursive: true });
         // Generate a timestamped filename so collisions
         // are impossible and the on-disk name carries
@@ -5407,6 +5414,7 @@ function describeToolCall(tool, args) {
   const base = (p) => String(p || '').split('/').filter(Boolean).pop() || '';
   const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
   switch (tool) {
+    case '__text__': return '✍️ Writing';
     case 'exec': return a.title ? '⚙️ ' + clip(a.title, 60) : (a.command ? '⚙️ Running ' + clip(a.command, 50) : '⚙️ Running a command');
     case 'read': return '📖 Reading ' + (base(a.path || a.file_path) || 'a file');
     case 'write': return '✍️ Writing ' + (base(a.path || a.file_path) || 'a file');

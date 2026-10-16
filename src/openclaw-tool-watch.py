@@ -33,7 +33,10 @@ def main():
                     except Exception: continue
                     msg = ev.get("message") or {}
                     if msg.get("role") != "assistant": continue
-                    for part in msg.get("content") or []:
+                    parts = msg.get("content") or []
+                    if any(isinstance(p, dict) and p.get("type") == "text" and str(p.get("text", "")).strip() for p in parts):
+                        print(json.dumps({"agent": aid, "tool": "__text__", "args": {}, "ts": ts}), flush=True)
+                    for part in parts:
                         if isinstance(part, dict) and part.get("type") in ("toolCall", "tool_use"):
                             args = part.get("arguments") or part.get("input") or {}
                             keep = {k: short(args[k]) for k in ("title", "command", "path", "file_path", "query", "url", "action", "pattern") if isinstance(args, dict) and k in args}
