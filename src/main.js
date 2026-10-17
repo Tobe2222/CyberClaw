@@ -5464,3 +5464,17 @@ function startToolWatch() {
 }
 setTimeout(startToolWatch, 4000);
 app.on('will-quit', () => { try { if (toolWatch) { toolWatch.removeAllListeners('exit'); toolWatch.kill(); } } catch (_) {} });
+
+// v3.6.5: desktop-attached images are saved like phone ones (active quest's quest/images/).
+ipcMain.handle('chat:save-attachment', (e, { data, mimeType, fileName }) => {
+  try {
+    let dir = path.join(CYBERCLAW_DIR, 'attachments');
+    try { const aq = loadQuests().find(q => q && q.active); const qd = aq ? deriveQuestFilesDir(aq) : null; if (qd) dir = path.join(qd, 'images'); } catch (_) {}
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = String(fileName || 'image').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const ext = /\.[a-z0-9]{2,5}$/i.test(safe) ? '' : '.' + String(mimeType || 'image/png').split('/')[1];
+    const p = path.join(dir, Date.now() + '-' + safe + ext);
+    fs.writeFileSync(p, Buffer.from(String(data || ''), 'base64'));
+    return { ok: true, path: p };
+  } catch (err) { return { ok: false, error: err.message }; }
+});

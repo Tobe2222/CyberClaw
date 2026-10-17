@@ -2243,11 +2243,14 @@ function _renderStoredChatMsg(m, container, agentId) {
     : `<span class="msg-quest-header no-quest">— Casual</span>`;
   switch (m.type) {
     case 'user':
-      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">[You]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">[You]</span>` + (m.text ? `<span class="msg-text">${escHtml(m.text)}</span>` : '') + chatImagesHtml(m.attachments);
       break;
     case 'agent':
       // The desktop now passes the resolved icon (per-agent emoji → sprite catalog icon) to addChatMsg, so m.emoji is set correctly here.
-      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span><span class="msg-text">${escHtml(m.text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(m.emoji && m.emoji !== '🤖') ? m.emoji + ' ' : ''}[${escHtml(m.name)}]</span>` + agentTextHtml(m.text) + chatImagesHtml(m.attachments);
+      break;
+    case 'agent-image':
+      div.innerHTML = questHeaderHtml + chatImagesHtml(m.attachments);
       break;
     case 'typing':
       div.innerHTML = `<span class="msg-text" style="color:var(--text-muted);font-style:italic">${escHtml(m.text)}</span>`;
@@ -2964,8 +2967,8 @@ const __sendChatMessageImpl = async function(message, attachments) {
   window.addDesktopLog?.('📨', 'sendChatMessage called', `busy=${chatBusy} agents=${agentOrder.length} msg="${(message||'').substring(0,40)}" atts=${(attachments||[]).length}`, 'info');
   // Allow empty message when attachments are present (an image-only send).
   if (!message && (!attachments || attachments.length === 0)) return;
-  // Wake companion if sleeping
-  nudgeNightWake();
+  // v3.6.5: wake only the companion being talked to (stays awake while it works, +3 min).
+  { const _wid = pickCurrentCompanionId(); if (_wid) window._companionAwakeUntil[_wid] = Date.now() + COMPANION_AFTER_WORK_AWAKE_MS; }
   // ALSO explicitly flip sleepState from 'sleeping' to 'awake' for the active companion.
   const wakeTargetId = agentOrder[focusIndex] || pickCurrentCompanionId();
   if (wakeTargetId && agents[wakeTargetId] && agents[wakeTargetId].sleepState === 'sleeping') {
@@ -3733,7 +3736,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
           const dataUri = att.dataUri || (att.data ? `data:${att.mimeType || 'image/png'};base64,${att.data}` : null);
           if (!dataUri) continue;
           const safeName = escAttr(att.fileName || att.name || 'image');
-          html += `<br><img class="chat-msg-image" src="${escAttr(dataUri)}" alt="${safeName}" />`;
+          html += `<div class="chat-msg-images"><img class="chat-msg-image" src="${escAttr(dataUri)}" data-full="${escAttr(att.path ? 'file://' + att.path : dataUri)}" alt="${safeName}" /></div>`;
         }
         div.innerHTML = html;
       } else {
@@ -3742,7 +3745,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       break;
     case 'agent':
       // Same fix as the other render site — don't show the prefix emoji if it's the desktop's 🤖 default.
-      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span><span class="msg-text">${escHtml(text)}</span>`;
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span>` + agentTextHtml(text);
       break;
     case 'typing':
       // Include the quest pill on typing bubbles too.
@@ -7142,106 +7145,26 @@ window.pickImageAttachment = function() {
 const _originalSendChat = window.sendChat;
 window.sendChat = async function() {
   if (pendingImage) {
+    // v3.6.5: images go through the normal send path (quest context, wake,
+    // status, errors). The old path crashed on a removed #chat-send button
+    // and never reached the companion.
     const input = document.getElementById('chat-input');
     const message = (input.value || '').trim();
     const imgData = pendingImage;
     clearImageAttachment();
-
-    if (!message && !imgData) return;
-    if (chatBusy || agentOrder.length === 0) return;
-
-    const agent = agents[agentOrder[focusIndex]];
-    if (!agent) return;
-
-    // Route through addChatMsg so the bubble is persisted to chatHistoryByAgentAndQuest AND broadcast to the mobile.
-    const userAttachments = [{
-      data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
-      mimeType: (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png',
-      fileName: imgData.filename,
-      dataUri: imgData.dataUrl,
-    }];
-    addChatMsg('user', message || '', agent.name, agent && (agent.emoji === '🤖' ? null : (agent.emoji || null)), userAttachments);
+    if (agentOrder.length === 0) return;
+    const agent = agents[pickCurrentCompanionId()] || agents[agentOrder[focusIndex]];
+    const mimeType = (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png';
+    const b64 = imgData.dataUrl.split(',')[1] || '';
+    let saved = null;
+    try { saved = await cyberclaw.chat.saveAttachment(b64, mimeType, imgData.filename); } catch (e) { console.warn('[sendChat:img] save failed', e); }
+    const att = { dataUri: imgData.dataUrl, mimeType, fileName: imgData.filename, size: b64.length, path: saved && saved.path || '' };
+    addChatMsg('user', message || '', agent && agent.name, null, [att]);
     input.value = '';
-
-    // Send to agent with image context
-    const mainAgentId = pickCurrentCompanionId();
-    if (!mainAgentId) { addChatMsg('error', 'No companion found'); return; }
-
-    let fullMessage = (message || 'Describe this image') + '\n[Image attached: ' + imgData.filename + ']';
-    // v3.2.21: also inject the quest-tools hint for image-attach
-    // chat path so the agent sees the same available actions.
-    fullMessage = buildQuestToolsHint() + fullMessage;
-
-    chatBusy = true;
-    document.getElementById('chat-send').disabled = true;
-    const typingId = addChatMsg('typing', agent.name + ' is thinking...');
-    // Same 600s cap as the main sendChatMessage path.
-    const AGENT_TIMEOUT_MS = 1800000;
-    const typingFailsafe = setTimeout(() => {
-      console.warn('[sendChat:img] typing bubble > 1500s, force-clearing');
-      window.addDesktopLog?.('�️', 'AI still thinking after 1500s (image path)', message.substring(0, 60), 'warn');
-      try { removeChatMsg(typingId); } catch {}
-    }, 1500000);
-
-    try {
-      let result;
-      try {
-        result = await Promise.race([
-          // Pass attachments as a proper array shape that main.js / sendChatMessageViaHttp understands.
-          cyberclaw.chat.sendMessage(mainAgentId, fullMessage, [
-            {
-              data: imgData.dataUrl.split(',')[1] || imgData.dataUrl,
-              mimeType: (imgData.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png',
-              fileName: imgData.filename,
-              dataUri: imgData.dataUrl,
-            },
-          ]),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('agent call timed out (current cap is AGENT_TIMEOUT_MS=' + AGENT_TIMEOUT_MS + 'ms=' + (AGENT_TIMEOUT_MS/1000) + 's) — the LLM call may still complete in the background (image path)')), AGENT_TIMEOUT_MS)
-          ),
-        ]);
-      } catch (timeoutErr) {
-        window.addDesktopLog?.('⏱️', 'Agent call exceeded UI cap (image path)', message.substring(0, 60), 'warn');
-        throw timeoutErr;
-      }
-      removeChatMsg(typingId);
-      if (result.ok) {
-        const leader = agents[mainAgentId];
-        // v3.1.96: strip the desktop's 🤖 default before sending.
-        addChatMsg('agent', stripAgentReplyDecorations(result.reply), leader && leader.name || 'Companion', leader && (leader.emoji === '🤖' ? null : (leader.emoji || getSpriteIcon(leader._pixelCompanionId))));
-        // Check for quest creation command
-        if (result.reply) {
-          var qm = result.reply.match(/\[CREATE_QUEST:\s*name="([^"]+)"\s*desc="([^"]*)"\s*(?:dir="([^"]*)")?\]/);
-          if (qm) {
-            try {
-              await cyberclaw.quests.create({ name: qm[1], description: qm[2] || '', directory: qm[3] || undefined });
-              addChatMsg('system', '📜 Quest created: ' + qm[1]);
-              renderQuests();
-            } catch(qe) {}
-          }
-        }
-        // Drain happiness from work
-        if (window.adjustHappiness && result.reply) {
-          const len = result.reply.length;
-          const drain = len < 200 ? -2 : len < 500 ? -4 : len < 1000 ? -6 : -10;
-          window.adjustHappiness(drain);
-        }
-      } else {
-        addChatMsg('error', 'Error: ' + (result.error || 'Failed to get response'));
-      }
-    } catch (err) {
-      addChatMsg('error', 'Error: ' + err.message);
-    } finally {
-      clearTimeout(typingFailsafe);
-      try { removeChatMsg(typingId); } catch {}
-      chatBusy = false;
-      document.getElementById('chat-send').disabled = false;
-      input.focus();
-    }
+    await window.sendChatMessage(message || 'Here is an image.', [att]);
     return;
   }
 
-  // No image — use original sendChat
   return _originalSendChat();
 };
 
@@ -8605,3 +8528,39 @@ function describeAgentError(err) {
   if (/timed?\s*out|timeout/i.test(t)) return 'Timed out — the model took too long (often because the provider is rate-limiting or overloaded). ' + t.slice(0, 160);
   return t.slice(0, 300);
 }
+
+// ─── v3.6.5 helpers ───
+// Small image strip for stored/rendered messages (thumbnail; click opens full).
+function chatImagesHtml(atts) {
+  if (!Array.isArray(atts) || !atts.length) return '';
+  let h = '<div class="chat-msg-images">';
+  for (const a of atts) {
+    const src = a.dataUri || a.uri || (a.data ? 'data:' + (a.type || a.mimeType || 'image/png') + ';base64,' + a.data : null)
+      || (a.path ? 'file://' + a.path : null);
+    if (!src) continue;
+    const full = a.path ? 'file://' + a.path : src;
+    h += '<img class="chat-msg-image" src="' + escAttr(src) + '" data-full="' + escAttr(full) + '" alt="' + escAttr(a.name || a.fileName || 'image') + '" />';
+  }
+  return h + '</div>';
+}
+// Agent replies keep their paragraphs, lists and bold (was one run-on line).
+function agentTextHtml(text) {
+  try { return '<div class="msg-text msg-md">' + renderMarkdown(String(text || '')) + '</div>'; }
+  catch (_) { return '<span class="msg-text">' + escHtml(text) + '</span>'; }
+}
+document.addEventListener('click', (e) => {
+  const img = e.target && e.target.closest && e.target.closest('#chat-messages .chat-msg-image');
+  if (!img) return;
+  try { require('electron').shell.openExternal(img.getAttribute('data-full') || img.src); } catch (_) {}
+});
+// Wake the companion being talked to, keep it awake while it works, and let
+// it fall back asleep ~3 min after it's done (night sleep).
+window._companionAwakeUntil = window._companionAwakeUntil || {};
+const COMPANION_AFTER_WORK_AWAKE_MS = 3 * 60 * 1000;
+setInterval(() => {
+  try {
+    if (!chatBusy) return;
+    const id = pickCurrentCompanionId();
+    if (id) window._companionAwakeUntil[id] = Date.now() + COMPANION_AFTER_WORK_AWAKE_MS;
+  } catch (_) {}
+}, 1000);

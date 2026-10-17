@@ -1312,3 +1312,16 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
   border: 1px solid var(--border-mid); border-radius: 14px; background: radial-gradient(ellipse at center 70%, rgba(255,107,53,0.18), rgba(0,0,0,0.35) 70%); }
 .cp-hero #forge-companion-viewer { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .cp-hero #forge-companion-viewer canvas { width: 192px !important; height: 192px !important; image-rendering: pixelated !important; }
+
+/* v3.6.5: readable replies + compact image thumbnails */
+#chat-messages .chat-msg .msg-text { white-space: pre-wrap; }
+#chat-messages .chat-msg .msg-md { white-space: normal; display: block; margin-top: 2px; }
+#chat-messages .msg-md p { margin: 0 0 8px; }
+#chat-messages .msg-md p:last-child { margin-bottom: 0; }
+#chat-messages .msg-md ul, #chat-messages .msg-md ol { margin: 2px 0 8px; padding-left: 20px; }
+#chat-messages .msg-md li { margin: 2px 0; }
+#chat-messages .msg-md pre { background: rgba(0,0,0,0.35); padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre; margin: 4px 0 8px; }
+#chat-messages .msg-md code { font-family: var(--font-mono); font-size: 0.92em; }
+#chat-messages .msg-md h1, #chat-messages .msg-md h2, #chat-messages .msg-md h3 { font-size: 1em; margin: 6px 0 4px; }
+.chat-msg-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+#chat-messages .chat-msg-image { max-width: 140px !important; max-height: 96px !important; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-mid); cursor: zoom-in; margin: 0; }

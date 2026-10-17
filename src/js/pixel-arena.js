@@ -712,7 +712,8 @@ class PixelArena {
     const isNight = (typeof window.isNightTime === 'function')
       ? window.isNightTime()
       : (() => { const h = new Date().getHours(); return h >= 22 || h < 8; })();
-    const timeBasedSleep = isNight && !window._nightWakeTimer;
+    const awakeForWork = ((window._companionAwakeUntil || {})[comp.id] || 0) > Date.now();
+    const timeBasedSleep = isNight && !window._nightWakeTimer && !awakeForWork;
     const isAsleep = manualSleep || timeBasedSleep;
     if (isAsleep) {
       if (comp.animation !== 'death') {
