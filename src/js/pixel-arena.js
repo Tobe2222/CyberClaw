@@ -46,6 +46,8 @@ class PixelArena {
     // Toys system (interactive — bounce physics)
     if (!window._arenaToys) window._arenaToys = [];
     this.toys = window._arenaToys;
+    if (!window._arenaRockets) window._arenaRockets = [];
+    this.rockets = window._arenaRockets;
     this._draggedToy = null; // currently dragged toy
 
     // Speech bubble
@@ -294,6 +296,7 @@ class PixelArena {
   static TOY_TYPES = ['ball', 'tennis-ball'];
 
   dropTreat(canvasX, canvasY, treatType, emoji) {
+    if (treatType === 'rocket') { this._spawnRocket(canvasX, canvasY); return; }
     // Route toys to the physics system
     if (PixelArena.TOY_TYPES.includes(treatType)) {
       var H = this.height;
@@ -696,6 +699,148 @@ class PixelArena {
 
   // ── UPDATE LOGIC ────────────────────────────────────────────
 
+  // ─── Rocket toy (v3.6.7) ───────────────────────────────────────
+  // Lies sideways on the ground. The nearest companion walks over, hops on,
+  // the rocket rumbles, then blasts off on a wacky loop-de-loop flight and
+  // leaves the arena. The rider respawns 10 s later.
+  _spawnRocket(canvasX, canvasY) {
+    const H = this.height, horizonY = H * this.horizonLine;
+    const y = Math.max(horizonY + 30, Math.min(H - 24, canvasY));
+    const x = Math.max(40, Math.min(this.width - 40, canvasX));
+    const free = this.companions.filter(c => !c.hiddenUntil && !c.rocket && c !== this._draggedCompanion);
+    const awake = free.filter(c => c.animation !== 'death');
+    const pool = awake.length ? awake : free;
+    let pick = null, best = Infinity;
+    for (const c of pool) {
+      const cx = c.x + (c.data.frameSize[0] * c.scale) / 2, cy = c.y + c.data.frameSize[1] * c.scale;
+      const d = Math.hypot(cx - x, cy - y);
+      if (d < best) { best = d; pick = c; }
+    }
+    const r = { x, y, phase: 'ground', t: 0, heading: 0, speed: 0, wob: Math.random() * 6, trail: [], riderId: pick ? pick.id : null };
+    this.rockets.push(r);
+    if (pick) {
+      window._companionAwakeUntil = window._companionAwakeUntil || {};
+      window._companionAwakeUntil[pick.id] = Date.now() + 60000;
+      pick.rocket = r;
+      pick.state = 'seek_rocket';
+      this.companionEmoji = { emoji: '🚀', timer: 1500 };
+    }
+  }
+
+  // Returns true when the rocket owns this companion this frame.
+  _rocketControlsCompanion(comp, dt) {
+    const now = Date.now();
+    if (comp.hiddenUntil) {
+      if (now < comp.hiddenUntil) return true;
+      comp.hiddenUntil = 0;
+      const dw = comp.data.frameSize[0] * comp.scale, dh = comp.data.frameSize[1] * comp.scale;
+      const horizonY = this.height * this.horizonLine;
+      comp.x = 20 + Math.random() * Math.max(10, this.width - dw - 40);
+      comp.y = Math.max(horizonY - dh * 0.6, horizonY + Math.random() * Math.max(10, this.height - horizonY - dh) - dh * 0.6);
+      comp.state = 'idle'; comp.animation = 'idle'; comp.vx = 0; comp.vy = 0; comp.frame = 0;
+      comp.stateTimer = 2500;
+      this.companionEmoji = { emoji: '✨', timer: 2000 };
+      if (this.showBubble) this.showBubble(['WHAT A RIDE! 🚀', 'Again! Again!', "I can see my house from here... could.", 'My fur is still smoking.'][Math.floor(Math.random() * 4)], 3500);
+      return false;
+    }
+    const r = comp.rocket;
+    if (!r) return false;
+    if (this.rockets.indexOf(r) < 0) { comp.rocket = null; if (comp.state === 'seek_rocket' || comp.state === 'riding') comp.state = 'idle'; return false; }
+    const dw = comp.data.frameSize[0] * comp.scale, dh = comp.data.frameSize[1] * comp.scale;
+    if (r.phase === 'ground') {
+      const fx = comp.x + dw / 2, fy = comp.y + dh * 0.85;
+      const dx = r.x - fx, dy = (r.y - 6) - fy, d = Math.hypot(dx, dy);
+      if (d < 14) {
+        r.phase = 'mount'; r.t = 0; comp.state = 'riding';
+        comp.animation = 'idle'; comp.vx = 0; comp.vy = 0; comp.frame = 0;
+        this.companionEmoji = { emoji: '😎', timer: 1400 };
+      } else {
+        const sp = 0.07;
+        comp.vx = (dx / d) * sp; comp.vy = (dy / d) * sp;
+        comp.x += comp.vx * dt; comp.y += comp.vy * dt;
+        comp.animation = comp.images['run'] ? 'run' : 'walk';
+        comp.direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 2 : 3) : (dy < 0 ? 1 : 0);
+      }
+    } else {
+      // mounted or flying: ride on top of the rocket
+      comp.direction = (r.phase === 'flying' && Math.cos(r.heading) < 0) ? 2 : 3;
+      comp.x = r.x - dw / 2;
+      comp.y = r.y - dh * 0.85 - 6;
+    }
+    comp.frameTimer = (comp.frameTimer || 0) + dt;
+    const anim = comp.images[comp.animation];
+    if (anim && comp.frameTimer >= comp.frameSpeed) { comp.frameTimer = 0; comp.frame = (comp.frame + 1) % anim.frames; }
+    return true;
+  }
+
+  _updateRockets(dt) {
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i];
+      r.t += dt;
+      const rider = r.riderId ? this.companions.find(c => c.id === r.riderId) : null;
+      if (r.phase === 'ground') {
+        if (!rider || r.t > 30000) { this.rockets.splice(i, 1); if (rider) rider.rocket = null; }
+        continue;
+      }
+      if (r.phase === 'mount') {
+        if (r.t > 1300) { r.phase = 'flying'; r.t = 0; r.heading = -0.35; r.speed = 0.18; }
+        continue;
+      }
+      // flying — wobbly, looping, accelerating, then gone
+      r.speed = Math.min(0.75, r.speed + dt * 0.00018);
+      r.heading += (Math.sin(r.t * 0.004 + r.wob) * 0.0045 + (Math.random() - 0.5) * 0.004) * dt;
+      const WACKY_MS = 4200; // bounce around inside the arena first, then escape
+      if (r.t < WACKY_MS) r.heading -= 0.0016 * dt * Math.sign(Math.sin(r.t * 0.0011 + r.wob)); // loop-de-loops
+      r.x += Math.cos(r.heading) * r.speed * dt;
+      r.y += Math.sin(r.heading) * r.speed * dt;
+      if (r.t < WACKY_MS) {
+        if (r.y > this.height - 30) { r.y = this.height - 30; r.heading = -Math.abs(r.heading) - 0.4; }
+        if (r.y < 30) { r.y = 30; r.heading = Math.abs(r.heading) + 0.4; }
+        if (r.x < 30) { r.x = 30; r.heading = Math.PI - r.heading; }
+        if (r.x > this.width - 30) { r.x = this.width - 30; r.heading = Math.PI - r.heading; }
+        r.speed = Math.min(r.speed, 0.42);
+      }
+      r.trail.push({ x: r.x - Math.cos(r.heading) * 22, y: r.y - Math.sin(r.heading) * 22, a: 1 });
+      if (r.trail.length > 28) r.trail.shift();
+      for (const p of r.trail) p.a -= dt * 0.0016;
+      const out = r.x < -120 || r.x > this.width + 120 || r.y < -140 || r.y > this.height + 120;
+      if (out || r.t > 9000) {
+        this.rockets.splice(i, 1);
+        if (rider) { rider.rocket = null; rider.state = 'idle'; rider.hiddenUntil = Date.now() + 10000; }
+      }
+    }
+  }
+
+  _drawRockets() {
+    const ctx = this.ctx;
+    for (const r of this.rockets) {
+      ctx.save();
+      for (const p of r.trail) {
+        if (p.a <= 0) continue;
+        ctx.globalAlpha = Math.max(0, p.a) * 0.55;
+        ctx.fillStyle = '#d8d8d8';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 4 + (1 - p.a) * 9, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      let jx = 0, jy = 0;
+      if (r.phase === 'mount') { jx = (Math.random() - 0.5) * 3; jy = (Math.random() - 0.5) * 2; }
+      if (r.phase === 'ground' || r.phase === 'mount') {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath(); ctx.ellipse(r.x, r.y + 10, 22, 5, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.translate(r.x + jx, r.y + jy);
+      ctx.rotate((r.phase === 'flying' ? r.heading : 0) + Math.PI / 4); // 🚀 glyph points up-right
+      ctx.font = '36px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🚀', 0, 0);
+      if (r.phase !== 'ground') {
+        ctx.rotate(-Math.PI / 4);
+        ctx.font = (r.phase === 'flying' ? 22 + Math.random() * 8 : 12 + Math.random() * 6) + 'px serif';
+        ctx.fillText('🔥', -26 - Math.random() * 4, 0);
+      }
+      ctx.restore();
+    }
+  }
+
   _updateCompanion(comp, dt) {
     // While the user is dragging this companion, skip the entire AI loop.
     if (this._draggedCompanion === comp) {
@@ -707,6 +852,7 @@ class PixelArena {
       }
       return;
     }
+    if (this._rocketControlsCompanion(comp, dt)) return;
     // ── SLEEP MODE ──────────────────────────────────────────── v3.1.4: two sources of sleep: 1.
     const manualSleep = comp.sleepState === 'sleeping';
     const isNight = (typeof window.isNightTime === 'function')
@@ -802,6 +948,9 @@ class PixelArena {
     }
 
     // Chase toys when no food treats around (and not seeking food)
+    // v3.6.7: a chase that loses its toy (kicked away, despawned, out of range)
+    // used to keep running forever — the state machine skips chase_toy.
+    let sawToy = false;
     if (comp.state !== 'seek' && this.toys.length > 0) {
       const fw2 = (comp.data.frameSize[0] || 32) * comp.scale;
       const fh2 = (comp.data.frameSize[1] || 32) * comp.scale;
@@ -834,6 +983,7 @@ class PixelArena {
       }
 
       if (nearToy) {
+        sawToy = true;
         if (nearToyDist < 35) {
           nearToy.lastTouched = performance.now();
           nearToy.fallStartY = undefined; // reset fall state
@@ -903,6 +1053,14 @@ class PixelArena {
     }
 
     // Update emoji timer
+    if (comp.state === 'chase_toy') {
+      comp.chaseMs = (comp.chaseMs || 0) + dt;
+      if (!sawToy || comp.chaseMs > 8000) {
+        comp.state = 'idle'; comp.animation = 'idle'; comp.vx = 0; comp.vy = 0;
+        comp.stateTimer = 1200 + Math.random() * 1500; comp.chaseMs = 0;
+      }
+    } else comp.chaseMs = 0;
+
     if (this.companionEmoji) {
       this.companionEmoji.timer -= dt;
       if (this.companionEmoji.timer <= 0) this.companionEmoji = null;
@@ -1072,6 +1230,7 @@ class PixelArena {
   // ── DRAW ────────────────────────────────────────────────────
 
   _drawCompanion(comp) {
+    if (comp.hiddenUntil) return; // flew off on a rocket
     const animData = comp.images[comp.animation] || comp.images['idle'];
     if (!animData) return;
 
@@ -1137,6 +1296,7 @@ class PixelArena {
     // Update
     for (const c of this.companions) this._updateCompanion(c, dt);
     this._updateToys(dt);
+    this._updateRockets(dt);
 
     // Update treat age and grace timer
     for (const treat of this.treats) {
@@ -1188,6 +1348,8 @@ class PixelArena {
       this.ctx.fill();
       this.ctx.restore();
     }
+
+    this._drawRockets();
 
     // Collect all entities for Y-sort depth ordering
     const entities = [];

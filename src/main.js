@@ -154,7 +154,9 @@ function loadStats() {
   let stats;
   try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return {}; }
   // Migrate legacy skill names.
-  const SKILL_RENAMES = { Coding: 'Building' };
+  // v3.6.7: Strategy merges into Analysis; Game/General are retired.
+  const SKILL_RENAMES = { Coding: 'Building', Strategy: 'Analysis' };
+  const SKILL_RETIRED = ['Game', 'General'];
   let mutated = false;
   for (const agentId of Object.keys(stats)) {
     const agent = stats[agentId];
@@ -164,8 +166,12 @@ function loadStats() {
         agent.skills[newName] = agent.skills[oldName];
         delete agent.skills[oldName];
         mutated = true;
+      } else if (agent.skills[oldName]) {
+        delete agent.skills[oldName];
+        mutated = true;
       }
     }
+    for (const r of SKILL_RETIRED) if (agent.skills[r]) { delete agent.skills[r]; mutated = true; }
   }
   // Migrate legacy `anthropic-<agentId>` keys to the bare agent id.
   for (const key of Object.keys(stats)) {
@@ -5453,6 +5459,7 @@ function startToolWatch() {
         try {
           const ev = JSON.parse(line);
           const friendly = describeToolCall(ev.tool, ev.args);
+          try { awardToolXp(ev.agent, ev.tool, ev.args); } catch (_) {}
           if (syncServer) syncServer.sendToMobile({ type: 'agent_tool', tool: ev.tool, friendly, agentId: ev.agent, ts: Date.now() });
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent-tool-activity', { agentId: ev.agent, friendly });
         } catch (_) {}
@@ -5478,3 +5485,47 @@ ipcMain.handle('chat:save-attachment', (e, { data, mimeType, fileName }) => {
     return { ok: true, path: p };
   } catch (err) { return { ok: false, error: err.message }; }
 });
+
+// ─── Skill XP from real activity (v3.6.7) ───
+// Every tool call the companion makes (any channel: CyberClaw, Discord, …)
+// is mapped to a skill. Batched and saved every 15 s.
+function skillForTool(tool, args) {
+  const a = args || {};
+  const file = String(a.path || a.file_path || '').toLowerCase();
+  const cmd = String(a.command || a.title || '').toLowerCase();
+  const ext = (file.match(/\.([a-z0-9]+)$/) || [])[1] || '';
+  if (tool === '__text__') return 'Communication';
+  if (/^(message|send|discord|reply)/.test(tool)) return 'Communication';
+  if (/web_search|web_fetch|brave|browser|sessions_|memory_search/.test(tool)) return 'Research';
+  if (tool === 'write' || tool === 'edit') {
+    if (/^(png|jpe?g|gif|svg|webp|ico)$/.test(ext) || /css$/.test(ext)) return 'Design';
+    if (/^(md|txt|rst)$/.test(ext)) return 'Writing';
+    return 'Building';
+  }
+  if (tool === 'read') return /^(png|jpe?g|gif|webp)$/.test(ext) ? 'Design' : /^(md|txt|pdf|html)$/.test(ext) ? 'Research' : 'Analysis';
+  if (tool === 'exec' || tool === 'process') {
+    if (/ssh |scp |rsync|systemctl|pm2|apt|ufw|docker|deploy|nginx|apache|restart|install|fstab|mount|backup/.test(cmd)) return 'Ops';
+    if (/screenshot|sprite|css|layout|design|icon|image/.test(cmd)) return 'Design';
+    if (/grep|inspect|check|find|log|read|diagnos|investigat|look|survey|trace|measure|bench|test/.test(cmd)) return 'Analysis';
+    if (/write|notes|doc|summary|memory/.test(cmd)) return 'Writing';
+    return 'Building';
+  }
+  return 'Building';
+}
+const _xpPending = {};
+function awardToolXp(agentId, tool, args) {
+  if (!agentId) return;
+  const skill = skillForTool(tool, args);
+  const amt = tool === '__text__' ? 1 : 2;
+  _xpPending[agentId] = _xpPending[agentId] || {};
+  _xpPending[agentId][skill] = (_xpPending[agentId][skill] || 0) + amt;
+}
+setInterval(() => {
+  const ids = Object.keys(_xpPending);
+  if (!ids.length) return;
+  for (const id of ids) {
+    for (const [skill, amt] of Object.entries(_xpPending[id])) { try { addSkillXP(id, skill, amt); } catch (_) {} }
+    delete _xpPending[id];
+  }
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('companion-xp-updated', { agentIds: ids }); } catch (_) {}
+}, 15000);

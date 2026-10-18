@@ -206,16 +206,16 @@ function defaultStats(rarity) {
 const defaultSkills = ['Coding Agent', 'Weather', 'Healthcheck', 'Skill Creator'];
 
 // Skill taxonomy — single source of truth for the renderer.
+// v3.6.7: skills earned from what the companion actually does (tool activity,
+// all channels incl. Discord). Strategy → Analysis; Game/General removed; Ops added.
 const SKILL_DEFS = [
-  { name: 'Building',     icon: '🔧' },
-  { name: 'Writing',      icon: '✍️'  },
-  { name: 'Design',       icon: '🎨' },
-  { name: 'Analysis',     icon: '📊' },
-  { name: 'Strategy',     icon: '🗺️'  },
-  { name: 'Research',     icon: '🔍' },
+  { name: 'Building',      icon: '🔧' },
+  { name: 'Ops',           icon: '🖥️' },
+  { name: 'Research',      icon: '🔍' },
+  { name: 'Analysis',      icon: '📊' },
+  { name: 'Writing',       icon: '✍️' },
+  { name: 'Design',        icon: '🎨' },
   { name: 'Communication', icon: '💬' },
-  { name: 'Game',         icon: '🎮' },
-  { name: 'General',      icon: '✨' },
 ];
 
 async function loadAgents() {
@@ -1005,7 +1005,7 @@ function updateInspect(agentId) {
     } else {
       skillsEl.innerHTML = displaySkills.map(s => {
         const sk = skills[s.name] || { level: 1, xp: 0 };
-        const xpNeeded = Math.floor(100 * Math.pow(1.5, sk.level - 1));
+        const xpNeeded = Math.floor(100 * Math.pow(1.8, sk.level - 1)); // same curve as main.js
         const pct = Math.min(100, (sk.xp / xpNeeded) * 100);
         return `<div class="rs-skill-row">
           <span class="rs-skill-icon">${s.icon}</span>
@@ -2652,6 +2652,7 @@ function updateChatTarget() {
 
 // Shared helper — award XP to the best-matching companion based on the LLM-reply's taskSkill.
 async function awardXpForReply(result, fallbackAgentId) {
+  return; // v3.6.7: XP now comes from tool activity (main.js awardToolXp)
   if (!result || !result.ok) return;
   const taskSkill = result.taskSkill;
   if (!taskSkill) return;
@@ -7704,16 +7705,16 @@ setTimeout(updateHappinessBar, 1000);
 // ── Treat emojis and selected treat state ──
 var TREAT_EMOJIS = {
   apple: '🍎', hamburger: '🍔', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐',
-  ball: '⚽', 'tennis-ball': '⚾', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
+  ball: '⚽', 'tennis-ball': '⚾', rocket: '🚀', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
 };
 var TREAT_NAMES = {
   apple: 'an apple', hamburger: 'a hamburger', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
-  ball: 'a ball', 'tennis-ball': 'a tennis ball', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
+  ball: 'a ball', 'tennis-ball': 'a tennis ball', rocket: 'a rocket', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
 // Treat category mapping for snack logging.
 var TREAT_CATEGORIES = {
   apple: 'food', hamburger: 'food', meat: 'food', fish: 'food', cake: 'food', cookie: 'food', berry: 'food',
-  ball: 'toy', 'tennis-ball': 'toy', yarn: 'toy', stick: 'toy', frisbee: 'toy', bell: 'toy', feather: 'toy'
+  ball: 'toy', 'tennis-ball': 'toy', rocket: 'toy', yarn: 'toy', stick: 'toy', frisbee: 'toy', bell: 'toy', feather: 'toy'
 };
 var selectedTreat = null; // { type, emoji }
 
@@ -8562,3 +8563,11 @@ setInterval(() => {
     if (id) window._companionAwakeUntil[id] = Date.now() + COMPANION_AFTER_WORK_AWAKE_MS;
   } catch (_) {}
 }, 1000);
+
+// v3.6.7: refresh skills when activity XP is saved.
+try {
+  require('electron').ipcRenderer.on('companion-xp-updated', () => {
+    try { const id = activeChatAgentId || pickCurrentCompanionId(); if (id) updateInspect(id); } catch (_) {}
+    try { broadcastAgentsListToMobile(); } catch (_) {}
+  });
+} catch (_) {}
