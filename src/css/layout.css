@@ -1325,3 +1325,10 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 #chat-messages .msg-md h1, #chat-messages .msg-md h2, #chat-messages .msg-md h3 { font-size: 1em; margin: 6px 0 4px; }
 .chat-msg-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 #chat-messages .chat-msg-image { max-width: 140px !important; max-height: 96px !important; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-mid); cursor: zoom-in; margin: 0; }
+
+/* v3.6.6: dragging the chat/input divider resizes the text box itself */
+#chat-input-area.sized { display: flex; flex-direction: column; min-height: 0; }
+#chat-input-area.sized #chat-input-row { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+#chat-input-area.sized #chat-input { height: auto; max-height: none; min-height: 36px; }
+#chat-input-area.sized #chat-input-row > :not(#chat-input) { align-self: flex-end; }
+#chat-input { font-size: 12px; }

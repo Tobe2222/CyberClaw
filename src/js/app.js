@@ -4017,6 +4017,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputArea.style.flexBasis = saved + 'px';
         inputArea.style.flexGrow = '0';
         inputArea.style.flexShrink = '0';
+        inputArea.classList.add('sized'); // v3.6.6: textarea fills the area
         if (messages) { messages.style.flex = '1 1 auto'; }
       }
     } catch {}
@@ -4043,12 +4044,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       inputArea.style.flexBasis = newH + 'px';
       inputArea.style.flexGrow = '0';
       inputArea.style.flexShrink = '0';
-      // Auto-grow textarea as the input area grows
-      const textarea = document.getElementById('chat-input');
-      if (textarea) {
-        const maxTA = Math.max(60, newH - 24); // room for padding/image-preview
-        textarea.style.maxHeight = maxTA + 'px';
-      }
+      // v3.6.6: the text box itself grows/shrinks with the area (was only
+      // its max-height, so dragging changed nothing you could see).
+      inputArea.classList.add('sized');
     });
 
     window.addEventListener('mouseup', () => {
