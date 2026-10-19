@@ -282,8 +282,10 @@ class PixelArena {
               if (!visibleNm) try { const c = (this.companions || []).find(x => x.id === speakerId); if (c && c.name) visibleNm = c.name; } catch (_) {}
               if (!visibleNm) try { const r = (this.rockets || []).find(x => x.riderId === speakerId); if (r && r.riderName) visibleNm = r.riderName; } catch (_) {}
               if (!visibleNm) visibleNm = nm || 'Companion';
-              const id = window.addChatMsg('agent', text, visibleNm, null, null);
-              try { console.log('[Bubble→Chat]', text, '->', id, 'name=' + visibleNm); } catch (_) {}
+              // Always the casual chat (Tobe 2026-10-19). While a quest chat is
+              // open, addChatMsg stores it in the casual bucket and puts the
+              // unread dot on the ↔ Casual button instead of drawing it here.
+              window.addChatMsg('agent', text, visibleNm, null, null, '__no_quest__');
             } else { console.warn('[Bubble→Chat] addChatMsg missing'); }
           } catch (e) { try { console.error('[Bubble→Chat] addChatMsg failed:', e && e.message); } catch (_) {} }
           // mobile parity (existing IPC; main treats forceNoQuest as ambient)
