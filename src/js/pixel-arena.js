@@ -245,12 +245,53 @@ class PixelArena {
 
   // ── SPEECH BUBBLE ────────────────────────────────────────────
 
-  showBubble(text, durationMs) {
+  showBubble(text, durationMs, speakerId) {
     if (this.bubbleEl) {
       this.bubbleEl.remove();
       this.bubbleEl = null;
     }
     if (this.bubbleTimer) clearTimeout(this.bubbleTimer);
+    // v3.6.10: also log the speech in the casual chat. Active quest doesn't
+    // change; the desktop marks it as ambient and the phone skips notifications.
+    // v3.6.10: also drop the line into the chat. arena.js is in the renderer,
+    // so addChatMsg (renderer-local) handles the desktop chat list; the existing
+    // sync-broadcast-chat IPC keeps mobile in sync. mainWindow.webContents.send
+    // doesn't help because broadcastChatMessage only ships to WebSocket clients.
+    try {
+      if (!text || text.length < 3) {}
+      else {
+        const src = (this._chatBubbleSrc || '').split('|');
+        const lastId = src[0] || '', lastPrefix = src[1] || '';
+        const id = String(Date.now());
+        const same = lastId && Date.now() - Number(lastId) < 5000 && text.startsWith(lastPrefix);
+        if (!same) {
+          let nm = ''; try { const c = (this.companions || []).find(x => x.id === speakerId); if (c) nm = c.name || ''; } catch (_) {}
+          // desktop chat list. addChatMsg uses the active chat bucket by default;
+          // passing '__no_quest__' here would mismatch the active quest and trip
+          // its chat-context guard (line ~3518 in app.js: returns null if the
+          // effective bucket and active bucket differ). The user sees the bubble
+          // in whichever chat they happen to be in, which is the natural place.
+          try {
+            if (typeof window.addChatMsg === 'function') {
+              // Resolve the speaker's display name: prefer the desktop's agents
+              // map (always populated, has the human-readable name); fall back
+              // to the arena companion list; then the rocket's riderId; else
+              // just 'Companion'.
+              let visibleNm = '';
+              try { if (speakerId && window.agents && window.agents[speakerId] && window.agents[speakerId].name) visibleNm = window.agents[speakerId].name; } catch (_) {}
+              if (!visibleNm) try { const c = (this.companions || []).find(x => x.id === speakerId); if (c && c.name) visibleNm = c.name; } catch (_) {}
+              if (!visibleNm) try { const r = (this.rockets || []).find(x => x.riderId === speakerId); if (r && r.riderName) visibleNm = r.riderName; } catch (_) {}
+              if (!visibleNm) visibleNm = nm || 'Companion';
+              const id = window.addChatMsg('agent', text, visibleNm, null, null);
+              try { console.log('[Bubble→Chat]', text, '->', id, 'name=' + visibleNm); } catch (_) {}
+            } else { console.warn('[Bubble→Chat] addChatMsg missing'); }
+          } catch (e) { try { console.error('[Bubble→Chat] addChatMsg failed:', e && e.message); } catch (_) {} }
+          // mobile parity (existing IPC; main treats forceNoQuest as ambient)
+          try { if (window.ipcRenderer && window.ipcRenderer.send && speakerId) window.ipcRenderer.send('sync-broadcast-chat', { agentId: speakerId, agentName: nm, text: text, isUser: false, forceNoQuest: true, activeQuestId: null, activeQuestName: null, attachments: null }); } catch (_) {}
+          this._chatBubbleSrc = id + '|' + text.slice(0, 20);
+        }
+      }
+    } catch (_) {}
 
     const bubble = document.createElement('div');
     bubble.className = 'arena-speech-bubble';
@@ -1120,7 +1161,7 @@ class PixelArena {
             "Play with me!", "I'm bored...", "Throw me a ball! ⚽",
             "Let's play!", "Wanna play?", "I need a toy! 🎾"
           ];
-          this.showBubble(playPhrases[Math.floor(Math.random() * playPhrases.length)], 4000);
+          this.showBubble(playPhrases[Math.floor(Math.random() * playPhrases.length)], 4000, comp.id);
         }
         comp.boredom = 0; // reset after expressing it
       } else if (roll < 0.45) {
