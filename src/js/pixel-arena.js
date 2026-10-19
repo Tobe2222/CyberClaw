@@ -763,9 +763,26 @@ class PixelArena {
       }
     } else {
       // mounted or flying: ride on top of the rocket
-      comp.direction = (r.phase === 'flying' && Math.cos(r.heading) < 0) ? 2 : 3;
-      comp.x = r.x - dw / 2;
-      comp.y = r.y - dh * 0.85 - 6;
+      if (r.phase === 'flying') {
+        // v3.6.9: freaking out — flailing in every direction, still on the rocket.
+        comp.panicT = (comp.panicT || 0) + dt;
+        if (comp.panicT > 140) {
+          comp.panicT = 0;
+          comp.direction = Math.floor(Math.random() * 4);
+          comp.panicDx = (Math.random() - 0.5) * 10;
+          comp.panicDy = (Math.random() - 0.5) * 6;
+        }
+        comp.animation = comp.images['run'] ? 'run' : 'walk';
+        if (!r.yelled) {
+          r.yelled = true;
+          if (this.showBubble) this.showBubble(['Fuck! This may have been a bad decision!', 'Fuck! This may have been a bad decision!', 'AAAAAAHHHH!', 'Mom, come pick me up!'][Math.floor(Math.random() * 4)], 3500);
+          this.companionEmoji = { emoji: '😱', timer: 3000 };
+        }
+      } else {
+        comp.direction = 3; comp.panicDx = 0; comp.panicDy = 0;
+      }
+      comp.x = r.x - dw / 2 + (comp.panicDx || 0);
+      comp.y = r.y - dh * 0.85 - 12 + (comp.panicDy || 0);
     }
     comp.frameTimer = (comp.frameTimer || 0) + dt;
     const anim = comp.images[comp.animation];
@@ -826,16 +843,19 @@ class PixelArena {
       if (r.phase === 'mount') { jx = (Math.random() - 0.5) * 3; jy = (Math.random() - 0.5) * 2; }
       if (r.phase === 'ground' || r.phase === 'mount') {
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.beginPath(); ctx.ellipse(r.x, r.y + 10, 22, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(r.x, r.y + 14, 30, 6, 0, 0, Math.PI * 2); ctx.fill();
       }
       ctx.translate(r.x + jx, r.y + jy);
       ctx.rotate((r.phase === 'flying' ? r.heading : 0) + Math.PI / 4); // 🚀 glyph points up-right
-      ctx.font = '36px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // v3.6.9: bigger, and an opaque fillStyle — the shadow's rgba(0,0,0,0.22)
+      // was still set here, so the rocket was nearly invisible on the ground.
+      ctx.font = '52px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 1;
       ctx.fillText('🚀', 0, 0);
       if (r.phase !== 'ground') {
         ctx.rotate(-Math.PI / 4);
         ctx.font = (r.phase === 'flying' ? 22 + Math.random() * 8 : 12 + Math.random() * 6) + 'px serif';
-        ctx.fillText('🔥', -26 - Math.random() * 4, 0);
+        ctx.fillText('🔥', -36 - Math.random() * 5, 0);
       }
       ctx.restore();
     }
