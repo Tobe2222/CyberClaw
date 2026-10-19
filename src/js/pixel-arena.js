@@ -1146,7 +1146,16 @@ class PixelArena {
 
       const roll = Math.random();
 
-      if (comp.boredom > 80 && !hasToys && Math.random() < 0.4) {
+      // v3.6.12: "play with me" only when happiness is at 0%, and no more
+      // often than the companion's Chattiness allows (1 = every 30 min …
+      // 5 = every 3 min). Above 0% they just entertain themselves.
+      const happy = window.getHappiness ? window.getHappiness() : 100;
+      const chat = window.getCompanionChattiness ? window.getCompanionChattiness(comp.id) : 3;
+      const nagGapMs = [30, 30, 20, 10, 6, 3][Math.max(1, Math.min(5, chat))] * 60000;
+      const mayNag = happy <= 0 && Date.now() - (comp.lastNagAt || 0) > nagGapMs;
+      if (comp.boredom > 80 && !hasToys && !mayNag) comp.boredom = 40;
+      if (comp.boredom > 80 && !hasToys && mayNag && Math.random() < 0.4) {
+        comp.lastNagAt = Date.now();
         // BORED — run around excitedly, then ask to play
         comp.state = 'bored_run';
         comp.animation = comp.images['run'] ? 'run' : 'walk';

@@ -2904,7 +2904,7 @@ window.sendChat = async function() {
       // Drain happiness based on work done (longer reply = more effort)
       if (window.adjustHappiness && result.reply) {
         const len = result.reply.length;
-        const drain = len < 200 ? -2 : len < 500 ? -4 : len < 1000 ? -6 : -10;
+        const drain = len < 200 ? 0 : len < 500 ? -1 : len < 1000 ? -2 : -3; // v3.6.12: gentler, so happiness lasts a day
         window.adjustHappiness(drain);
       }
 
@@ -7687,13 +7687,19 @@ window.adjustHappiness = function(amount) {
 };
 
 // Happiness decays over time — lose 1 point every 5 minutes
+// v3.6.12: full → empty takes ~30 h (1 point per 18 min), so a fed and
+// played-with companion stays content for over a day. Was 1 per 5 min (~8 h).
 setInterval(function() {
   if (happiness > 0) {
     happiness = Math.max(0, happiness - 1);
     try { localStorage.setItem(HAPPINESS_KEY, String(happiness)); } catch(e) {}
     updateHappinessBar();
   }
-}, 300000); // 5 minutes
+}, 18 * 60 * 1000);
+// Read by the arena: "play with me" nagging only happens at 0%, and how
+// often is set by each companion's Chattiness setting.
+window.getHappiness = function() { return happiness; };
+window.getCompanionChattiness = function(id) { var a = agents[id]; return (a && typeof a.chattiness === 'number') ? a.chattiness : 3; };
 
 // Update bar on load
 setTimeout(updateHappinessBar, 1000);
