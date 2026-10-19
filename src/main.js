@@ -1101,6 +1101,21 @@ async function sendChatMessageViaCli(agentId, message, attachments, hint) {
   }
   let finalMessage = ctx ? ctx + message : message;
   if (Array.isArray(attachments) && attachments.length > 0) {
+    // v3.6.8: OpenClaw only opens images inside allowed folders (the agent's
+    // workspace). Copy each one into <workspace>/media/inbound/ and point there.
+    const wsDir = (() => { try { const c = readOpenClawConfig() || {}; const e = (c.agents?.entries || {})[agentId] || (c.agents?.list || []).find(x => x.id === agentId); return e && e.workspace; } catch { return null; } })();
+    for (const a of attachments) {
+      try {
+        if (!wsDir) break;
+        const inDir = path.join(wsDir, 'media', 'inbound');
+        fs.mkdirSync(inDir, { recursive: true });
+        const dst = path.join(inDir, 'cyberclaw-' + Date.now() + '-' + String(a.fileName || 'image.png').replace(/[^a-zA-Z0-9._-]/g, '_'));
+        if (a.path && fs.existsSync(a.path)) fs.copyFileSync(a.path, dst);
+        else if (a.data || a.dataUri) fs.writeFileSync(dst, Buffer.from(String(a.data || String(a.dataUri).split(',')[1] || ''), 'base64'));
+        else continue;
+        a.path = dst;
+      } catch (e) { console.warn('[chat:send/cli] image copy failed:', e.message); }
+    }
     const lines = attachments.map((a, i) => `  ${i + 1}. ${a.fileName || 'attachment'} (${a.mimeType || 'image/png'}, ${a.size || '?'} bytes) — saved at ${a.path || a.uri || 'unknown'}`);
     finalMessage += `\n\n[The user attached ${attachments.length} image(s), saved on this computer:\n${lines.join('\n')}\n\nOpen each image with your read tool (it returns the picture) and look at it before you reply. Don't ask the user to describe it.]`;
   }

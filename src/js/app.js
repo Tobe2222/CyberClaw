@@ -2736,7 +2736,7 @@ window.sendChat = async function() {
 
   // Show typing indicator
   chatBusy = true;
-  document.getElementById('chat-send').disabled = true;
+  { const _sb = document.getElementById('chat-send'); if (_sb) _sb.disabled = true; } // v3.6.8: button may not exist
   const typingId = addChatMsg('typing', `${agent.name} is thinking...`);
 
   // Escalate the typing indicator so the user has a visible signal that the request is still being processed during long model retries.
@@ -2932,7 +2932,7 @@ window.sendChat = async function() {
   }
 
   chatBusy = false;
-  document.getElementById('chat-send').disabled = false;
+  { const _sb = document.getElementById('chat-send'); if (_sb) _sb.disabled = false; }
   input.focus();
 };
 
@@ -8571,3 +8571,128 @@ try {
     try { broadcastAgentsListToMobile(); } catch (_) {}
   });
 } catch (_) {}
+
+// ─── v3.6.8: multi-image attach ───
+window._pendingImages = [];
+function renderPendingImages() {
+  const preview = document.getElementById('chat-image-preview');
+  if (!preview) return;
+  const imgs = window._pendingImages;
+  if (!imgs.length) { preview.classList.add('hidden'); preview.innerHTML = ''; pendingImage = null; return; }
+  pendingImage = imgs[0];
+  preview.classList.remove('hidden');
+  preview.innerHTML = imgs.map((im, i) =>
+    '<span class="chat-preview-item"><img src="' + escAttr(im.dataUrl) + '" alt="" /><button class="chat-preview-remove" onclick="removePendingImage(' + i + ')" title="Remove">✕</button></span>').join('');
+}
+setImageAttachment = function(dataUrl, filename) {
+  if (window._pendingImages.length >= 8) return;
+  window._pendingImages.push({ dataUrl, filename });
+  renderPendingImages();
+};
+window.removePendingImage = function(i) { window._pendingImages.splice(i, 1); renderPendingImages(); };
+window.clearImageAttachment = function() { window._pendingImages = []; renderPendingImages(); };
+window.pickImageAttachment = function() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*'; input.multiple = true;
+  input.onchange = function() {
+    for (const f of Array.from(input.files || [])) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setImageAttachment(ev.target.result, f.name);
+      reader.readAsDataURL(f);
+    }
+  };
+  input.click();
+};
+{
+  const area = document.getElementById('view-chat');
+  if (area) area.addEventListener('drop', (e) => {
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter(f => f.type.startsWith('image/'));
+    if (files.length > 1) { e.stopImmediatePropagation(); for (const f of files.slice(1)) { const r = new FileReader(); r.onload = (ev) => setImageAttachment(ev.target.result, f.name); r.readAsDataURL(f); } }
+  });
+}
+window.sendChat = async function() {
+  if (!window._pendingImages.length) return _originalSendChat();
+  const input = document.getElementById('chat-input');
+  const message = (input.value || '').trim();
+  const imgs = window._pendingImages.slice();
+  window.clearImageAttachment();
+  if (agentOrder.length === 0) return;
+  const agent = agents[pickCurrentCompanionId()] || agents[agentOrder[focusIndex]];
+  const atts = [];
+  for (const im of imgs) {
+    const mimeType = (im.dataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/png';
+    const b64 = im.dataUrl.split(',')[1] || '';
+    let saved = null;
+    try { saved = await cyberclaw.chat.saveAttachment(b64, mimeType, im.filename); } catch (_) {}
+    atts.push({ dataUri: im.dataUrl, mimeType, fileName: im.filename, size: b64.length, path: (saved && saved.path) || '' });
+  }
+  addChatMsg('user', message || '', agent && agent.name, null, atts);
+  input.value = '';
+  await window.sendChatMessage(message || (atts.length > 1 ? 'Here are some images.' : 'Here is an image.'), atts);
+};
+
+// ─── v3.6.8: thinking bar (mobile-style) ───
+// "● Clawsuu is thinking…  42s" + the last 3 steps (✓ done, › current),
+// then "✓ Done · 42s" / "⚠️ Stopped with an error" for a few seconds.
+const _think = { active: false, start: 0, agentId: null, name: '', steps: [], timer: null, endTimer: null, errored: false };
+function thinkBarEl() {
+  let el = document.getElementById('chat-think-bar');
+  if (!el) {
+    const area = document.getElementById('chat-input-area');
+    const row = document.getElementById('chat-input-row');
+    if (!area || !row) return null;
+    el = document.createElement('div'); el.id = 'chat-think-bar'; el.className = 'hidden';
+    area.insertBefore(el, area.firstChild);
+  }
+  return el;
+}
+function fmtSecs(s) { return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's'; }
+function renderThinkBar(finalLabel) {
+  const el = thinkBarEl(); if (!el) return;
+  if (!_think.active && !finalLabel) { el.className = 'hidden'; el.innerHTML = ''; return; }
+  const secs = Math.round((Date.now() - _think.start) / 1000);
+  let h = '';
+  if (finalLabel) h = '<div class="tb-head tb-final">' + escHtml(finalLabel) + '</div>';
+  else h = '<div class="tb-head"><span class="tb-dot"></span>' + escHtml(_think.name) + ' is thinking…' + (secs >= 3 ? '<span class="tb-time">' + fmtSecs(secs) + '</span>' : '') + '</div>';
+  const st = _think.steps.slice(-3);
+  h += st.map((s, i) => '<div class="tb-step">' + (i < st.length - 1 || finalLabel ? '✓ ' : '› ') + escHtml(s) + '</div>').join('');
+  el.className = finalLabel ? 'tb-done' : '';
+  el.innerHTML = h;
+}
+function thinkStart(agentId) {
+  clearTimeout(_think.endTimer); clearInterval(_think.timer);
+  const a = agents[agentId] || {};
+  Object.assign(_think, { active: true, start: Date.now(), agentId, name: a.name || 'Companion', steps: [], errored: false });
+  _think.timer = setInterval(() => renderThinkBar(), 1000);
+  renderThinkBar();
+}
+function thinkEnd() {
+  if (!_think.active) return;
+  _think.active = false; clearInterval(_think.timer);
+  const secs = Math.round((Date.now() - _think.start) / 1000);
+  const label = _think.errored ? '⚠️ Stopped with an error · ' + fmtSecs(secs) + ' — see the message above' : '✓ Done · ' + fmtSecs(secs);
+  renderThinkBar(label);
+  _think.endTimer = setTimeout(() => { _think.steps = []; renderThinkBar(); }, _think.errored ? 30000 : 3000);
+}
+try {
+  require('electron').ipcRenderer.on('agent-tool-activity', (e, { agentId, friendly }) => {
+    if (!_think.active || (agentId && agentId !== _think.agentId)) return;
+    if (_think.steps[_think.steps.length - 1] !== friendly) _think.steps.push(friendly);
+    renderThinkBar();
+  });
+} catch (_) {}
+{
+  const _addChatMsgThink = addChatMsg;
+  addChatMsg = function(type, text) {
+    if (type === 'typing') { thinkStart(pickCurrentCompanionId()); }
+    if (type === 'error' && (_think.active || Date.now() - _think.start < 5000)) _think.errored = true;
+    if ((type === 'agent' || type === 'error') && _think.active) setTimeout(thinkEnd, 0);
+    return _addChatMsgThink.apply(this, arguments);
+  };
+  const _removeChatMsgThink = removeChatMsg;
+  removeChatMsg = function(id) {
+    const r = _removeChatMsgThink.apply(this, arguments);
+    if (_think.active) setTimeout(() => { if (_think.active && !chatBusy) thinkEnd(); }, 400);
+    return r;
+  };
+}

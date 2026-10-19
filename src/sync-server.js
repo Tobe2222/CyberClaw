@@ -335,6 +335,8 @@ class SyncServer extends EventEmitter {
           this._send(ws, this._lastTtsSettings.payload);
         }
         if (this._lastChatContext) this._send(ws, this._lastChatContext); // v3.4.12
+        // v3.6.8: a phone that reconnects mid-reply sees the thinking bar again.
+        if (this._lastTyping && this._lastTyping.active) this._send(ws, this._lastTyping);
 
         // Send current state and request chat history for this client
         this._sendFullState(ws);
@@ -1859,7 +1861,8 @@ class SyncServer extends EventEmitter {
   }
 
   broadcastTyping(active) {
-    this._broadcast({ type: 'typing', active, ts: Date.now() });
+    this._lastTyping = { type: 'typing', active, ts: Date.now() };
+    this._broadcast(this._lastTyping);
   }
 
   // Broadcast local-LLM status to the mobile.
