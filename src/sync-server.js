@@ -1807,7 +1807,9 @@ class SyncServer extends EventEmitter {
       // Shape: [{ uri, data, type, name, size }]. Same
       // shape the mobile renders for outbound attachments.
       attachments: (Array.isArray(attachments) && attachments.length > 0) ? attachments : null,
-      ...(extra && extra.ambient ? { ambient: true } : {}),
+      // v3.6.13: the phone routes chatter to casual chat by forceNoQuest (it
+      // never read 'ambient' for routing), so send both.
+      ...(extra && extra.ambient ? { ambient: true, forceNoQuest: true } : {}),
       ts: Date.now(),
     };
     // Cache recent AI messages for reconnect replay.
@@ -1940,6 +1942,12 @@ class SyncServer extends EventEmitter {
       payload.messages = Array.isArray(source) ? source : [];
     }
     this._send(ws, payload);
+    // v3.6.13: re-send the thinking state after history. Right after a
+    // reconnect the phone screen may not be listening yet, so the replay
+    // on auth alone was missed and the status bar vanished.
+    if (this._lastTyping && this._lastTyping.active && Date.now() - this._lastTyping.ts < 30 * 60 * 1000) {
+      this._send(ws, { ...this._lastTyping, replay: true });
+    }
   }
 
   broadcastArenaEvent(event) {
