@@ -2772,8 +2772,10 @@ window.sendChat = async function() {
     let result;
     try {
       result = await Promise.race([
-        // Pass attachments (multimodal content) through to the IPC.
-        cyberclaw.chat.sendMessage(mainAgentId, fullMessage, attachments),
+        // v3.6.14: text-only send — there are no attachments in this function.
+        // The old 'attachments' reference was undefined; it stayed hidden until
+        // v3.6.8 removed an earlier crash, then every desktop text send failed.
+        cyberclaw.chat.sendMessage(mainAgentId, fullMessage, undefined),
         capPromise,
       ]);
     } finally {
