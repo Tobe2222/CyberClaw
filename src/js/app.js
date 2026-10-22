@@ -2767,7 +2767,10 @@ window.sendChat = async function() {
     // Cap the openclaw agent call at 2 minutes on the desktop side too.
     let capHandle;
     const capPromise = new Promise((_, reject) => {
-      capHandle = setTimeout(() => reject(new Error('Request timed out after 2 minutes')), 120000);
+      // v3.6.15: was 2 min — real tasks run longer, so the desktop gave up and
+      // showed an error while the companion kept working and finished. Same
+      // 30 min cap as the main send path now.
+      capHandle = setTimeout(() => reject(new Error('Request timed out after 30 minutes')), 30 * 60 * 1000);
     });
     let result;
     try {

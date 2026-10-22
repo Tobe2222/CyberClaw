@@ -824,8 +824,14 @@ class PixelArena {
       } else {
         comp.direction = 3; comp.panicDx = 0; comp.panicDy = 0;
       }
-      comp.x = r.x - dw / 2 + (comp.panicDx || 0);
-      comp.y = r.y - dh * 0.85 - 12 + (comp.panicDy || 0);
+      // v3.6.15: feet sit on the rocket's top surface (measured: 104px glyph's
+      // top is ~37px above its center; sprites' feet are at ~82% of the frame),
+      // and follow the rocket's tilt in flight so there's no gap.
+      const tilt = r.phase === 'flying' ? r.heading : 0;
+      const lift = 31;
+      const feetX = r.x + Math.sin(tilt) * lift, feetY = r.y - Math.cos(tilt) * lift;
+      comp.x = feetX - dw / 2 + (comp.panicDx || 0) * 0.6;
+      comp.y = feetY - dh * 0.82 + Math.min(0, (comp.panicDy || 0));
     }
     comp.frameTimer = (comp.frameTimer || 0) + dt;
     const anim = comp.images[comp.animation];
@@ -860,7 +866,7 @@ class PixelArena {
         if (r.x > this.width - 30) { r.x = this.width - 30; r.heading = Math.PI - r.heading; }
         r.speed = Math.min(r.speed, 0.42);
       }
-      r.trail.push({ x: r.x - Math.cos(r.heading) * 22, y: r.y - Math.sin(r.heading) * 22, a: 1 });
+      r.trail.push({ x: r.x - Math.cos(r.heading) * 44, y: r.y - Math.sin(r.heading) * 44, a: 1 });
       if (r.trail.length > 28) r.trail.shift();
       for (const p of r.trail) p.a -= dt * 0.0016;
       const out = r.x < -120 || r.x > this.width + 120 || r.y < -140 || r.y > this.height + 120;
@@ -886,19 +892,19 @@ class PixelArena {
       if (r.phase === 'mount') { jx = (Math.random() - 0.5) * 3; jy = (Math.random() - 0.5) * 2; }
       if (r.phase === 'ground' || r.phase === 'mount') {
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.beginPath(); ctx.ellipse(r.x, r.y + 14, 30, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(r.x, r.y + 24, 56, 10, 0, 0, Math.PI * 2); ctx.fill();
       }
       ctx.translate(r.x + jx, r.y + jy);
       ctx.rotate((r.phase === 'flying' ? r.heading : 0) + Math.PI / 4); // 🚀 glyph points up-right
       // v3.6.9: bigger, and an opaque fillStyle — the shadow's rgba(0,0,0,0.22)
       // was still set here, so the rocket was nearly invisible on the ground.
-      ctx.font = '52px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '104px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; // v3.6.15: 2× size
       ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 1;
       ctx.fillText('🚀', 0, 0);
       if (r.phase !== 'ground') {
         ctx.rotate(-Math.PI / 4);
-        ctx.font = (r.phase === 'flying' ? 22 + Math.random() * 8 : 12 + Math.random() * 6) + 'px serif';
-        ctx.fillText('🔥', -36 - Math.random() * 5, 0);
+        ctx.font = (r.phase === 'flying' ? 44 + Math.random() * 16 : 24 + Math.random() * 12) + 'px serif';
+        ctx.fillText('🔥', -68 - Math.random() * 8, 0);
       }
       ctx.restore();
     }
