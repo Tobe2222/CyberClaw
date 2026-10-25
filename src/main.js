@@ -27,6 +27,10 @@ const ATTACHMENT_FLUSH_MS = 700;
 // Buffer the inbound mobile chat text so an attachment batch can merge with it before the LLM call is fired.
 let pendingMobileChatText = null; // { text, agentId, meta, timer }
 const MOBILE_CHAT_HOLD_MS = 1500;
+// v3.6.16: a text that announces images waits for them (big photos take
+// several seconds to upload); without the hint we still wait a bit longer.
+const MOBILE_CHAT_HOLD_WITH_IMAGES_MS = 90 * 1000;
+let lastFlushedMobileText = null; // { text, ts } — so a late image keeps its context
 
 function flushAttachmentBatch() {
   if (pendingAttachments.length === 0) return;
@@ -59,8 +63,12 @@ function flushAttachmentBatch() {
     }
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
+    // v3.6.16: image arrived after its text was already sent — say which
+    // message it belongs to so the companion can tie them together.
+    const late = lastFlushedMobileText && (Date.now() - lastFlushedMobileText.ts < 5 * 60 * 1000) ? lastFlushedMobileText.text : null;
     mainWindow.webContents.send('mobile-attachment-batch', {
       attachments: batch,
+      prompt: late ? 'Here is the picture for my previous message: “' + late.replace(/^\[From:[^\]]*\]\s*/, '').slice(0, 200) + '”' : '',
     });
   }
 }
@@ -3427,6 +3435,7 @@ app.whenReady().then(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           const { ws: _ws, ...serializableMeta } = capturedMeta || {};
           console.log(`[mobile-chat] hold elapsed, sending text-only: ${text.substring(0, 60)}`);
+          lastFlushedMobileText = { text, ts: Date.now() };
           mainWindow.webContents.send('mobile-chat', { text, agentId, meta: serializableMeta });
         }
       };
@@ -3434,12 +3443,13 @@ app.whenReady().then(() => {
         text,
         agentId,
         meta: capturedMeta,
-        timer: setTimeout(flush, MOBILE_CHAT_HOLD_MS),
+        expect: Number(capturedMeta && capturedMeta.attachmentCount) || 0,
+        timer: setTimeout(flush, (Number(capturedMeta && capturedMeta.attachmentCount) > 0) ? MOBILE_CHAT_HOLD_WITH_IMAGES_MS : MOBILE_CHAT_HOLD_MS),
       };
       // If an attachment has ALREADY been saved (text
       // arrived after the attachment batch was queued),
       // flush immediately so the renderer can merge.
-      if (pendingAttachments.length > 0) {
+      if (pendingAttachments.length > 0 && pendingAttachments.length >= (pendingMobileChatText.expect || 0)) {
         console.log(`[mobile-chat] ${pendingAttachments.length} attachment(s) already pending, flushing immediately`);
         if (attachmentFlushTimer) {
           clearTimeout(attachmentFlushTimer);
@@ -4103,7 +4113,12 @@ app.whenReady().then(() => {
             receivedAt: Date.now(),
           });
           if (attachmentFlushTimer) clearTimeout(attachmentFlushTimer);
-          attachmentFlushTimer = setTimeout(flushAttachmentBatch, ATTACHMENT_FLUSH_MS);
+          // v3.6.16: if the pending text announced N images, flush as soon as
+          // all N are here; otherwise the usual short debounce.
+          const _exp = pendingMobileChatText && pendingMobileChatText.expect;
+          if (_exp && pendingAttachments.length >= _exp) flushAttachmentBatch();
+          else if (_exp) attachmentFlushTimer = setTimeout(flushAttachmentBatch, 30000);
+          else attachmentFlushTimer = setTimeout(flushAttachmentBatch, ATTACHMENT_FLUSH_MS);
         }
         // Ack back to mobile so the chat can update
         // with the attachment preview on the mobile side.

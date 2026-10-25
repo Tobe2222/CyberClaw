@@ -360,6 +360,8 @@ class SyncServer extends EventEmitter {
             ws,
             deviceName: client.name,
             deviceType: msg.deviceType || 'mobile',
+            // v3.6.16: how many images follow this text (phone >= 3.11.54).
+            attachmentCount: Number(msg.attachmentCount) || 0,
           });
         }
         break;

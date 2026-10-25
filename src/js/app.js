@@ -6835,7 +6835,7 @@ try {
   });
 
   // Handle attachments sent from the mobile.
-  ipcRenderer.on('mobile-attachment-batch', (e, { attachments: batch }) => {
+  ipcRenderer.on('mobile-attachment-batch', (e, { attachments: batch, prompt: latePrompt }) => {
     try {
       if (!Array.isArray(batch) || batch.length === 0) return;
       // Log each incoming attachment so we can verify the base64 data actually arrived via the IPC.
@@ -6862,8 +6862,10 @@ try {
       }
       console.log(`[mobile-attachment-batch] built ${attachments.length} attachment(s); dataUri total length=${attachments.reduce((s, a) => s + a.dataUri.length, 0)}`);
       // If a mobile-chat text message arrived in the last ~600ms (PENDING_CHAT_HOLD_MS) and is still pending, merge them.
-      let prompt = '';
-      if (pendingMobileChat) {
+      // v3.6.16: pendingMobileChat was never declared here, so every image from
+      // the phone crashed this handler and never reached the companion.
+      let prompt = latePrompt || '';
+      if (typeof pendingMobileChat !== 'undefined' && pendingMobileChat) {
         prompt = pendingMobileChat.text || '';
         if (pendingMobileChat.timer) clearTimeout(pendingMobileChat.timer);
         pendingMobileChat = null;
