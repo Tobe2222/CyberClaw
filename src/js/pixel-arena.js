@@ -153,10 +153,17 @@ class PixelArena {
     }
 
     // Per-companion chase personality so they don't all converge on the same toy at the same speed.
+    // v3.6.17: attributes per sprite (catalog.json 'stats', 1-10).
+    //   Strength  → how hard/far it kicks toys
+    //   Agility   → how fast it moves
+    //   Intelligence → notices toys from further away, reacts quicker,
+    //                  and runs to where a rolling ball is going.
+    const st = Object.assign({ strength: 5, agility: 5, intelligence: 5 }, compData.stats || {});
+    const agiMult = 0.6 + st.agility * 0.08;
     const chasePersonality = {
-      speedMult: 0.75 + Math.random() * 0.55,
-      reactRadius: 60 + Math.random() * 120,
-      reactionDelay: Math.random() * 800,
+      speedMult: (0.85 + Math.random() * 0.3) * agiMult,
+      reactRadius: 50 + st.intelligence * 18 + Math.random() * 40,
+      reactionDelay: Math.max(0, 900 - st.intelligence * 80) * Math.random(),
     };
 
     return {
@@ -165,6 +172,8 @@ class PixelArena {
       pixelCompanionId,
       data: compData,
       images,
+      stats: st,
+      agiMult,
       x: this.width / 2,
       y: this.height * Math.max(this.horizonLine + 0.1, 0.5),
       vx: 0,
@@ -608,8 +617,10 @@ class PixelArena {
       // Determine bounce coefficient based on toy type
       let groundBounce = 0.55; // default ball
       if (toy.type === 'tennis-ball') {
-        groundBounce = 0.95; // insane bouncing!
+        groundBounce = 0.97; // v3.6.17: bouncy ball
       }
+      const tWall = toy.type === 'tennis-ball' ? 0.95 : wallBounce;
+      const tFriction = toy.type === 'tennis-ball' ? 0.9985 : friction;
 
       var isDragged = (toy === this._draggedToy);
       if (isDragged) {
@@ -668,14 +679,16 @@ class PixelArena {
         // Hit the ground?
         if (t >= 1) {
           toy.y = toy.groundY;
-          const maxBounces = toy.type === 'tennis-ball' ? 8 : 3; // tennis ball bounces more
+          const maxBounces = toy.type === 'tennis-ball' ? 18 : 3; // bouncy ball keeps going
           if (toy.bounceCount < maxBounces) {
             // Bounce back up
             toy.bounceCount++;
-            var bounceHeight = (toy.groundY - toy.fallStartY) * groundBounce / toy.bounceCount;
+            var bounceHeight = toy.type === 'tennis-ball'
+              ? (toy.groundY - toy.fallStartY) * groundBounce * 0.88
+              : (toy.groundY - toy.fallStartY) * groundBounce / toy.bounceCount;
             toy.fallStartY = toy.groundY - bounceHeight;
             toy.fallProgress = 0;
-            toy.fallDuration = 400 / toy.bounceCount;
+            toy.fallDuration = toy.type === 'tennis-ball' ? Math.max(120, 520 * Math.pow(0.9, toy.bounceCount)) : 400 / toy.bounceCount;
           } else {
             // Settled
             toy.airborne = false;
@@ -692,7 +705,7 @@ class PixelArena {
         toy.y += toy.vy * dt;
 
         // Ground friction
-        var f = Math.pow(friction, dt);
+        var f = Math.pow(tFriction, dt);
         toy.vx *= f;
         toy.vy *= f;
 
@@ -713,13 +726,13 @@ class PixelArena {
       }
 
       // Wall bounce (left/right always applies)
-      if (toy.x < margin) { toy.x = margin; toy.vx = Math.abs(toy.vx) * wallBounce; }
+      if (toy.x < margin) { toy.x = margin; toy.vx = Math.abs(toy.vx) * tWall; }
       if (toy.x > this.width - toy.radius * 2 - margin) {
         toy.x = this.width - toy.radius * 2 - margin;
-        toy.vx = -Math.abs(toy.vx) * wallBounce;
+        toy.vx = -Math.abs(toy.vx) * tWall;
       }
       // Top wall (sky ceiling)
-      if (toy.y < margin) { toy.y = margin; toy.vy = Math.abs(toy.vy) * wallBounce; }
+      if (toy.y < margin) { toy.y = margin; toy.vy = Math.abs(toy.vy) * tWall; }
 
       // Track last movement for timeout
       const toySpeed = Math.sqrt(toy.vx * toy.vx + toy.vy * toy.vy);
@@ -736,7 +749,10 @@ class PixelArena {
       const toy = this.toys[i];
       if (!toy.lastTouched) toy.lastTouched = now;
       const idleTime = now - toy.lastTouched;
-      if (idleTime > 15000) this.toys.splice(i, 1);
+      // v3.6.17: hard lifetime too — a bouncy ball kept getting kicked and
+      // bouncing, so it never went 15 s untouched and never disappeared.
+      const maxAge = toy.type === 'tennis-ball' ? 60000 : 90000;
+      if (idleTime > 15000 || (toy.age > maxAge && toy !== this._draggedToy)) this.toys.splice(i, 1);
     }
   }
 
@@ -798,7 +814,7 @@ class PixelArena {
         comp.animation = 'idle'; comp.vx = 0; comp.vy = 0; comp.frame = 0;
         this.companionEmoji = { emoji: '😎', timer: 1400 };
       } else {
-        const sp = 0.07;
+        const sp = 0.07 * (comp.agiMult || 1);
         comp.vx = (dx / d) * sp; comp.vy = (dy / d) * sp;
         comp.x += comp.vx * dt; comp.y += comp.vy * dt;
         comp.animation = comp.images['run'] ? 'run' : 'walk';
@@ -1001,7 +1017,7 @@ class PixelArena {
           comp.animation = 'walk';
           const dx = (nearest.x + 14) - compCX;
           const dy = (nearest.y + 14) - compCY;
-          const speed = 0.035;
+          const speed = 0.035 * (comp.agiMult || 1);
           comp.vx = (dx / nearDist) * speed;
           comp.vy = (dy / nearDist) * speed;
           // Direction: 0=down, 1=up, 2=left, 3=right
@@ -1061,7 +1077,8 @@ class PixelArena {
             // === GROUND KICK: fast push along ground ===
             var baseAngle = Math.atan2(nearToy.y + nearToy.radius - compCY2, nearToy.x + nearToy.radius - compCX2);
             var kickAngle = baseAngle + (Math.random() - 0.5) * 1.4;
-            var kickPower = 0.10 + Math.random() * 0.12;
+            const strMult = 0.5 + ((comp.stats && comp.stats.strength) || 5) * 0.1; // v3.6.17
+            var kickPower = (0.10 + Math.random() * 0.12) * strMult * (nearToy.type === 'tennis-ball' ? 1.4 : 1);
             nearToy.vx = Math.cos(kickAngle) * kickPower;
             nearToy.vy = Math.sin(kickAngle) * kickPower;
             nearToy.arcMode = false;
@@ -1069,8 +1086,11 @@ class PixelArena {
           } else {
             // === ARC KICK: boot it into the air ===
             var kickHorizon = this.height * this.horizonLine;
-            var kickTargetX = 30 + Math.random() * (this.width - 60);
-            var kickTargetY = kickHorizon + 20 + Math.random() * (this.height - kickHorizon - 40);
+            // v3.6.17: strength sets how far the ball flies.
+            const reach = this.width * (0.12 + ((comp.stats && comp.stats.strength) || 5) * 0.07);
+            const kA = Math.random() * Math.PI * 2, kD = reach * (0.5 + Math.random() * 0.5);
+            var kickTargetX = Math.max(30, Math.min(this.width - 30, nearToy.x + Math.cos(kA) * kD));
+            var kickTargetY = Math.max(kickHorizon + 20, Math.min(this.height - 20, nearToy.y + Math.sin(kA) * kD * 0.5));
             nearToy.arcMode = true;
             nearToy.arcStartX = nearToy.x;
             nearToy.arcStartY = nearToy.y;
@@ -1096,8 +1116,9 @@ class PixelArena {
           if (toySpeed < 0.10) {
             comp.state = 'chase_toy';
             comp.animation = comp.images['run'] ? 'run' : 'walk';
-            const dx = (nearToy.x + nearToy.radius) - compCX2;
-            const dy = (nearToy.y + nearToy.radius) - compCY2;
+            const lead = (((comp.stats && comp.stats.intelligence) || 5) - 3) * 60; // ms of lookahead
+            const dx = (nearToy.x + nearToy.radius + nearToy.vx * Math.max(0, lead)) - compCX2;
+            const dy = (nearToy.y + nearToy.radius + nearToy.vy * Math.max(0, lead)) - compCY2;
             // Run faster when far away, slow down when close
             var chaseSpeed;
             if (nearToyDist > 200) {
@@ -1166,7 +1187,7 @@ class PixelArena {
         comp.state = 'bored_run';
         comp.animation = comp.images['run'] ? 'run' : 'walk';
         comp.direction = Math.floor(Math.random() * 4);
-        const speed = 0.07 + Math.random() * 0.04;
+        const speed = (0.07 + Math.random() * 0.04) * (comp.agiMult || 1);
         const dirs = [[0, 1], [0, -1], [-1, 0], [1, 0]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;
@@ -1193,7 +1214,7 @@ class PixelArena {
         comp.state = 'walk';
         comp.animation = 'walk';
         comp.direction = Math.floor(Math.random() * 4);
-        const speed = 0.015 + Math.random() * 0.01;
+        const speed = (0.015 + Math.random() * 0.01) * (comp.agiMult || 1);
         const dirs = [[0, 1], [0, -1], [-1, 0], [1, 0]];
         comp.vx = dirs[comp.direction][0] * speed;
         comp.vy = dirs[comp.direction][1] * speed;

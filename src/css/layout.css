@@ -1348,3 +1348,11 @@ body.theme-light .chat-msg.agent .msg-bubble { background: rgba(255,107,53,0.06)
 .chat-preview-item { position: relative; display: inline-block; }
 .chat-preview-item img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-mid); }
 .chat-preview-item .chat-preview-remove { position: absolute; top: -6px; right: -6px; }
+
+/* v3.6.17: attributes */
+#inspect-attributes .attr-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; }
+#inspect-attributes .attr-icon { width: 16px; text-align: center; }
+#inspect-attributes .attr-name { width: 74px; color: var(--text-secondary); }
+#inspect-attributes .attr-track { flex: 1; height: 6px; background: var(--bg-dark); border-radius: 3px; overflow: hidden; }
+#inspect-attributes .attr-fill { height: 100%; background: linear-gradient(90deg, var(--orange-dim), var(--orange)); }
+#inspect-attributes .attr-val { width: 16px; text-align: right; color: var(--text-primary); font-variant-numeric: tabular-nums; }

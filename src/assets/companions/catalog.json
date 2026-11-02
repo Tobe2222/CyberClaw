@@ -2,6 +2,7 @@
   "companions": [
     {
       "id": "fox",
+      "stats": { "strength": 4, "agility": 8, "intelligence": 9 },
       "name": "Fox",
       "icon": "🦊",
       "iconFile": "assets/icons/fox.svg",
@@ -18,6 +19,7 @@
     },
     {
       "id": "boar",
+      "stats": { "strength": 9, "agility": 4, "intelligence": 4 },
       "name": "Boar",
       "icon": "🐗",
       "iconFile": "assets/icons/boar.svg",
@@ -35,6 +37,7 @@
     },
     {
       "id": "deer",
+      "stats": { "strength": 5, "agility": 9, "intelligence": 6 },
       "name": "Deer",
       "icon": "🦌",
       "iconFile": "assets/icons/deer.svg",
@@ -51,6 +54,7 @@
     },
     {
       "id": "hare",
+      "stats": { "strength": 2, "agility": 10, "intelligence": 5 },
       "name": "Hare",
       "icon": "🐇",
       "iconFile": "assets/icons/hare.svg",
@@ -67,6 +71,7 @@
     },
     {
       "id": "black_grouse",
+      "stats": { "strength": 3, "agility": 6, "intelligence": 7 },
       "name": "Black Grouse",
       "icon": "🦚",
       "iconFile": "assets/icons/grouse.svg",

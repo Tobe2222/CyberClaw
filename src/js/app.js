@@ -7718,11 +7718,11 @@ setTimeout(updateHappinessBar, 1000);
 // ── Treat emojis and selected treat state ──
 var TREAT_EMOJIS = {
   apple: '🍎', hamburger: '🍔', meat: '🍖', fish: '🐟', cake: '🍰', cookie: '🍪', berry: '🫐',
-  ball: '⚽', 'tennis-ball': '⚾', rocket: '🚀', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
+  ball: '⚽', 'tennis-ball': '🔴', rocket: '🚀', yarn: '🧶', stick: '🪵', frisbee: '🥏', bell: '🔔', feather: '🪶'
 };
 var TREAT_NAMES = {
   apple: 'an apple', hamburger: 'a hamburger', meat: 'some meat', fish: 'a fish', cake: 'a slice of cake', cookie: 'a cookie', berry: 'some berries',
-  ball: 'a ball', 'tennis-ball': 'a tennis ball', rocket: 'a rocket', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
+  ball: 'a ball', 'tennis-ball': 'a bouncy ball', rocket: 'a rocket', yarn: 'a ball of yarn', stick: 'a stick', frisbee: 'a frisbee', bell: 'a bell', feather: 'a feather'
 };
 // Treat category mapping for snack logging.
 var TREAT_CATEGORIES = {
@@ -8709,3 +8709,15 @@ try {
     return r;
   };
 }
+
+// v3.6.17: attribute bars in the inspect panel (from the companion's sprite).
+function renderInspectAttributes(agentId) {
+  const el = document.getElementById('inspect-attributes');
+  if (!el) return;
+  const c = window.pixelArena && window.pixelArena.companions.find(x => x.id === agentId);
+  const st = (c && c.stats) || null;
+  if (!st) { el.innerHTML = '<div class="attr-none">—</div>'; return; }
+  const rows = [['💪', 'Strength', st.strength, 'kicks harder and further'], ['⚡', 'Agility', st.agility, 'moves faster'], ['🧠', 'Intelligence', st.intelligence, 'spots toys sooner, plays smarter']];
+  el.innerHTML = rows.map(([i, n, v, tip]) => '<div class="attr-row" title="' + n + ': ' + tip + '"><span class="attr-icon">' + i + '</span><span class="attr-name">' + n + '</span><div class="attr-track"><div class="attr-fill" style="width:' + (v * 10) + '%"></div></div><span class="attr-val">' + v + '</span></div>').join('');
+}
+{ const _ui3617 = updateInspect; updateInspect = function(agentId) { const r = _ui3617.apply(this, arguments); try { renderInspectAttributes(agentId); } catch (_) {} return r; }; }
