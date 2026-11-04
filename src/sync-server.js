@@ -32,6 +32,10 @@ class SyncServer extends EventEmitter {
     this.onRequestAgentHistory = options.onRequestAgentHistory || null;
     // Image / file attachment upload handler.
     this.onAttachment = options.onAttachment || null;
+    // v3.6.19: these were passed in but never stored, so the phone's file
+    // requests (and voice end-of-turn checks) were silently ignored.
+    this.onGetFile = options.onGetFile || null;
+    this.onVoicePeek = options.onVoicePeek || null;
 
     // Wire the four missing mobile-side callbacks (onMobileWakeAgent, onMobileActivityPing, onArenaTreatPlaced, onArenaTreatEaten) onto `this`.
     this.onMobileWakeAgent = options.onMobileWakeAgent || null;
