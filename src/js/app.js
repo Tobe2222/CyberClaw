@@ -3514,7 +3514,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   if (Array.isArray(attachments) && attachments.length > 0) {
     // Normalize desktop's image-send attachment shape to the same `{ uri, data, type, name, size }` shape the mobile already understands.
     attachmentsForPersistence = attachments.map((a) => {
-      if (a.fileId) return { fileId: a.fileId, path: a.path, type: a.type, name: a.name, size: a.size, data: '' };
+      if (a.fileId) return { fileId: a.fileId, path: a.path, type: a.type, name: a.name, size: a.size, data: '', thumb: a.thumb || '' };
       // v3.6.4: images saved on disk are persisted as path + small JPEG
       // thumbnail (no truncated base64, which rendered as a broken image).
       if (a.path) {
@@ -3640,6 +3640,8 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       // Forward user-side attachments (desktop image-send) on the chat_message broadcast.
       if (Array.isArray(attachments) && attachments.length > 0) {
         broadcastAttachments = attachments.map((a) => {
+          // v3.6.20: images go to the phone as a picture (preview), tap = fullscreen.
+          if (a.fileId && a.thumb) return { data: a.thumb, type: 'image/png', name: a.name, size: a.size };
           if (a.fileId) return { fileId: a.fileId, type: a.type, name: a.name, size: a.size };
           const dataUri = a.dataUri || a.uri || null;
           const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
@@ -6517,6 +6519,17 @@ try {
       agentBuckets[q.id] = fileHist.filter(m => !seen.has(chatDedupeKey(m))).concat(live)
         .sort((x, y) => (x.ts || 0) - (y.ts || 0));
     }
+    // v3.6.20: older shared images have no preview yet — make one once.
+    for (const msgs of Object.values(agentBuckets)) {
+      for (const m of (msgs || [])) {
+        for (const a of (m && m.attachments) || []) {
+          if (a && a.fileId && !a.thumb && String(a.type || '').startsWith('image/') && a.path) {
+            try { const r = await cyberclaw.chat.shareFile(a.path); if (r && r.ok && r.thumb) a.thumb = r.thumb; } catch (_) {}
+          }
+        }
+      }
+    }
+    try { schedulePersistChatHistory(); } catch (_) {}
     const buckets = {};
     for (const [bucketKey, msgs] of Object.entries(agentBuckets)) {
       if (!Array.isArray(msgs) || msgs.length === 0) continue;
@@ -6526,7 +6539,7 @@ try {
         isUser: m.type === 'user',
         isError: m.type === 'error',
         // v3.6.4: images (thumbnails) travel with history so they stay visible on the phone.
-        attachments: Array.isArray(m.attachments) ? m.attachments.filter(x => x && ((x.data && !x.thumbOnly) || x.fileId)).map(x => x.fileId ? ({ fileId: x.fileId, type: x.type, name: x.name, size: x.size }) : ({ data: x.data, type: x.type, name: x.name, size: x.size })) : undefined,
+        attachments: Array.isArray(m.attachments) ? m.attachments.filter(x => x && ((x.data && !x.thumbOnly) || x.fileId)).map(x => (x.fileId && x.thumb) ? ({ data: x.thumb, type: 'image/png', name: x.name, size: x.size }) : x.fileId ? ({ fileId: x.fileId, type: x.type, name: x.name, size: x.size }) : ({ data: x.data, type: x.type, name: x.name, size: x.size })) : undefined,
         agentId: m.name || agentId,
         agentName: m.name || null,
         ts: m.ts,
@@ -8746,7 +8759,7 @@ function fmtBytes(n) { n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).t
     (async () => {
       const atts = [], failed = [];
       for (const p of paths) {
-        try { const r = await cyberclaw.chat.shareFile(p); if (r && r.ok) atts.push({ fileId: r.id, path: r.path, type: r.type, name: r.name, size: r.size }); else failed.push(p + ' (' + ((r && r.error) || 'failed') + ')'); }
+        try { const r = await cyberclaw.chat.shareFile(p); if (r && r.ok) atts.push({ fileId: r.id, path: r.path, type: r.type, name: r.name, size: r.size, thumb: r.thumb || '' }); else failed.push(p + ' (' + ((r && r.error) || 'failed') + ')'); }
         catch (e) { failed.push(p + ' (' + e.message + ')'); }
       }
       const baseReply = stripAgentReplyDecorations(result.reply || '');

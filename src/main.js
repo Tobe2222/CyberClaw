@@ -4094,6 +4094,11 @@ app.whenReady().then(() => {
         const savedName = `${ts}-${safeBase}${ext.startsWith('.') ? ext : (ext ? '.' + ext : '')}`;
         const savedPath = path.join(attachDir, savedName);
         fs.writeFileSync(savedPath, Buffer.from(base64, 'base64'));
+        // v3.6.20: phone photos carry EXIF rotation that nothing else applies —
+        // turn the file upright so the companion and the chat see it the right way.
+        if (/^image\/(jpe?g|heic|heif)/i.test(mimeType || '') || /\.jpe?g$/i.test(savedPath)) {
+          try { const o = require('child_process').execFileSync('python3', [path.join(__dirname, 'image-tools.py'), 'orient', savedPath], { timeout: 20000 }).toString().trim(); if (o !== 'ok') console.log('[Attachment] ' + o + ': ' + savedName); } catch (e) { console.warn('[Attachment] orient failed:', e.message); }
+        }
         const fileSize = fs.statSync(savedPath).size;
         console.log(`[Attachment] Saved ${fileName} (${fileSize} bytes) -> ${savedPath}`);
         discordLog('📎', 'Attachment saved', `${fileName} (${fileSize} bytes)`, 'info');
@@ -5588,7 +5593,12 @@ ipcMain.handle('chat:share-file', (e, filePath) => {
     const rec = { id, path: p, name: path.basename(p), type: MIME_BY_EXT[ext] || 'application/octet-stream', size: st.size };
     const all = loadSharedFiles(); all[id] = rec;
     fs.writeFileSync(SHARED_FILES_PATH, JSON.stringify(all, null, 1));
-    return { ok: true, ...rec };
+    // v3.6.20: images get a preview (PNG, keeps transparency) so the phone can show and enlarge them.
+    let thumb = '';
+    if (rec.type.startsWith('image/')) {
+      try { thumb = require('child_process').execFileSync('python3', [path.join(__dirname, 'image-tools.py'), 'thumb', p, '1200'], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 }).toString(); } catch (e) { console.warn('[share-file] thumb failed:', e.message); }
+    }
+    return { ok: true, ...rec, thumb };
   } catch (err) { return { ok: false, error: err.code === 'ENOENT' ? 'file not found' : err.message }; }
 });
 // (top-level `shell` in this file is the terminal path string, so use Electron's explicitly)
