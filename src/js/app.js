@@ -1208,7 +1208,7 @@ async function buildActiveQuestContext(quest) {
 
 // Standalone quest-tools hint.
 function buildQuestToolsHint() {
-  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_SUMMARY: text="..."] to rewrite the active quest\'s SUMMARY.md, [QUEST_DECISION: text="..."] to record a settled decision, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest. Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
+  return '[Quest tools available — emit these tags in your reply when applicable: [CREATE_QUEST: name="..." desc="..." dir="optional/path"] to create a new quest, [QUEST_APPEND_CHANGE: text="..."] to log a change to the active quest, [QUEST_SUMMARY: text="..."] to rewrite the active quest\'s SUMMARY.md, [QUEST_DECISION: text="..."] to record a settled decision, [QUEST_NOTE: text="..."] to leave a note for yourself in the active quest\'s instructions file (project-specific knowledge that future turns should see), [QUEST_MARK_GOAL: index="N" done="true|false"] to toggle a goal on the active quest, [QUEST_SET_ACTIVE: id="<id-or-name>"] to switch the active quest, [SEND_FILE: path="/absolute/path"] on its own line to attach a file from this computer to your message (audio, image, video, PDF…; the user can play/open it on desktop and phone; one tag per file, max 100 MB — never claim you attached something without this tag). Tags are parsed by the desktop on every reply and the action is performed immediately.] ';
 }
 
 // Work-first reminder appended at the END of every user message.
@@ -1261,7 +1261,7 @@ function stripToolWarnings(reply) {
 // Most call sites want both, so wrap them together to keep
 // call sites small and avoid forgetting either stripper.
 function stripAgentReplyDecorations(reply) {
-  return stripToolWarnings(stripQuestTags(reply));
+  return stripToolWarnings(stripQuestTags(String(reply || '').replace(/\[SEND_FILE:?\s*path\s*=\s*"[^"]+"\s*\]/gi, '')));
 }
 
 // Helper: pull the current active quest id from the quest list
@@ -3514,6 +3514,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
   if (Array.isArray(attachments) && attachments.length > 0) {
     // Normalize desktop's image-send attachment shape to the same `{ uri, data, type, name, size }` shape the mobile already understands.
     attachmentsForPersistence = attachments.map((a) => {
+      if (a.fileId) return { fileId: a.fileId, path: a.path, type: a.type, name: a.name, size: a.size, data: '' };
       // v3.6.4: images saved on disk are persisted as path + small JPEG
       // thumbnail (no truncated base64, which rendered as a broken image).
       if (a.path) {
@@ -3639,6 +3640,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       // Forward user-side attachments (desktop image-send) on the chat_message broadcast.
       if (Array.isArray(attachments) && attachments.length > 0) {
         broadcastAttachments = attachments.map((a) => {
+          if (a.fileId) return { fileId: a.fileId, type: a.type, name: a.name, size: a.size };
           const dataUri = a.dataUri || a.uri || null;
           const base64 = dataUri ? (dataUri.split(',')[1] || '') : (a.data || '');
           return {
@@ -3751,7 +3753,7 @@ function addChatMsg(type, text, name, emoji, attachments, questOverride = null) 
       break;
     case 'agent':
       // Same fix as the other render site — don't show the prefix emoji if it's the desktop's 🤖 default.
-      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span>` + agentTextHtml(text);
+      div.innerHTML = questHeaderHtml + `<span class="msg-prefix">${(emoji && emoji !== '🤖') ? emoji + ' ' : ''}[${escHtml(name)}]</span>` + agentTextHtml(text) + chatImagesHtml(attachments);
       break;
     case 'typing':
       // Include the quest pill on typing bubbles too.
@@ -6524,7 +6526,7 @@ try {
         isUser: m.type === 'user',
         isError: m.type === 'error',
         // v3.6.4: images (thumbnails) travel with history so they stay visible on the phone.
-        attachments: Array.isArray(m.attachments) ? m.attachments.filter(x => x && x.data && !x.thumbOnly).map(x => ({ data: x.data, type: x.type, name: x.name, size: x.size })) : undefined,
+        attachments: Array.isArray(m.attachments) ? m.attachments.filter(x => x && ((x.data && !x.thumbOnly) || x.fileId)).map(x => x.fileId ? ({ fileId: x.fileId, type: x.type, name: x.name, size: x.size }) : ({ data: x.data, type: x.type, name: x.name, size: x.size })) : undefined,
         agentId: m.name || agentId,
         agentName: m.name || null,
         ts: m.ts,
@@ -8547,6 +8549,14 @@ function chatImagesHtml(atts) {
   if (!Array.isArray(atts) || !atts.length) return '';
   let h = '<div class="chat-msg-images">';
   for (const a of atts) {
+    if (a.fileId || (a.path && a.type && !String(a.type).startsWith('image/'))) {
+      const t = String(a.type || '');
+      const icon = t.startsWith('audio/') ? '🎵' : t.startsWith('video/') ? '🎬' : t.startsWith('image/') ? '🖼️' : '📄';
+      h += '<div class="chat-file"><div class="chat-file-head">' + icon + ' <a href="#" class="chat-file-open" data-path="' + escAttr(a.path || '') + '">' + escHtml(a.name || 'file') + '</a> <span class="chat-file-size">' + fmtBytes(a.size) + '</span></div>'
+        + (t.startsWith('audio/') && a.path ? '<audio controls preload="none" src="' + escAttr('file://' + a.path) + '"></audio>' : '')
+        + (t.startsWith('image/') && a.path ? '<img class="chat-msg-image" src="' + escAttr('file://' + a.path) + '" data-full="' + escAttr('file://' + a.path) + '" />' : '') + '</div>';
+      continue;
+    }
     const src = a.dataUri || a.uri || (a.data ? 'data:' + (a.type || a.mimeType || 'image/png') + ';base64,' + a.data : null)
       || (a.path ? 'file://' + a.path : null);
     if (!src) continue;
@@ -8721,3 +8731,35 @@ function renderInspectAttributes(agentId) {
   el.innerHTML = rows.map(([i, n, v, tip]) => '<div class="attr-row" title="' + n + ': ' + tip + '"><span class="attr-icon">' + i + '</span><span class="attr-name">' + n + '</span><div class="attr-track"><div class="attr-fill" style="width:' + (v * 10) + '%"></div></div><span class="attr-val">' + v + '</span></div>').join('');
 }
 { const _ui3617 = updateInspect; updateInspect = function(agentId) { const r = _ui3617.apply(this, arguments); try { renderInspectAttributes(agentId); } catch (_) {} return r; }; }
+
+// ─── v3.6.18: companion file attachments ───
+const SEND_FILE_RE = /\[SEND_FILE:?\s*path\s*=\s*"([^"]+)"\s*\]/gi;
+function fmtBytes(n) { n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B'; }
+{
+  const _pARWS = postAgentReplyWithScreenshots;
+  postAgentReplyWithScreenshots = function(result, name, emoji) {
+    const raw = String((result && result.reply) || '');
+    const paths = []; let m; SEND_FILE_RE.lastIndex = 0;
+    while ((m = SEND_FILE_RE.exec(raw))) paths.push(m[1]);
+    if (!paths.length) return _pARWS.apply(this, arguments);
+    result.reply = raw.replace(SEND_FILE_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+    (async () => {
+      const atts = [], failed = [];
+      for (const p of paths) {
+        try { const r = await cyberclaw.chat.shareFile(p); if (r && r.ok) atts.push({ fileId: r.id, path: r.path, type: r.type, name: r.name, size: r.size }); else failed.push(p + ' (' + ((r && r.error) || 'failed') + ')'); }
+        catch (e) { failed.push(p + ' (' + e.message + ')'); }
+      }
+      const baseReply = stripAgentReplyDecorations(result.reply || '');
+      const { cleanedText, directives } = parseScreenshotDirectives(baseReply);
+      result.reply = cleanedText;
+      addChatMsg('agent', cleanedText, name, (emoji && emoji !== '🤖') ? emoji : null, atts.length ? atts : null);
+      if (failed.length) addChatMsg('error', '⚠️ Couldn\'t attach: ' + failed.join(', '), name);
+      if (directives.length) _pARWS.call(this, { reply: '' }, name, emoji);
+    })();
+  };
+}
+document.addEventListener('click', (e) => {
+  const a = e.target && e.target.closest && e.target.closest('#chat-messages .chat-file-open');
+  if (!a) return; e.preventDefault();
+  try { cyberclaw.chat.openFile(a.getAttribute('data-path')); } catch (_) {}
+});

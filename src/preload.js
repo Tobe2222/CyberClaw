@@ -24,6 +24,8 @@ window.cyberclaw = {
     // Accept optional attachments array for multimodal (text + image) content.
     sendMessage: (agentId, message, attachments) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments }),
     saveAttachment: (data, mimeType, fileName) => ipcRenderer.invoke('chat:save-attachment', { data, mimeType, fileName }),
+    shareFile: (p) => ipcRenderer.invoke('chat:share-file', p),
+    openFile: (p) => ipcRenderer.invoke('chat:open-file', p),
     // Silent variant of sendMessage.
     sendSilentMessage: (agentId, message) => ipcRenderer.invoke('chat:send-message', { agentId, message, attachments: null, silent: true }),
   },

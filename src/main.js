@@ -3936,6 +3936,13 @@ app.whenReady().then(() => {
         return { ok: false, error: e?.message || String(e) };
       }
     },
+    // v3.6.18: phone fetches a file a companion attached (registered files only).
+    onGetFile: (msg, ws) => {
+      const rec = loadSharedFiles()[String(msg.id || '')];
+      const reply = (o) => { if (syncServer && ws && ws.readyState === 1) syncServer._send(ws, { type: 'file_data', id: msg.id, ...o }); };
+      if (!rec) return reply({ ok: false, error: 'unknown file' });
+      fs.readFile(rec.path, (err, buf) => err ? reply({ ok: false, error: err.code === 'ENOENT' ? 'file no longer exists on the computer' : err.message }) : reply({ ok: true, name: rec.name, mime: rec.type, data: buf.toString('base64') }));
+    },
     onVoicePeek: async (msg, ws) => {
       const t0 = Date.now();
       let text = '';
@@ -5559,3 +5566,30 @@ setInterval(() => {
   }
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('companion-xp-updated', { agentIds: ids }); } catch (_) {}
 }, 15000);
+
+// ─── Companion → user file sharing (v3.6.18) ───
+// A companion attaches a file with [SEND_FILE: path="/abs/path"]. Only files
+// registered here can be fetched by the phone (sync port is internet-facing).
+const SHARED_FILES_PATH = path.join(CYBERCLAW_DIR, 'shared-files.json');
+const SHARED_FILE_MAX = 100 * 1024 * 1024;
+const MIME_BY_EXT = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac', aac: 'audio/aac',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown',
+  json: 'application/json', csv: 'text/csv', zip: 'application/zip', html: 'text/html' };
+function loadSharedFiles() { try { return JSON.parse(fs.readFileSync(SHARED_FILES_PATH, 'utf8')); } catch { return {}; } }
+ipcMain.handle('chat:share-file', (e, filePath) => {
+  try {
+    const p = path.resolve(String(filePath || '').replace(/^~(?=\/)/, os.homedir()));
+    const st = fs.statSync(p);
+    if (!st.isFile()) return { ok: false, error: 'not a file' };
+    if (st.size > SHARED_FILE_MAX) return { ok: false, error: 'file is larger than 100 MB' };
+    const ext = (p.split('.').pop() || '').toLowerCase();
+    const id = require('crypto').createHash('sha1').update(p + ':' + st.mtimeMs).digest('hex').slice(0, 16);
+    const rec = { id, path: p, name: path.basename(p), type: MIME_BY_EXT[ext] || 'application/octet-stream', size: st.size };
+    const all = loadSharedFiles(); all[id] = rec;
+    fs.writeFileSync(SHARED_FILES_PATH, JSON.stringify(all, null, 1));
+    return { ok: true, ...rec };
+  } catch (err) { return { ok: false, error: err.code === 'ENOENT' ? 'file not found' : err.message }; }
+});
+// (top-level `shell` in this file is the terminal path string, so use Electron's explicitly)
+ipcMain.handle('chat:open-file', (e, filePath) => { try { return require('electron').shell.openPath(String(filePath)); } catch (err) { return err.message; } });

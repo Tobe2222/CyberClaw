@@ -453,6 +453,12 @@ class SyncServer extends EventEmitter {
       // v3.6.1: end-of-turn check. The phone sends what it has recorded so
       // far after a short pause; we transcribe it and say whether the
       // sentence sounds finished.
+      case 'get_file': {
+        if (!client.authenticated) return;
+        if (this.onGetFile) this.onGetFile(msg, ws);
+        break;
+      }
+
       case 'voice_peek': {
         if (!client.authenticated) return;
         if (this.onVoicePeek) this.onVoicePeek(msg, ws);
