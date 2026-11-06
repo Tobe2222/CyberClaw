@@ -8776,3 +8776,19 @@ document.addEventListener('click', (e) => {
   if (!a) return; e.preventDefault();
   try { cyberclaw.chat.openFile(a.getAttribute('data-path')); } catch (_) {}
 });
+
+// v3.6.22: the thinking bar and picked-image thumbnails float above the input
+// (covering the bottom of the chat) instead of pushing the text box down out
+// of view when the input area has a fixed, dragged height.
+(function setupInputOverlay() {
+  const area = document.getElementById('chat-input-area');
+  if (!area || document.getElementById('chat-input-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'chat-input-overlay';
+  area.insertBefore(ov, area.firstChild);
+  let tb = document.getElementById('chat-think-bar');
+  if (!tb) { tb = document.createElement('div'); tb.id = 'chat-think-bar'; tb.className = 'hidden'; }
+  ov.appendChild(tb);
+  const pv = document.getElementById('chat-image-preview');
+  if (pv) ov.appendChild(pv);
+})();
