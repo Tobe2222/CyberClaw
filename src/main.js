@@ -966,6 +966,13 @@ function extractFirstJsonObject(buf) {
 
 ipcMain.handle('chat:send-message', async (event, { agentId, message, attachments, silent }) => {
   if (!silent) { try { voiceLearning.learnFromText(message); } catch (_) {} }
+  // v3.6.21: Agent Reach — tell the companion it can act on the phone, run its [PHONE: …] tags.
+  if (!silent && phoneConnected()) message = String(message || '') + '\n\n' + PHONE_HINT;
+  const first = await dispatchAgentMessage(agentId, message, attachments, silent);
+  try { return await runWithPhoneTools(agentId, first, 0); } catch (e) { console.warn('[agent-reach] failed:', e.message); return first; }
+});
+
+async function dispatchAgentMessage(agentId, message, attachments, silent) {
   // Prefer the OpenAI-compatible HTTP API on the gateway over the `openclaw agent -m` CLI.
   const gw = readGatewayConfig();
   // Log which path we picked.
@@ -975,7 +982,7 @@ ipcMain.handle('chat:send-message', async (event, { agentId, message, attachment
     return await sendChatMessageViaHttp(agentId, message, attachments, gw);
   }
   return await sendChatMessageViaCli(agentId, message, attachments);
-});
+}
 
 // HTTP API path.
 async function sendChatMessageViaHttp(agentId, message, attachments, gw) {
@@ -4821,6 +4828,7 @@ app.whenReady().then(() => {
   const RemoteToolBridge = require('./remote-tool-bridge');
   let remoteToolBridge = null;
   remoteToolBridge = new RemoteToolBridge(syncServer);
+  global.__phoneBridge = remoteToolBridge; // v3.6.21: used by [PHONE: …] tags
 });
 
 app.on('before-quit', cleanup);
@@ -5603,3 +5611,103 @@ ipcMain.handle('chat:share-file', (e, filePath) => {
 });
 // (top-level `shell` in this file is the terminal path string, so use Electron's explicitly)
 ipcMain.handle('chat:open-file', (e, filePath) => { try { return require('electron').shell.openPath(String(filePath)); } catch (err) { return err.message; } });
+
+// ─── Agent Reach: companion → phone actions (v3.6.21) ───
+// The companion puts [PHONE: op="..." key="value"] in its reply. We run it on
+// the paired phone, strip the tag, and — when there's something to report
+// (data, or a failure) — hand the results back so it can finish its answer.
+const PHONE_TAG_RE = /\[PHONE:\s*([^\]]*)\]/gi;
+const PHONE_HINT = '[CyberClaw phone tools — the user\'s phone is connected. Put a tag on its own line to act on it: ' +
+  '[PHONE: op="navigate" to="<address or place>"] start Google Maps driving navigation · ' +
+  '[PHONE: op="routes" to="<destination>" from="<optional start>"] show route options/alternatives in Google Maps · ' +
+  '[PHONE: op="maps" q="<search>"] search places in Maps · ' +
+  '[PHONE: op="open" url="<https:// or app link like spotify: / tel: / mailto:>"] open a link or app · ' +
+  '[PHONE: op="call" number="..."] · [PHONE: op="sms" number="..." text="..."] · ' +
+  '[PHONE: op="location"] get GPS position · [PHONE: op="files" path="Download"] list a folder · ' +
+  '[PHONE: op="get_file" path="/storage/emulated/0/Download/x.pdf"] copy a file to this computer · ' +
+  '[PHONE: op="photo"] take a photo with the camera. ' +
+  'Results come back to you automatically. Never say you did something on the phone without the tag. Each kind of action must be enabled by the user in the phone app (Settings → Agent Reach).]';
+function phoneConnected() {
+  try { return !!(syncServer && [...syncServer.clients.values()].some(c => c.authenticated)); } catch (_) { return false; }
+}
+function parsePhoneAttrs(s) {
+  const o = {}; const re = /(\w+)\s*=\s*"([^"]*)"/g; let m;
+  while ((m = re.exec(s))) o[m[1].toLowerCase()] = m[2];
+  return o;
+}
+function phonePath(p) {
+  p = String(p || 'Download').trim();
+  if (p.startsWith('/')) return p;
+  return '/storage/emulated/0/' + p.replace(/^\/+/, '');
+}
+function savePhoneFile(name, b64) {
+  const dir = path.join(CYBERCLAW_DIR, 'phone-files');
+  fs.mkdirSync(dir, { recursive: true });
+  const p = path.join(dir, Date.now() + '-' + String(name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_'));
+  fs.writeFileSync(p, Buffer.from(String(b64 || ''), 'base64'));
+  return p;
+}
+async function runPhoneAction(agentId, a) {
+  const br = global.__phoneBridge;
+  if (!br) return { label: a.op, ok: false, text: 'phone bridge not ready' };
+  const enc = encodeURIComponent;
+  const step = (friendly) => {
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent-tool-activity', { agentId, friendly }); } catch (_) {}
+    try { if (syncServer) syncServer.sendToMobile({ type: 'agent_tool', tool: 'phone', friendly, agentId, ts: Date.now() }); } catch (_) {}
+  };
+  const launch = async (uri, label) => {
+    step('📱 ' + label);
+    const r = await br.call('launch_intent', { uri }, 20000);
+    return { label, ok: !!r.ok, text: r.ok ? 'done' : (r.error || 'failed'), report: !r.ok };
+  };
+  switch (String(a.op || '').toLowerCase()) {
+    case 'navigate': return launch('google.navigation:q=' + enc(a.to || a.q || '') + '&mode=d', 'Navigating to ' + (a.to || a.q));
+    case 'routes': return launch('https://www.google.com/maps/dir/?api=1' + (a.from ? '&origin=' + enc(a.from) : '') + '&destination=' + enc(a.to || a.q || '') + '&travelmode=driving', 'Routes to ' + (a.to || a.q));
+    case 'maps': return launch('geo:0,0?q=' + enc(a.q || a.to || ''), 'Maps: ' + (a.q || a.to));
+    case 'open': return launch(a.url || a.uri || '', 'Opening ' + String(a.url || a.uri || '').slice(0, 40));
+    case 'call': return launch('tel:' + String(a.number || '').replace(/[^0-9+]/g, ''), 'Calling ' + a.number);
+    case 'sms': return launch('sms:' + String(a.number || '').replace(/[^0-9+]/g, '') + (a.text ? '?body=' + enc(a.text) : ''), 'SMS to ' + a.number);
+    case 'location': {
+      step('📱 Getting location');
+      const r = await br.call('get_location', {}, 30000);
+      return { label: 'location', ok: !!r.ok, report: true, text: r.ok ? 'lat ' + r.data.latitude + ', lon ' + r.data.longitude + ' (±' + Math.round(r.data.accuracy || 0) + ' m)' : (r.error || 'failed') };
+    }
+    case 'files': {
+      const p = phonePath(a.path); step('📱 Listing ' + p);
+      const r = await br.call('file_list', { path: p }, 20000);
+      return { label: 'files in ' + p, ok: !!r.ok, report: true, text: r.ok ? (r.data.entries || []).slice(0, 80).map(e => (e.isDir ? '[dir] ' : '') + e.name + (e.isDir ? '' : ' (' + e.size + ' B)')).join('; ') || '(empty)' : (r.error || 'failed') };
+    }
+    case 'get_file': {
+      const p = phonePath(a.path); step('📱 Fetching ' + path.basename(p));
+      const r = await br.call('file_read', { path: p }, 120000);
+      if (!r.ok) return { label: 'get_file ' + p, ok: false, report: true, text: r.error || 'failed' };
+      return { label: 'get_file ' + p, ok: true, report: true, text: 'saved on this computer at ' + savePhoneFile(path.basename(p), r.data.content) };
+    }
+    case 'photo': {
+      step('📱 Waiting for a photo');
+      const r = await br.call('camera_snap', {}, 180000);
+      if (!r.ok) return { label: 'photo', ok: false, report: true, text: r.error || 'failed' };
+      return { label: 'photo', ok: true, report: true, text: 'saved at ' + savePhoneFile('photo.jpg', r.data.base64) + ' — open it with your read tool to see it' };
+    }
+    default: return { label: a.op, ok: false, report: true, text: 'unknown phone op' };
+  }
+}
+async function runWithPhoneTools(agentId, result, depth) {
+  if (!result || !result.ok || typeof result.reply !== 'string') return result;
+  const tags = []; let m; PHONE_TAG_RE.lastIndex = 0;
+  while ((m = PHONE_TAG_RE.exec(result.reply))) tags.push(parsePhoneAttrs(m[1]));
+  if (!tags.length) return result;
+  const spoken = result.reply.replace(PHONE_TAG_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+  const outs = [];
+  for (const t of tags) {
+    let o; try { o = await runPhoneAction(agentId, t); } catch (e) { o = { label: t.op, ok: false, report: true, text: e.message }; }
+    if (/no_device_connected/.test(o.text)) o.text = 'phone is not connected';
+    if (/permission_denied/.test(o.text)) o.text = 'not allowed — the user must enable this in the phone app under Settings → Agent Reach';
+    outs.push(o);
+    console.log('[agent-reach]', t.op, o.ok ? 'ok' : 'FAIL', o.text.slice(0, 120));
+  }
+  if (!outs.some(o => o.report) || depth >= 2) return { ...result, reply: spoken };
+  const follow = await dispatchAgentMessage(agentId, '[Phone results]\n' + outs.map(o => '- ' + o.label + ': ' + (o.ok ? '' : 'FAILED: ') + o.text).join('\n') + '\nContinue your reply to the user using these results (short and spoken-friendly if they are driving). Do not repeat what you already said.', undefined, true);
+  const next = await runWithPhoneTools(agentId, follow, depth + 1);
+  return { ...result, reply: [spoken, next && next.ok ? next.reply : ''].filter(Boolean).join('\n\n') };
+}

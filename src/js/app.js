@@ -1261,7 +1261,7 @@ function stripToolWarnings(reply) {
 // Most call sites want both, so wrap them together to keep
 // call sites small and avoid forgetting either stripper.
 function stripAgentReplyDecorations(reply) {
-  return stripToolWarnings(stripQuestTags(String(reply || '').replace(/\[SEND_FILE:?\s*path\s*=\s*"[^"]+"\s*\]/gi, '')));
+  return stripToolWarnings(stripQuestTags(String(reply || '').replace(/\[SEND_FILE:?\s*path\s*=\s*"[^"]+"\s*\]/gi, '').replace(/\[PHONE:[^\]]*\]/gi, '')));
 }
 
 // Helper: pull the current active quest id from the quest list
