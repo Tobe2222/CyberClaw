@@ -5711,3 +5711,31 @@ async function runWithPhoneTools(agentId, result, depth) {
   const next = await runWithPhoneTools(agentId, follow, depth + 1);
   return { ...result, reply: [spoken, next && next.ok ? next.reply : ''].filter(Boolean).join('\n\n') };
 }
+
+// ─── v3.6.23: Linux paste without Chromium's X11 clipboard ───
+// Pasting an image froze the whole app: Chromium's X11 clipboard code spins at
+// 100% CPU in libxcb on large image transfers. On Linux the renderer now asks
+// for the clipboard here, read with xclip (separate process, with timeouts).
+function xclipRead(args, timeoutMs, asBuffer) {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    execFile('xclip', ['-selection', 'clipboard', '-o', ...args], { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: asBuffer ? 'buffer' : 'utf8', env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } },
+      (err, out) => resolve(err ? null : out));
+  });
+}
+ipcMain.handle('clipboard:read-paste', async () => {
+  if (process.platform !== 'linux') return { ok: false, error: 'linux only' };
+  const targets = await xclipRead(['-t', 'TARGETS'], 2000, false);
+  if (targets === null) return { ok: false, error: 'xclip unavailable or clipboard empty' };
+  const list = String(targets).split('\n').map(s => s.trim());
+  const img = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].find(t => list.includes(t));
+  if (img) {
+    const buf = await xclipRead(['-t', img], 10000, true);
+    if (buf && buf.length) return { ok: true, kind: 'image', mime: img, data: buf.toString('base64') };
+    return { ok: false, error: 'image read failed' };
+  }
+  const t = list.includes('UTF8_STRING') ? 'UTF8_STRING' : (list.includes('text/plain;charset=utf-8') ? 'text/plain;charset=utf-8' : (list.includes('STRING') ? 'STRING' : null));
+  if (!t) return { ok: true, kind: 'none' };
+  const text = await xclipRead(['-t', t], 3000, false);
+  return { ok: true, kind: 'text', text: text || '' };
+});

@@ -8792,3 +8792,30 @@ document.addEventListener('click', (e) => {
   const pv = document.getElementById('chat-image-preview');
   if (pv) ov.appendChild(pv);
 })();
+
+// v3.6.23: on Linux, Ctrl/Cmd+V is handled via the main process (xclip) so
+// Chromium never touches the X11 clipboard — pasting images froze the app.
+if (navigator.platform && /linux/i.test(navigator.platform) && window.cyberclaw && cyberclaw.clipboard) {
+  document.addEventListener('keydown', async (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || String(e.key).toLowerCase() !== 'v') return;
+    const t = e.target;
+    const editable = t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && /^(text|search|url|email|password|number|)$/i.test(t.type || '')) || t.isContentEditable);
+    if (!editable) return;
+    e.preventDefault();
+    let r = null;
+    try { r = await cyberclaw.clipboard.readPaste(); } catch (_) {}
+    if (!r || !r.ok) return;
+    if (r.kind === 'image' && (t.id === 'chat-input' || t.closest && t.closest('#view-chat'))) {
+      const ext = (r.mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      setImageAttachment('data:' + r.mime + ';base64,' + r.data, 'pasted-image.' + ext);
+    } else if (r.kind === 'text' && r.text) {
+      t.focus();
+      if (!document.execCommand('insertText', false, r.text)) {
+        const s = t.selectionStart, en = t.selectionEnd;
+        t.value = t.value.slice(0, s) + r.text + t.value.slice(en);
+        t.selectionStart = t.selectionEnd = s + r.text.length;
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  }, true);
+}

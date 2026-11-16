@@ -85,6 +85,7 @@ window.cyberclaw = {
     popout: (state) => ipcRenderer.invoke('arena:popout', state),
   },
   // v3.5.0: user-editable paths
+  clipboard: { readPaste: () => ipcRenderer.invoke('clipboard:read-paste') }, // v3.6.23
   voice: { status: () => ipcRenderer.invoke('voice:status'), install: () => ipcRenderer.invoke('voice:install'), setModel: (t) => ipcRenderer.invoke('voice:set-model', t) },
   paths: {
     get: () => ipcRenderer.invoke('paths:get'),
